@@ -231,12 +231,6 @@ Set `STATIC_WEB_ROOT=../web/dist` in your environment and restart the backend.
 
 ---
 
-## License
-
-MIT License — see LICENSE file.
-
----
-
 ## Support
 
 - Open an issue for bugs or feature requests
