@@ -1,0 +1,251 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --color-frame: 229 229 229;
+}
+
+html,
+body,
+#app {
+  min-height: 100%;
+}
+
+/* Respect notch and home-indicator safe areas on iOS and Android when used with viewport-fit=cover. */
+@supports (padding: env(safe-area-inset-left)) {
+  body {
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+  }
+}
+
+html.dark {
+  color-scheme: dark;
+  --color-frame: 64 64 64;
+}
+
+body {
+  background-color: rgb(255 255 255);
+  color: rgb(23 23 23);
+}
+
+input,
+textarea,
+select,
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+}
+
+html.dark body {
+  background-color: rgb(10 10 10);
+  color: rgb(250 250 250);
+}
+
+html.dark ::selection {
+  background-color: rgb(101 163 13 / 0.35);
+  color: rgb(250 250 250);
+}
+
+html.dark .bg-white {
+  background-color: rgb(23 23 23 / 1);
+}
+
+html.dark .bg-white\/90 {
+  background-color: rgb(23 23 23 / 0.9);
+}
+
+html.dark .bg-white\/95 {
+  background-color: rgb(23 23 23 / 0.95);
+}
+
+html.dark .supports-\[backdrop-filter\]\:bg-white\/70 {
+  background-color: rgb(23 23 23 / 0.72);
+}
+
+html.dark .supports-\[backdrop-filter\]\:bg-white\/80 {
+  background-color: rgb(23 23 23 / 0.82);
+}
+
+html.dark .bg-neutral-50,
+html.dark .bg-neutral-50\/90,
+html.dark .bg-neutral-50\/80,
+html.dark .bg-neutral-50\/60,
+html.dark .bg-neutral-50\/50 {
+  background-color: rgb(38 38 38 / 1);
+}
+
+html.dark .bg-neutral-100 {
+  background-color: rgb(64 64 64 / 1);
+}
+
+html.dark .bg-neutral-100\/85,
+html.dark .bg-neutral-200\/80 {
+  background-color: rgb(38 38 38 / 0.92);
+}
+
+html.dark .bg-neutral-200\/50 {
+  background-color: rgb(64 64 64 / 0.5);
+}
+
+html.dark .bg-lime-50,
+html.dark .bg-lime-50\/80,
+html.dark .bg-lime-50\/60,
+html.dark .bg-lime-50\/50,
+html.dark .bg-lime-50\/40 {
+  background-color: rgb(54 83 20 / 0.45);
+}
+
+html.dark .bg-violet-50,
+html.dark .bg-violet-50\/60,
+html.dark .bg-violet-50\/40 {
+  background-color: rgb(76 29 149 / 0.25);
+}
+
+html.dark .bg-red-50,
+html.dark .bg-red-100 {
+  background-color: rgb(127 29 29 / 0.22);
+}
+
+html.dark .border-neutral-200,
+html.dark .border-neutral-200\/90,
+html.dark .border-neutral-200\/80 {
+  border-color: rgb(64 64 64 / 1);
+}
+
+html.dark .divide-neutral-200 > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgb(64 64 64 / 1);
+}
+
+/* border-frame and divide-frame follow --color-frame from :root and html.dark. */
+
+html.dark .border-lime-200,
+html.dark .border-lime-200\/90,
+html.dark .border-lime-200\/80 {
+  border-color: rgb(77 124 15 / 0.8);
+}
+
+html.dark .border-violet-200,
+html.dark .border-violet-200\/80,
+html.dark .border-violet-200\/90 {
+  border-color: rgb(109 40 217 / 0.65);
+}
+
+html.dark .border-red-200,
+html.dark .border-red-300 {
+  border-color: rgb(185 28 28 / 0.65);
+}
+
+html.dark .border-white {
+  border-color: rgb(38 38 38 / 1);
+}
+
+html.dark .border-white\/25 {
+  border-color: rgb(82 82 82 / 0.65);
+}
+
+html.dark .text-neutral-900,
+html.dark .text-neutral-800 {
+  color: rgb(250 250 250 / 1);
+}
+
+html.dark .text-neutral-700 {
+  color: rgb(229 229 229 / 1);
+}
+
+html.dark .text-neutral-600 {
+  color: rgb(212 212 212 / 1);
+}
+
+html.dark .text-neutral-500 {
+  color: rgb(163 163 163 / 1);
+}
+
+html.dark .text-neutral-400 {
+  color: rgb(115 115 115 / 1);
+}
+
+html.dark .text-lime-900 {
+  color: rgb(217 249 157 / 1);
+}
+
+html.dark .text-lime-800 {
+  color: rgb(190 242 100 / 1);
+}
+
+html.dark .text-lime-700,
+html.dark .text-lime-100 {
+  color: rgb(163 230 53 / 1);
+}
+
+html.dark .text-violet-900,
+html.dark .text-violet-800 {
+  color: rgb(221 214 254 / 1);
+}
+
+html.dark .text-red-800,
+html.dark .text-red-700,
+html.dark .text-red-600 {
+  color: rgb(254 202 202 / 1);
+}
+
+html.dark .placeholder\:text-neutral-500::placeholder,
+html.dark .placeholder\:text-neutral-400::placeholder {
+  color: rgb(115 115 115 / 1);
+}
+
+html.dark .hover\:bg-white:hover,
+html.dark .hover\:bg-neutral-50:hover,
+html.dark .hover\:bg-neutral-50\/90:hover,
+html.dark .hover\:bg-neutral-200:hover,
+html.dark .hover\:bg-neutral-200\/50:hover,
+html.dark .hover\:bg-red-50:hover {
+  background-color: rgb(38 38 38 / 1);
+}
+
+html.dark .hover\:bg-lime-50:hover {
+  background-color: rgb(54 83 20 / 0.45);
+}
+
+html.dark .hover\:text-neutral-900:hover,
+html.dark .hover\:text-neutral-800:hover {
+  color: rgb(250 250 250 / 1);
+}
+
+html.dark .hover\:text-lime-900:hover {
+  color: rgb(217 249 157 / 1);
+}
+
+html.dark .ring-white {
+  --tw-ring-color: rgb(23 23 23 / 1);
+}
+
+html.dark .ring-white\/25 {
+  --tw-ring-color: rgb(82 82 82 / 0.65);
+}
+
+html.dark .ring-black\/5 {
+  --tw-ring-color: rgb(255 255 255 / 0.08);
+}
+
+html.dark .prose {
+  --tw-prose-body: rgb(229 229 229);
+  --tw-prose-headings: rgb(250 250 250);
+  --tw-prose-lead: rgb(212 212 212);
+  --tw-prose-links: rgb(190 242 100);
+  --tw-prose-bold: rgb(250 250 250);
+  --tw-prose-counters: rgb(163 163 163);
+  --tw-prose-bullets: rgb(115 115 115);
+  --tw-prose-hr: rgb(64 64 64);
+  --tw-prose-quotes: rgb(229 229 229);
+  --tw-prose-quote-borders: rgb(64 64 64);
+  --tw-prose-captions: rgb(163 163 163);
+  --tw-prose-code: rgb(250 250 250);
+  --tw-prose-pre-code: rgb(217 249 157);
+  --tw-prose-pre-bg: rgb(23 23 23);
+  --tw-prose-th-borders: rgb(82 82 82);
+  --tw-prose-td-borders: rgb(64 64 64);
+}

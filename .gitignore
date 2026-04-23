@@ -1,0 +1,12 @@
+.env
+web/.env.production
+node_modules
+dist
+*.log
+docs
+
+# Capacitor / native app files
+# Keep Capacitor out of the GitHub-published repository.
+web/capacitor.config.ts
+web/android/
+web/ios/

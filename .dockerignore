@@ -1,0 +1,12 @@
+.git
+.gitignore
+.cursor
+node_modules
+**/node_modules
+**/dist
+**/bin
+web/dist
+backend/bin
+docs/mastodon-main
+agent-transcripts
+mcps
