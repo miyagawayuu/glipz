@@ -90,7 +90,7 @@ This repository contains the official Go implementation of the Glipz Federation 
 
 ## Screenshots
 
-> Add your screenshots here before publishing
+![Home timeline](https://i.imgur.com/NxHY0rW.png)
 
 ---
 
