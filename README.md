@@ -162,6 +162,8 @@ Frontend: http://localhost:5173
 
 For production deployment, see [DEPLOY.md](DEPLOY.md).
 
+Mailpit (started with the Docker stack) is for local development. In production, use Mailgun, SMTP, or another real mail provider. The linked guide covers a production-focused checklist and deployment flow.
+
 ### Production checklist
 
 - [ ] Strong `JWT_SECRET`
@@ -242,5 +244,3 @@ Set `STATIC_WEB_ROOT=../web/dist` in your environment and restart the backend.
 ## License
 
 GNU Affero General Public License v3.0 — see [LICENSE](LICENSE) file.
-- For production mail delivery, configure Mailgun or another SMTP/mail provider instead of Mailpit.
-- Use `DEPLOY.md` for a production-focused checklist and deployment flow.
