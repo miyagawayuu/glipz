@@ -111,6 +111,9 @@ func main() {
 	if err := migrate.RunWebPush(ctx, pool); err != nil {
 		log.Fatalf("migrate web push: %v", err)
 	}
+	if err := migrate.RunFanclubPatreon(ctx, pool); err != nil {
+		log.Fatalf("migrate fanclub patreon: %v", err)
+	}
 
 	opt, err := redis.ParseURL(cfg.RedisURL)
 	if err != nil {

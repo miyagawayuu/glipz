@@ -12,6 +12,7 @@ import { getAccessToken } from "../auth";
 import { api } from "../lib/api";
 import { customEmojiMap, ensureCustomEmojiCatalog, pickerCustomEmojisForHandle, unicodeReactionPickerCategories } from "../lib/customEmojis";
 import { blockFederationUser, muteFederationUser } from "../lib/federationPrivacy";
+import { requestPatreonEntitlement } from "../lib/fanclubPatreon";
 import { unlockTimelinePost, voteTimelinePoll } from "../lib/federationActions";
 import type { TimelinePoll, TimelinePost } from "../types/timeline";
 import {
@@ -735,7 +736,28 @@ async function submitUnlock(it: TimelinePost) {
   unlockBusy.value = it.id;
   unlockErr[it.id] = "";
   try {
-    const res = await unlockTimelinePost(token, it, { password: pwd });
+    let entitlementJwt: string | undefined;
+    if (
+      !it.is_federated &&
+      it.has_membership_lock &&
+      (it.membership_provider || "").toLowerCase() === "patreon"
+    ) {
+      try {
+        entitlementJwt = await requestPatreonEntitlement(token, it.id);
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : "";
+        unlockErr[it.id] =
+          msg === "patreon_not_connected"
+            ? t("components.postTimeline.unlock.patreonNotConnected")
+            : msg === "not_entitled"
+              ? t("components.postTimeline.unlock.notEntitled")
+              : msg === "patreon_api_error" || msg.startsWith("patreon_")
+                ? t("components.postTimeline.unlock.patreonApiError")
+                : msg || t("components.postTimeline.unlock.unlockFailed");
+        return;
+      }
+    }
+    const res = await unlockTimelinePost(token, it, { password: pwd, entitlement_jwt: entitlementJwt });
     emit("patchItem", {
       id: it.id,
       patch: {

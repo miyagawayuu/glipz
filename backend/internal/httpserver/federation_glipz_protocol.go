@@ -314,22 +314,6 @@ func (s *Server) mountGlipzFederation(r chi.Router) {
 	r.Post("/federation/events", s.handleFederationEventInbound)
 }
 
-func (s *Server) federationPaidUnlockTrusted(instanceHost string) bool {
-	if s.cfg.GlipzFederationPaidUnlockAllowAll {
-		return true
-	}
-	if len(s.cfg.GlipzFederationPaidUnlockTrustedInstances) == 0 {
-		return false
-	}
-	host := strings.TrimSpace(strings.ToLower(instanceHost))
-	for _, h := range s.cfg.GlipzFederationPaidUnlockTrustedInstances {
-		if strings.EqualFold(strings.TrimSpace(h), host) {
-			return true
-		}
-	}
-	return false
-}
-
 func (s *Server) localFullAcct(handle string) string {
 	handle = strings.TrimPrefix(strings.TrimSpace(handle), "@")
 	host := s.federationDisplayHost()
@@ -832,10 +816,6 @@ func (s *Server) handleFederationPostEntitlementInbound(w http.ResponseWriter, r
 			return
 		}
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_signature"})
-		return
-	}
-	if !s.federationPaidUnlockTrusted(verified.InstanceHost) {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "untrusted_instance"})
 		return
 	}
 	postID, err := uuid.Parse(strings.TrimSpace(chi.URLParam(r, "postID")))
@@ -1507,8 +1487,17 @@ func (s *Server) handleFederationEventInbound(w http.ResponseWriter, r *http.Req
 			}
 			break
 		}
-		// For now, federated incoming posts only sync like_count.
-		// Reaction aggregation for federated incoming posts can be added later.
+		// Local post does not exist here: mirror remote reactions onto federation_incoming_posts (same as like_count path).
+		actorID := strings.TrimSpace(ev.Author.Acct)
+		if _, err := s.db.ApplyRemoteReactionToFederatedIncomingByObjectIRI(r.Context(), objectID, actorID, actorID, emoji, added); err != nil {
+			if errors.Is(err, repo.ErrInvalidReactionEmoji) {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_event"})
+				return
+			}
+			writeServerError(w, "ApplyRemoteReactionToFederatedIncomingByObjectIRI", err)
+			return
+		}
+		s.publishFederatedIncomingUpsertByObjectIRI(r.Context(), objectID)
 	case "poll_voted":
 		if !hasPost {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_event"})

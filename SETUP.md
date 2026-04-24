@@ -189,7 +189,7 @@ These are disabled unless configured:
 
 | Feature | Environment Variables |
 |---------|----------------------|
-| **SkyWay (calls)** | `SKYWAY_APP_ID`, `SKYWAY_SECRET_KEY` |
+| **TURN (calls)** | `TURN_HOST`, `TURN_SHARED_SECRET` |
 | **Web Push** | `WEB_PUSH_VAPID_*` |
 | **Federation** | `GLIPZ_PROTOCOL_*` |
 

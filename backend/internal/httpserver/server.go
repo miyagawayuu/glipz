@@ -131,6 +131,7 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c *s3client
 		r.Get("/public/federation/custom-emoji", s.handlePublicFederationCustomEmojiResolve)
 		r.Get("/media/object/*", s.handlePublicMediaObject)
 		r.Head("/media/object/*", s.handlePublicMediaObject)
+		r.Get("/fanclub/patreon/callback", s.handlePatreonCallback)
 
 		// Optional login: attach the viewer context when a valid token is present, otherwise keep the request anonymous.
 		r.With(s.optionalAccessMiddleware).Group(func(r chi.Router) {
@@ -174,6 +175,11 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c *s3client
 		})
 		r.Group(func(r chi.Router) {
 			r.Use(s.authMiddleware(authjwt.PurposeAccess))
+			r.Get("/fanclub/patreon/authorize", s.handlePatreonAuthorize)
+			r.Get("/fanclub/patreon/status", s.handlePatreonStatus)
+			r.Delete("/fanclub/patreon/connection", s.handlePatreonDeleteConnection)
+			r.Post("/fanclub/patreon/entitlement", s.handlePatreonEntitlement)
+			r.Get("/fanclub/patreon/campaigns", s.handlePatreonCampaigns)
 			r.Get("/me", s.handleMe)
 			r.Get("/me/custom-emojis", s.handleMeListCustomEmojis)
 			r.Post("/me/custom-emojis", s.handleMeCreateCustomEmoji)
@@ -201,6 +207,7 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c *s3client
 			r.Post("/dm/threads/{threadID}/call-cancel", s.handleCancelDMCall)
 			r.Post("/dm/threads/{threadID}/call-end", s.handleEndDMCall)
 			r.Post("/dm/threads/{threadID}/call-missed", s.handleMissedDMCall)
+			r.Get("/dm/calls/{callID}/signaling", s.handleDMCallSignalingWS)
 			r.Post("/auth/mfa/setup", s.handleMFASetup)
 			r.Post("/auth/mfa/enable", s.handleMFAEnable)
 			r.Post("/media/presign", s.handlePresign)
@@ -862,6 +869,12 @@ type createPostPollReq struct {
 	EndsAt  string   `json:"ends_at"`
 }
 
+type createPostMembership struct {
+	Provider  string `json:"provider"`
+	CreatorID string `json:"creator_id"`
+	TierID    string `json:"tier_id"`
+}
+
 type createPostReq struct {
 	Caption                string                      `json:"caption"`
 	MediaType              string                      `json:"media_type"`
@@ -877,6 +890,13 @@ type createPostReq struct {
 	ViewPasswordTextRanges []viewPasswordTextRangeJSON `json:"view_password_text_ranges"`
 	VisibleAt              string                      `json:"visible_at"`
 	Poll                   *createPostPollReq          `json:"poll"`
+	Membership             *createPostMembership       `json:"membership,omitempty"`
+}
+
+type patchPostMembership struct {
+	Provider  string `json:"provider"`
+	CreatorID string `json:"creator_id"`
+	TierID    string `json:"tier_id"`
 }
 
 type patchPostReq struct {
@@ -887,6 +907,8 @@ type patchPostReq struct {
 	ViewPassword           *string                     `json:"view_password"`
 	ViewPasswordScope      int                         `json:"view_password_scope"`
 	ViewPasswordTextRanges []viewPasswordTextRangeJSON `json:"view_password_text_ranges"`
+	Membership             *patchPostMembership        `json:"membership,omitempty"`
+	ClearMembership        bool                        `json:"clear_membership"`
 }
 
 func normalizeObjectKeys(req createPostReq) []string {
@@ -1108,7 +1130,27 @@ func (s *Server) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 		visibility = repo.PostVisibilityPublic
 	}
 
-	id, err := s.db.CreatePost(r.Context(), uid, req.Caption, mt, keys, replyTo, replyToRemoteObjectIRI, req.IsNSFW, visibility, viewHash, viewScope, viewRanges, visibleAt, pollIn)
+	mProv, mCre, mTier := "", "", ""
+	if req.Membership != nil {
+		p, c, t, err := repo.NormalizePostMembership(req.Membership.Provider, req.Membership.CreatorID, req.Membership.TierID)
+		if err != nil {
+			if errors.Is(err, repo.ErrInvalidMembership) {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_membership"})
+			} else {
+				writeServerError(w, "NormalizePostMembership", err)
+			}
+			return
+		}
+		if p != "" {
+			if viewHash != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "membership_with_password"})
+				return
+			}
+			mProv, mCre, mTier = p, c, t
+		}
+	}
+
+	id, err := s.db.CreatePost(r.Context(), uid, req.Caption, mt, keys, replyTo, replyToRemoteObjectIRI, req.IsNSFW, visibility, viewHash, viewScope, viewRanges, visibleAt, pollIn, mProv, mCre, mTier)
 	if err != nil {
 		if errors.Is(err, repo.ErrNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "reply_target_not_found"})
@@ -1273,6 +1315,9 @@ type feedItem struct {
 	Visibility             string                      `json:"visibility"`
 	HasViewPassword        bool                        `json:"has_view_password"`
 	HasMembershipLock      bool                        `json:"has_membership_lock,omitempty"`
+	MembershipProvider     string                      `json:"membership_provider,omitempty"`
+	MembershipCreatorID    string                      `json:"membership_creator_id,omitempty"`
+	MembershipTierID       string                      `json:"membership_tier_id,omitempty"`
 	ViewPasswordScope      int                         `json:"view_password_scope"`
 	ViewPasswordTextRanges []viewPasswordTextRangeJSON `json:"view_password_text_ranges"`
 	ContentLocked          bool                        `json:"content_locked"`
@@ -1383,14 +1428,25 @@ func (s *Server) postRowToFeedItem(ctx context.Context, row repo.PostRow, viewer
 	textLocked := false
 	mediaLocked := false
 	unlocked := row.UserID == viewer
-	if row.HasViewPassword && row.UserID != viewer {
+	if !unlocked {
 		rk := postUnlockRedisKey(viewer, row.ID)
 		n, err := s.rdb.Exists(ctx, rk).Result()
 		if err != nil {
 			log.Printf("redis Exists %s: %v", rk, err)
 			n = 0
 		}
-		if n == 0 {
+		if n > 0 {
+			unlocked = true
+		}
+	}
+	if !unlocked {
+		if row.HasMembershipLock {
+			caption = ""
+			keys = []string{}
+			textLocked = true
+			mediaLocked = true
+			contentLocked = true
+		} else if row.HasViewPassword {
 			if scopeProtectsText(scope) {
 				if scope == repo.ViewPasswordScopeAll {
 					caption = ""
@@ -1404,8 +1460,6 @@ func (s *Server) postRowToFeedItem(ctx context.Context, row repo.PostRow, viewer
 				mediaLocked = true
 			}
 			contentLocked = textLocked || mediaLocked
-		} else {
-			unlocked = true
 		}
 	}
 	urls := make([]string, 0, len(keys))
@@ -1419,8 +1473,20 @@ func (s *Server) postRowToFeedItem(ctx context.Context, row repo.PostRow, viewer
 		}
 	}
 	pollJSON := buildFeedPoll(row.Poll)
-	if row.HasViewPassword && !unlocked && scope == repo.ViewPasswordScopeAll {
-		pollJSON = nil
+	if !unlocked {
+		if row.HasMembershipLock {
+			pollJSON = nil
+		} else if row.HasViewPassword && scope == repo.ViewPasswordScopeAll {
+			pollJSON = nil
+		}
+	}
+	memProvider := row.MembershipProvider
+	memCreator := row.MembershipCreatorID
+	memTier := row.MembershipTierID
+	if viewer != row.UserID {
+		memProvider = ""
+		memCreator = ""
+		memTier = ""
 	}
 	return feedItem{
 		ID:                     row.ID.String(),
@@ -1435,6 +1501,10 @@ func (s *Server) postRowToFeedItem(ctx context.Context, row repo.PostRow, viewer
 		IsNSFW:                 row.IsNSFW,
 		Visibility:             row.Visibility,
 		HasViewPassword:        row.HasViewPassword,
+		HasMembershipLock:      row.HasMembershipLock,
+		MembershipProvider:     memProvider,
+		MembershipCreatorID:    memCreator,
+		MembershipTierID:       memTier,
 		ViewPasswordScope:      scope,
 		ViewPasswordTextRanges: repoRangesToJSON(row.ViewPasswordTextRanges),
 		ContentLocked:          contentLocked,
@@ -1881,12 +1951,44 @@ func (s *Server) handlePostUnlock(w http.ResponseWriter, r *http.Request) {
 		s.writeUnlockedPostJSON(w, row)
 		return
 	}
-	if row.ViewPasswordHash == nil || strings.TrimSpace(*row.ViewPasswordHash) == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no_password"})
+	hasPW := row.ViewPasswordHash != nil && strings.TrimSpace(*row.ViewPasswordHash) != ""
+	hasMem := row.HasMembershipLock
+	if !hasPW && !hasMem {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "not_protected"})
 		return
 	}
-	if err := bcrypt.CompareHashAndPassword([]byte(*row.ViewPasswordHash), []byte(req.Password)); err != nil {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "wrong_password"})
+	u, err := s.db.UserByID(r.Context(), uid)
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+			return
+		}
+		writeServerError(w, "UserByID unlock", err)
+		return
+	}
+	viewerAcct := s.localFullAcct(u.Handle)
+	pass := strings.TrimSpace(req.Password)
+	ent := strings.TrimSpace(req.EntitlementJWT)
+	if hasPW && pass != "" {
+		if err := bcrypt.CompareHashAndPassword([]byte(*row.ViewPasswordHash), []byte(req.Password)); err != nil {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "wrong_password"})
+			return
+		}
+	} else if hasMem && ent != "" {
+		if err := s.verifyFederationEntitlementJWT(ent, viewerAcct, row, postID); err != nil {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_entitlement"})
+			return
+		}
+	} else {
+		if hasPW {
+			if hasMem {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_unlock"})
+			} else {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no_password"})
+			}
+			return
+		}
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_unlock"})
 		return
 	}
 	rk := postUnlockRedisKey(uid, postID)
@@ -1972,7 +2074,39 @@ func (s *Server) handlePatchPost(w http.ResponseWriter, r *http.Request) {
 			newPW = &t
 		}
 	}
-	err = s.db.UpdatePost(r.Context(), uid, postID, req.Caption, req.IsNSFW, req.Visibility, req.ClearViewPassword, newPW, req.ViewPasswordScope, viewRanges)
+	if req.ClearMembership && req.Membership != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "membership_conflict"})
+		return
+	}
+	var memUpdate *repo.PostMembershipUpdate
+	if req.ClearMembership {
+		memUpdate = &repo.PostMembershipUpdate{}
+	} else if req.Membership != nil {
+		p, c, t, nerr := repo.NormalizePostMembership(req.Membership.Provider, req.Membership.CreatorID, req.Membership.TierID)
+		if nerr != nil {
+			if errors.Is(nerr, repo.ErrInvalidMembership) {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_membership"})
+			} else {
+				writeServerError(w, "NormalizePostMembership", nerr)
+			}
+			return
+		}
+		memUpdate = &repo.PostMembershipUpdate{Provider: p, CreatorID: c, TierID: t}
+		if p != "" {
+			req.ClearViewPassword = true
+			newPW = nil
+		}
+	}
+	if newPW != nil && memUpdate != nil {
+		np := strings.TrimSpace(*newPW)
+		if np != "" {
+			if strings.TrimSpace(memUpdate.Provider) != "" {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "membership_with_password"})
+				return
+			}
+		}
+	}
+	err = s.db.UpdatePost(r.Context(), uid, postID, req.Caption, req.IsNSFW, req.Visibility, req.ClearViewPassword, newPW, req.ViewPasswordScope, viewRanges, memUpdate)
 	if err != nil {
 		if errors.Is(err, repo.ErrForbidden) {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})

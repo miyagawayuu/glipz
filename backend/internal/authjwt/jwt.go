@@ -10,6 +10,7 @@ import (
 
 const PurposeAccess = "access"
 const PurposeMFA = "mfa"
+const PurposeDMCallWS = "dm_call_ws"
 
 type Claims struct {
 	Purpose string `json:"purpose"`
@@ -33,6 +34,19 @@ func SignMFA(secret []byte, userID uuid.UUID, ttl time.Duration) (string, error)
 	now := time.Now()
 	t := jwt.NewWithClaims(jwt.SigningMethodHS256, Claims{
 		Purpose: PurposeMFA,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   userID.String(),
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
+		},
+	})
+	return t.SignedString(secret)
+}
+
+func SignDMCallWS(secret []byte, userID uuid.UUID, ttl time.Duration) (string, error) {
+	now := time.Now()
+	t := jwt.NewWithClaims(jwt.SigningMethodHS256, Claims{
+		Purpose: PurposeDMCallWS,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   userID.String(),
 			IssuedAt:  jwt.NewNumericDate(now),

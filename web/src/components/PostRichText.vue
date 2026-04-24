@@ -10,7 +10,44 @@ import { extractPreviewUrls, parseRichText } from "../lib/richText";
 import { extractVideoEmbeds } from "../lib/videoEmbed";
 
 const { t } = useI18n();
-const maskPlaceholder = computed(() => t("components.postRichText.masked"));
+
+// backend/internal/httpserver/view_password.go maskedCaptionPlaceholder — must not depend on UI locale
+const VIEW_PASSWORD_MASK_PATTERNS = [
+  " [閲覧パスワード保護] ",
+  "[閲覧パスワード保護]",
+  " [Protected by view password] ",
+  "[Protected by view password]",
+] as const;
+
+function firstViewPasswordMask(s: string): { index: number; len: number } | null {
+  let best: { index: number; len: number } | null = null;
+  for (const p of VIEW_PASSWORD_MASK_PATTERNS) {
+    const i = s.indexOf(p);
+    if (i < 0) continue;
+    if (!best || i < best.index || (i === best.index && p.length > best.len)) {
+      best = { index: i, len: p.length };
+    }
+  }
+  return best;
+}
+
+function hasViewPasswordMask(s: string): boolean {
+  return VIEW_PASSWORD_MASK_PATTERNS.some((p) => s.includes(p));
+}
+
+function splitTextViewPasswordMasks(s: string, maskSrLabel: string): DisplaySegment[] {
+  const m = firstViewPasswordMask(s);
+  if (!m) {
+    return s ? [{ type: "text", value: s }] : [];
+  }
+  const out: DisplaySegment[] = [];
+  if (m.index > 0) {
+    out.push({ type: "text", value: s.slice(0, m.index) });
+  }
+  out.push({ type: "mask", value: maskSrLabel });
+  out.push(...splitTextViewPasswordMasks(s.slice(m.index + m.len), maskSrLabel));
+  return out;
+}
 
 const props = withDefaults(
   defineProps<{
@@ -29,21 +66,16 @@ type DisplaySegment =
   | { type: "emoji_shortcode"; value: string }
   | { type: "mask"; value: string };
 
-const lines = computed(() =>
-  parseRichText(props.text ?? "").map((line) => ({
+const lines = computed(() => {
+  const maskSr = t("components.postRichText.masked");
+  return parseRichText(props.text ?? "").map((line) => ({
     ...line,
     segments: line.segments.flatMap((segment): DisplaySegment[] => {
-      if (segment.type !== "text" || !segment.value.includes(maskPlaceholder.value)) return [segment];
-      const chunks = segment.value.split(maskPlaceholder.value);
-      const out: DisplaySegment[] = [];
-      chunks.forEach((chunk, idx) => {
-        if (chunk) out.push({ type: "text", value: chunk });
-        if (idx < chunks.length - 1) out.push({ type: "mask", value: maskPlaceholder.value });
-      });
-      return out;
+      if (segment.type !== "text" || !hasViewPasswordMask(segment.value)) return [segment];
+      return splitTextViewPasswordMasks(segment.value, maskSr);
     }),
-  })),
-);
+  }));
+});
 const previewUrls = computed(() => extractPreviewUrls(props.text ?? ""));
 const videoEmbeds = computed(() =>
   props.cardLimit > 0 ? extractVideoEmbeds(previewUrls.value).slice(0, props.cardLimit) : [],

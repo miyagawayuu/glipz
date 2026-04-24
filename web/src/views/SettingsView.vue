@@ -4,6 +4,7 @@ import { computed, inject, onActivated, onMounted, provide, ref } from "vue";
 import { RouterLink } from "vue-router";
 import { useI18n } from "vue-i18n";
 import DMSettingsPanel from "../components/DMSettingsPanel.vue";
+import FanclubPatreonSettings from "../components/FanclubPatreonSettings.vue";
 import Icon from "../components/Icon.vue";
 import SecuritySettingsPanel from "../components/SecuritySettingsPanel.vue";
 import { securitySettingsKey, useSecuritySettings } from "../composables/useSecuritySettings";
@@ -122,6 +123,13 @@ onActivated(syncThemeFromStorage);
             <Icon name="chevronDown" class="h-4 w-4 shrink-0 -rotate-90 text-neutral-400" decorative />
           </RouterLink>
         </div>
+      </section>
+
+      <section>
+        <h2 class="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+          {{ $t("views.settings.sections.fanclub") }}
+        </h2>
+        <FanclubPatreonSettings />
       </section>
 
       <section>

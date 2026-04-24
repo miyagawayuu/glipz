@@ -22,8 +22,6 @@
     "@capacitor/core": "^7.6.2",
     "@capacitor/ios": "^7.6.2",
     "@scalar/api-reference": "^1.52.5",
-    "@skyway-sdk/core": "^2.4.3",
-    "@skyway-sdk/room": "^2.4.3",
     "@tiptap/extension-image": "^3.22.3",
     "@tiptap/extension-link": "^3.22.3",
     "@tiptap/extension-placeholder": "^3.22.3",

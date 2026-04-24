@@ -866,7 +866,7 @@ func (p *Pool) PostExists(ctx context.Context, id uuid.UUID) (bool, error) {
 	return ok, nil
 }
 
-func (p *Pool) CreatePost(ctx context.Context, userID uuid.UUID, caption, mediaType string, objectKeys []string, replyTo *uuid.UUID, replyToRemoteObjectIRI string, isNSFW bool, visibility string, viewPasswordHash *string, viewPasswordScope int, viewPasswordTextRanges []ViewPasswordTextRange, visibleAt time.Time, pollIn *PollCreateInput) (uuid.UUID, error) {
+func (p *Pool) CreatePost(ctx context.Context, userID uuid.UUID, caption, mediaType string, objectKeys []string, replyTo *uuid.UUID, replyToRemoteObjectIRI string, isNSFW bool, visibility string, viewPasswordHash *string, viewPasswordScope int, viewPasswordTextRanges []ViewPasswordTextRange, visibleAt time.Time, pollIn *PollCreateInput, membershipProvider, membershipCreatorID, membershipTierID string) (uuid.UUID, error) {
 	if objectKeys == nil {
 		objectKeys = []string{}
 	}
@@ -929,10 +929,11 @@ func (p *Pool) CreatePost(ctx context.Context, userID uuid.UUID, caption, mediaT
 	err = tx.QueryRow(ctx, `
 		INSERT INTO posts (
 			user_id, caption, media_type, object_keys, reply_to_id, reply_to_remote_object_iri,
-			is_nsfw, visibility, view_password_hash, view_password_scope, view_password_text_ranges, visible_at, feed_broadcast_done, group_id
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13, NULL)
+			is_nsfw, visibility, view_password_hash, view_password_scope, view_password_text_ranges, visible_at, feed_broadcast_done, group_id,
+			membership_provider, membership_creator_id, membership_tier_id
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13, NULL, $14, $15, $16)
 		RETURNING id
-	`, userID, caption, mediaType, objectKeys, replyTo, replyToRemoteObjectIRI, isNSFW, visibility, viewPasswordHash, scope, rangesJSON, visibleAt.UTC(), feedDone).Scan(&id)
+	`, userID, caption, mediaType, objectKeys, replyTo, replyToRemoteObjectIRI, isNSFW, visibility, viewPasswordHash, scope, rangesJSON, visibleAt.UTC(), feedDone, membershipProvider, membershipCreatorID, membershipTierID).Scan(&id)
 	if err != nil {
 		return uuid.Nil, err
 	}
@@ -1230,8 +1231,13 @@ func (p *Pool) ListThreadDescendants(ctx context.Context, viewerID, rootPostID u
 	return out, rows.Err()
 }
 
-// UpdatePost lets only the post owner update caption, NSFW state, visibility, and view-password settings.
-func (p *Pool) UpdatePost(ctx context.Context, ownerID, postID uuid.UUID, caption string, isNSFW bool, visibility string, clearViewPassword bool, newPassword *string, viewPasswordScope int, viewPasswordTextRanges []ViewPasswordTextRange) error {
+// PostMembershipUpdate when non-nil updates membership lock columns; empty strings clear the lock.
+type PostMembershipUpdate struct {
+	Provider, CreatorID, TierID string
+}
+
+// UpdatePost lets only the post owner update caption, NSFW state, visibility, view-password settings, and optional membership lock.
+func (p *Pool) UpdatePost(ctx context.Context, ownerID, postID uuid.UUID, caption string, isNSFW bool, visibility string, clearViewPassword bool, newPassword *string, viewPasswordScope int, viewPasswordTextRanges []ViewPasswordTextRange, memUpdate *PostMembershipUpdate) error {
 	row, err := p.PostSensitiveByID(ctx, postID)
 	if err != nil {
 		return err
@@ -1275,16 +1281,32 @@ func (p *Pool) UpdatePost(ctx context.Context, ownerID, postID uuid.UUID, captio
 		ranges = nil
 	}
 	visibility = normalizePostVisibility(visibility)
+	memProv, memCre, memTier := "", "", ""
+	if memUpdate != nil {
+		memProv = memUpdate.Provider
+		memCre = memUpdate.CreatorID
+		memTier = memUpdate.TierID
+	}
 	tx, err := p.db.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err := tx.Exec(ctx, `
-		UPDATE posts SET caption = $1, is_nsfw = $2, visibility = $3, view_password_hash = $4, view_password_scope = $5, view_password_text_ranges = $6::jsonb
-		WHERE id = $7 AND user_id = $8
-	`, caption, isNSFW, visibility, hash, scope, MarshalViewPasswordTextRanges(ranges), postID, ownerID); err != nil {
-		return err
+	if memUpdate == nil {
+		if _, err := tx.Exec(ctx, `
+			UPDATE posts SET caption = $1, is_nsfw = $2, visibility = $3, view_password_hash = $4, view_password_scope = $5, view_password_text_ranges = $6::jsonb
+			WHERE id = $7 AND user_id = $8
+		`, caption, isNSFW, visibility, hash, scope, MarshalViewPasswordTextRanges(ranges), postID, ownerID); err != nil {
+			return err
+		}
+	} else {
+		if _, err := tx.Exec(ctx, `
+			UPDATE posts SET caption = $1, is_nsfw = $2, visibility = $3, view_password_hash = $4, view_password_scope = $5, view_password_text_ranges = $6::jsonb,
+			membership_provider = $9, membership_creator_id = $10, membership_tier_id = $11
+			WHERE id = $7 AND user_id = $8
+		`, caption, isNSFW, visibility, hash, scope, MarshalViewPasswordTextRanges(ranges), postID, ownerID, memProv, memCre, memTier); err != nil {
+			return err
+		}
 	}
 	if err := syncPostHashtags(ctx, tx, postID, caption); err != nil {
 		return err

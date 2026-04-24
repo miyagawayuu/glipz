@@ -49,4 +49,5 @@ require (
 	golang.org/x/sync v0.10.0 // indirect
 	golang.org/x/sys v0.28.0 // indirect
 	golang.org/x/text v0.21.0 // indirect
+	nhooyr.io/websocket v1.8.17 // indirect
 )

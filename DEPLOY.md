@@ -270,7 +270,7 @@ Run these checks after deployment:
 | Feature | Enable With |
 |---------|-------------|
 | **Federation** | Set `GLIPZ_PROTOCOL_*` variables |
-| **SkyWay Calls** | Set `SKYWAY_*` variables |
+| **TURN Calls** | Set `TURN_HOST`, `TURN_SHARED_SECRET`, `TURN_TTL_SECONDS` |
 | **Web Push** | Set `WEB_PUSH_VAPID_*` variables |
 
 ---

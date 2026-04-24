@@ -80,6 +80,9 @@ function mapFeedItem(x: {
   is_nsfw?: boolean;
   has_view_password?: boolean;
   has_membership_lock?: boolean;
+  membership_provider?: string;
+  membership_creator_id?: string;
+  membership_tier_id?: string;
   view_password_scope?: number;
   view_password_text_ranges?: { start?: number; end?: number }[];
   content_locked?: boolean;
@@ -132,6 +135,9 @@ function mapFeedItem(x: {
     is_nsfw: Boolean(x.is_nsfw),
     has_view_password: Boolean(x.has_view_password),
     has_membership_lock: Boolean(x.has_membership_lock),
+    membership_provider: typeof x.membership_provider === "string" ? x.membership_provider : undefined,
+    membership_creator_id: typeof x.membership_creator_id === "string" ? x.membership_creator_id : undefined,
+    membership_tier_id: typeof x.membership_tier_id === "string" ? x.membership_tier_id : undefined,
     view_password_scope: typeof x.view_password_scope === "number" ? x.view_password_scope : 0,
     view_password_text_ranges: Array.isArray(x.view_password_text_ranges)
       ? x.view_password_text_ranges

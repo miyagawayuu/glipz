@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
+	"glipz.io/backend/internal/authjwt"
 	"glipz.io/backend/internal/repo"
 )
 
@@ -138,7 +139,6 @@ func (s *Server) dmThreadToJSON(row repo.DMThreadSummary, canCall bool, badges [
 		"peer_avatar_url":   dmAvatarURL(s, row.PeerAvatarKey),
 		"peer_algorithm":    row.PeerAlgorithm,
 		"peer_public_jwk":   decodeJSONValue(row.PeerPublicJWK),
-		"skyway_room_name":  row.SkyWayRoomName,
 		"unread_count":      row.UnreadCount,
 		"created_at":        row.CreatedAt.UTC().Format(time.RFC3339),
 		"updated_at":        row.UpdatedAt.UTC().Format(time.RFC3339),
@@ -725,8 +725,8 @@ func (s *Server) handleIssueDMCallToken(w http.ResponseWriter, r *http.Request) 
 		writeServerError(w, "DMThreadByIDForUser", err)
 		return
 	}
-	if !s.skywayConfigured() {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "skyway_not_configured"})
+	if !s.turnConfigured() {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "turn_not_configured"})
 		return
 	}
 	allowedOutgoing, err := s.canReceiveDMCall(r.Context(), uid, thread.PeerID)
@@ -743,16 +743,36 @@ func (s *Server) handleIssueDMCallToken(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "dm_call_not_allowed"})
 		return
 	}
-	memberName := "dm-" + shortRandomSuffix()
-	token, err := s.issueSkyWayRoomToken(thread.SkyWayRoomName, memberName, true, true, true)
+	mode := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("mode")))
+	if mode == "" {
+		mode = "audio"
+	}
+	if mode != "audio" && mode != "video" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_mode"})
+		return
+	}
+	sess, role, err := s.getOrCreateCallSession(r.Context(), threadID, uid, thread.PeerID, mode)
 	if err != nil {
-		writeServerError(w, "issue dm skyway token", err)
+		writeServerError(w, "getOrCreateCallSession", err)
+		return
+	}
+	now := time.Now().UTC()
+	iceServers := s.dmCallIceServers(sess.CallID, now)
+	wsTok, err := authjwt.SignDMCallWS(s.secret, uid, time.Until(sess.ExpiresAt))
+	if err != nil {
+		writeServerError(w, "SignDMCallWS", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"token":       token,
-		"member_name": memberName,
-		"room_name":   thread.SkyWayRoomName,
+		"call_id":        sess.CallID,
+		"role":           role,
+		"signaling_url":  "/api/v1/dm/calls/" + sess.CallID + "/signaling",
+		"ws_token":       wsTok,
+		"ice_servers":    iceServers,
+		"expires_at":     sess.ExpiresAt.UTC().Format(time.RFC3339),
+		"thread_id":      threadID.String(),
+		"peer_id":        thread.PeerID.String(),
+		"call_mode":      mode,
 	})
 }
 

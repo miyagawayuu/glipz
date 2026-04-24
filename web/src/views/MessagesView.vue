@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import { LocalVideoStream } from "@skyway-sdk/core";
-import { SkyWayContext, SkyWayRoom, SkyWayStreamFactory } from "@skyway-sdk/room";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
@@ -184,11 +182,10 @@ const outgoingInvitePending = ref(false);
 const micMuted = ref(false);
 const speakerMuted = ref(false);
 
-let callContext: any = null;
-let callRoom: any = null;
-let callMember: any = null;
-let localAudio: any = null;
-let localVideo: any = null;
+let callPC: RTCPeerConnection | null = null;
+let callWS: WebSocket | null = null;
+let localStream: MediaStream | null = null;
+let remoteStream: MediaStream | null = null;
 const outgoingCallTone = createOutgoingCallTone();
 
 const activeThreadTitle = computed(() =>
@@ -834,10 +831,8 @@ function resetCallMedia() {
 }
 
 function applyMicMuteState() {
-  const track = localAudio?.track;
-  if (track && "enabled" in track) {
-    track.enabled = !micMuted.value;
-  }
+  const track = localStream?.getAudioTracks?.()?.[0];
+  if (track) track.enabled = !micMuted.value;
 }
 
 function applySpeakerMuteState() {
@@ -850,69 +845,28 @@ async function disconnectCall() {
   outgoingCallTone.stop();
   resetCallMedia();
   try {
-    if (callMember) await callMember.leave();
+    callWS?.close();
   } catch {
     // ignore
   }
+  callWS = null;
   try {
-    if (callRoom) await callRoom.dispose();
+    callPC?.close();
   } catch {
     // ignore
   }
-  try {
-    localAudio?.release?.();
-  } catch {
-    // ignore
+  callPC = null;
+  if (localStream) {
+    localStream.getTracks().forEach((t) => t.stop());
   }
-  try {
-    localVideo?.release?.();
-  } catch {
-    // ignore
-  }
-  callContext = null;
-  callRoom = null;
-  callMember = null;
-  localAudio = null;
-  localVideo = null;
+  localStream = null;
+  remoteStream = null;
   callConnected.value = false;
   remoteParticipantJoined.value = false;
   outgoingInvitePending.value = false;
   activeCallMode.value = "";
   micMuted.value = false;
   speakerMuted.value = false;
-}
-
-function attachPublication(publication: any) {
-  if (!callMember || attachedPublications.has(publication.id)) return;
-  if (publication.publisher?.id === callMember.id) return;
-  attachedPublications.add(publication.id);
-  remoteParticipantJoined.value = true;
-  outgoingInvitePending.value = false;
-  outgoingCallTone.stop();
-  void (async () => {
-    try {
-      const { stream } = await callMember.subscribe(publication.id);
-      if (stream.track.kind === "video" && remoteVideoEl.value) {
-        stream.attach(remoteVideoEl.value);
-        remoteVideoEl.value.playsInline = true;
-        await remoteVideoEl.value.play().catch(() => undefined);
-        return;
-      }
-      if (stream.track.kind === "audio" && remoteAudioRoot.value) {
-        const audio = document.createElement("audio");
-        audio.autoplay = true;
-        audio.controls = false;
-        audio.className = "hidden";
-        audio.muted = speakerMuted.value;
-        stream.attach(audio);
-        remoteAudioElements.add(audio);
-        remoteAudioRoot.value.appendChild(audio);
-        await audio.play().catch(() => undefined);
-      }
-    } catch (e: unknown) {
-      callError.value = e instanceof Error ? e.message : t("views.messages.errors.callConnectFailed");
-    }
-  })();
 }
 
 async function connectCall(mode: "audio" | "video") {
@@ -925,33 +879,103 @@ async function connectCall(mode: "audio" | "video") {
     if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
       throw new Error("media_devices_unavailable");
     }
-    const auth = await issueDMCallToken(activeThread.value.id);
-    callContext = await SkyWayContext.Create(auth.token);
-    callRoom = await SkyWayRoom.FindOrCreate(callContext, { type: "sfu", name: auth.room_name });
-    callMember = await callRoom.join({ name: auth.member_name });
-    if (mode === "audio") {
-      localAudio = await SkyWayStreamFactory.createMicrophoneAudioStream();
-      applyMicMuteState();
-      await callMember.publish(localAudio, { type: "sfu" });
-    } else {
-      const streams = await SkyWayStreamFactory.createMicrophoneAudioAndCameraStream();
-      localAudio = streams.audio;
-      localVideo = streams.video;
-      applyMicMuteState();
-      if (localVideoEl.value) {
-        localVideo.attach(localVideoEl.value);
-        localVideoEl.value.muted = true;
-        localVideoEl.value.playsInline = true;
-        await localVideoEl.value.play().catch(() => undefined);
+    const auth = await issueDMCallToken(activeThread.value.id, mode);
+
+    const pc = new RTCPeerConnection({ iceServers: auth.ice_servers });
+    callPC = pc;
+    remoteStream = new MediaStream();
+
+    pc.ontrack = (ev) => {
+      remoteParticipantJoined.value = true;
+      outgoingInvitePending.value = false;
+      outgoingCallTone.stop();
+      ev.streams[0]?.getTracks().forEach((t) => remoteStream?.addTrack(t));
+      if (remoteVideoEl.value) {
+        remoteVideoEl.value.srcObject = remoteStream;
+        remoteVideoEl.value.playsInline = true;
+        void remoteVideoEl.value.play().catch(() => undefined);
       }
-      await callMember.publish(localAudio, { type: "sfu" });
-      await callMember.publish(localVideo as LocalVideoStream, { type: "sfu" });
+      if (remoteAudioRoot.value) {
+        const audio = document.createElement("audio");
+        audio.autoplay = true;
+        audio.controls = false;
+        audio.className = "hidden";
+        audio.muted = speakerMuted.value;
+        audio.srcObject = remoteStream;
+        remoteAudioElements.add(audio);
+        remoteAudioRoot.value.appendChild(audio);
+        void audio.play().catch(() => undefined);
+      }
+    };
+
+    pc.onicecandidate = (ev) => {
+      if (!ev.candidate || !callWS) return;
+      callWS.send(JSON.stringify({ type: "ice_candidate", candidate: ev.candidate }));
+    };
+
+    const constraints: MediaStreamConstraints =
+      mode === "audio"
+        ? { audio: true, video: false }
+        : { audio: true, video: { width: { ideal: 1280 }, height: { ideal: 720 } } };
+
+    localStream = await navigator.mediaDevices.getUserMedia(constraints);
+    localStream.getTracks().forEach((t) => pc.addTrack(t, localStream!));
+    applyMicMuteState();
+
+    if (mode === "video" && localVideoEl.value) {
+      localVideoEl.value.srcObject = localStream;
+      localVideoEl.value.muted = true;
+      localVideoEl.value.playsInline = true;
+      await localVideoEl.value.play().catch(() => undefined);
     }
-    callRoom.publications.forEach(attachPublication);
-    callRoom.onStreamPublished.add((event: { publication: any }) => attachPublication(event.publication));
-    callRoom.onStreamUnpublished.add((event: { publication: any }) => {
-      attachedPublications.delete(event.publication.id);
+
+    const wsURL = (() => {
+      const base = new URL(apiBase());
+      base.protocol = base.protocol === "https:" ? "wss:" : "ws:";
+      base.pathname = auth.signaling_url;
+      base.searchParams.set("token", auth.ws_token);
+      return base.toString();
+    })();
+
+    callWS = new WebSocket(wsURL);
+    callWS.onmessage = async (ev) => {
+      const data = String(ev.data ?? "");
+      let msg: any = null;
+      try {
+        msg = JSON.parse(data);
+      } catch {
+        return;
+      }
+      if (!msg?.type) return;
+      if (msg.type === "offer" && msg.sdp && auth.role === "callee") {
+        await pc.setRemoteDescription({ type: "offer", sdp: String(msg.sdp) });
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        callWS?.send(JSON.stringify({ type: "answer", sdp: answer.sdp }));
+      } else if (msg.type === "answer" && msg.sdp && auth.role === "caller") {
+        await pc.setRemoteDescription({ type: "answer", sdp: String(msg.sdp) });
+      } else if (msg.type === "ice_candidate" && msg.candidate) {
+        try {
+          await pc.addIceCandidate(msg.candidate);
+        } catch {}
+      } else if (msg.type === "hangup") {
+        callNotice.value = t("views.messages.callNoticeEnd", { name: activeThreadTitle.value });
+        await disconnectCall();
+      }
+    };
+
+    await new Promise<void>((resolve, reject) => {
+      if (!callWS) return reject(new Error("ws_unavailable"));
+      callWS.onopen = () => resolve();
+      callWS.onerror = () => reject(new Error("ws_connect_failed"));
     });
+
+    if (auth.role === "caller") {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      callWS.send(JSON.stringify({ type: "offer", sdp: offer.sdp }));
+    }
+
     applySpeakerMuteState();
     callConnected.value = true;
   } catch (e: unknown) {
@@ -1014,6 +1038,13 @@ function toggleSpeakerMute() {
 
 async function maybeAutoConnectCall() {
   if (!activeThread.value || !identityUnlocked.value || !requestedCallMode.value || callConnected.value || callBusy.value) return;
+  // Security/UX: for incoming links, show UI only (require explicit accept).
+  if (String(route.query.incoming ?? "").trim() === "1") {
+    const name = activeThreadTitle.value;
+    const callType = requestedCallMode.value === "video" ? t("views.messages.callTypeVideo") : t("views.messages.callTypeAudio");
+    callNotice.value = t("views.messages.callNoticeIncoming", { name, type: callType });
+    return;
+  }
   const mode = requestedCallMode.value as "audio" | "video";
   await connectCall(mode);
   const nextQuery = { ...route.query };

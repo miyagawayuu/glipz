@@ -59,7 +59,10 @@ func (p *Pool) AttachReactionsToPosts(ctx context.Context, viewerID uuid.UUID, r
 			post_id,
 			emoji,
 			COUNT(*)::bigint AS reaction_count,
-			BOOL_OR(CASE WHEN $2::uuid = '00000000-0000-0000-0000-000000000000'::uuid THEN false ELSE user_id = $2 END) AS reacted_by_me
+			BOOL_OR(CASE
+				WHEN $2::uuid = '00000000-0000-0000-0000-000000000000'::uuid THEN false
+				ELSE (user_id IS NOT NULL AND user_id = $2)
+			END) AS reacted_by_me
 		FROM merged_reactions
 		GROUP BY post_id, emoji
 		ORDER BY post_id, reaction_count DESC, emoji ASC

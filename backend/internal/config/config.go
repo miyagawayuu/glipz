@@ -39,11 +39,6 @@ type Config struct {
 	GlipzVersion string
 	// Optional short federation policy summary exposed in nodeinfo.metadata.
 	FederationPolicySummary string
-	// Comma-separated hosts allowed to request paid unlocks over federation (viewer_attests).
-	// When empty, paid unlock inbound rejects by default unless GlipzFederationPaidUnlockAllowAll is true.
-	GlipzFederationPaidUnlockTrustedInstances []string
-	// When true, paid unlock inbound accepts any instance (PoC only).
-	GlipzFederationPaidUnlockAllowAll bool
 	// Comma-separated site admin user IDs. Admin federation APIs stay unavailable when empty.
 	AdminUserIDs []uuid.UUID
 	// Time-to-live for email verification links.
@@ -53,11 +48,21 @@ type Config struct {
 	MailgunAPIBase         string
 	MailFromEmail          string
 	MailFromName           string
-	SkyWayAppID            string
-	SkyWaySecretKey        string
+	// TURN (coturn shared-secret / time-limited credentials).
+	// When set, DM calls can use TURN.
+	TurnHost         string
+	TurnPort         int
+	TurnsPort        int
+	TurnSharedSecret string
+	TurnTTLSeconds   int
 	WebPushVAPIDPublicKey  string
 	WebPushVAPIDPrivateKey string
 	WebPushVAPIDSubject    string
+	// Patreon (fan club). Optional. When PatreonClientID is empty, Patreon API routes are unavailable.
+	PatreonClientID     string
+	PatreonClientSecret string
+	// Optional override. Default: {GLIPZ_PROTOCOL_PUBLIC_ORIGIN}/api/v1/fanclub/patreon/callback
+	PatreonRedirectURI string
 }
 
 func Load() (Config, error) {
@@ -142,15 +147,6 @@ func Load() (Config, error) {
 		c.GlipzVersion = "dev"
 	}
 	c.FederationPolicySummary = strings.TrimSpace(os.Getenv("FEDERATION_POLICY_SUMMARY"))
-	c.GlipzFederationPaidUnlockAllowAll = strings.EqualFold(strings.TrimSpace(os.Getenv("GLIPZ_FEDERATION_PAID_UNLOCK_ALLOW_ALL")), "true") ||
-		strings.TrimSpace(os.Getenv("GLIPZ_FEDERATION_PAID_UNLOCK_ALLOW_ALL")) == "1"
-	for _, part := range strings.Split(os.Getenv("GLIPZ_FEDERATION_PAID_UNLOCK_TRUSTED_INSTANCES"), ",") {
-		h := strings.TrimSpace(strings.ToLower(part))
-		if h == "" {
-			continue
-		}
-		c.GlipzFederationPaidUnlockTrustedInstances = append(c.GlipzFederationPaidUnlockTrustedInstances, h)
-	}
 	c.RegistrationVerifyTTL = 30 * time.Minute
 	if ttlRaw := strings.TrimSpace(os.Getenv("REGISTRATION_VERIFY_TTL")); ttlRaw != "" {
 		ttl, err := time.ParseDuration(ttlRaw)
@@ -164,11 +160,32 @@ func Load() (Config, error) {
 	c.MailgunAPIBase = strings.TrimSpace(os.Getenv("MAILGUN_API_BASE"))
 	c.MailFromEmail = strings.TrimSpace(os.Getenv("MAIL_FROM_EMAIL"))
 	c.MailFromName = strings.TrimSpace(os.Getenv("MAIL_FROM_NAME"))
-	c.SkyWayAppID = strings.TrimSpace(os.Getenv("SKYWAY_APP_ID"))
-	c.SkyWaySecretKey = strings.TrimSpace(os.Getenv("SKYWAY_SECRET_KEY"))
+	c.TurnHost = strings.TrimSpace(os.Getenv("TURN_HOST"))
+	c.TurnPort = 3478
+	if raw := strings.TrimSpace(os.Getenv("TURN_PORT")); raw != "" {
+		if v, err := strconv.Atoi(raw); err == nil && v > 0 && v <= 65535 {
+			c.TurnPort = v
+		}
+	}
+	c.TurnsPort = 443
+	if raw := strings.TrimSpace(os.Getenv("TURNS_PORT")); raw != "" {
+		if v, err := strconv.Atoi(raw); err == nil && v > 0 && v <= 65535 {
+			c.TurnsPort = v
+		}
+	}
+	c.TurnSharedSecret = strings.TrimSpace(os.Getenv("TURN_SHARED_SECRET"))
+	c.TurnTTLSeconds = 600
+	if raw := strings.TrimSpace(os.Getenv("TURN_TTL_SECONDS")); raw != "" {
+		if v, err := strconv.Atoi(raw); err == nil && v > 0 {
+			c.TurnTTLSeconds = v
+		}
+	}
 	c.WebPushVAPIDPublicKey = strings.TrimSpace(os.Getenv("WEB_PUSH_VAPID_PUBLIC_KEY"))
 	c.WebPushVAPIDPrivateKey = strings.TrimSpace(os.Getenv("WEB_PUSH_VAPID_PRIVATE_KEY"))
 	c.WebPushVAPIDSubject = strings.TrimSpace(os.Getenv("WEB_PUSH_VAPID_SUBJECT"))
+	c.PatreonClientID = strings.TrimSpace(os.Getenv("PATREON_CLIENT_ID"))
+	c.PatreonClientSecret = strings.TrimSpace(os.Getenv("PATREON_CLIENT_SECRET"))
+	c.PatreonRedirectURI = strings.TrimSpace(os.Getenv("PATREON_REDIRECT_URI"))
 	for _, part := range strings.Split(os.Getenv("GLIPZ_ADMIN_USER_IDS"), ",") {
 		p := strings.TrimSpace(part)
 		if p == "" {

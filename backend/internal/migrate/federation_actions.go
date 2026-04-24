@@ -81,6 +81,16 @@ func RunFederationActions(ctx context.Context, pool *pgxpool.Pool) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_federation_incoming_post_reactions_post
 			ON federation_incoming_post_reactions (federation_incoming_post_id)`,
+		`CREATE TABLE IF NOT EXISTS federation_incoming_post_remote_reactions (
+			federation_incoming_post_id UUID NOT NULL REFERENCES federation_incoming_posts (id) ON DELETE CASCADE,
+			remote_actor_id TEXT NOT NULL,
+			remote_actor_acct TEXT NOT NULL DEFAULT '',
+			emoji TEXT NOT NULL DEFAULT '',
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			PRIMARY KEY (federation_incoming_post_id, remote_actor_id, emoji)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_federation_incoming_post_remote_reactions_post
+			ON federation_incoming_post_remote_reactions (federation_incoming_post_id)`,
 		`CREATE TABLE IF NOT EXISTS federation_incoming_post_polls (
 			federation_incoming_post_id UUID PRIMARY KEY REFERENCES federation_incoming_posts (id) ON DELETE CASCADE,
 			ends_at TIMESTAMPTZ NOT NULL

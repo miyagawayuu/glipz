@@ -23,7 +23,6 @@ export type DMThread = {
   peer_avatar_url: string | null;
   peer_algorithm: string;
   peer_public_jwk: JsonWebKey | null;
-  skyway_room_name: string;
   unread_count: number;
   can_call?: boolean;
   last_message_at?: string | null;
@@ -56,9 +55,22 @@ export type DMMessage = {
 };
 
 export type DMCallToken = {
-  token: string;
-  member_name: string;
-  room_name: string;
+  call_id: string;
+  role: "caller" | "callee";
+  signaling_url: string;
+  ws_token: string;
+  ice_servers: RTCIceServer[];
+  expires_at: string;
+  thread_id: string;
+  peer_id: string;
+  call_mode: "audio" | "video";
+};
+
+export type RTCIceServer = {
+  urls: string | string[];
+  username?: string;
+  credential?: string;
+  credentialType?: "password" | "oauth";
 };
 
 export type DMCallEvent = {
@@ -235,10 +247,10 @@ export async function fetchDMUnreadCount(): Promise<number> {
   return Number(res.count) || 0;
 }
 
-export async function issueDMCallToken(threadId: string): Promise<DMCallToken> {
+export async function issueDMCallToken(threadId: string, mode: "audio" | "video"): Promise<DMCallToken> {
   const token = getAccessToken();
   if (!token) throw new Error("unauthorized");
-  return api<DMCallToken>(`/api/v1/dm/threads/${encodeURIComponent(threadId)}/call-token`, {
+  return api<DMCallToken>(`/api/v1/dm/threads/${encodeURIComponent(threadId)}/call-token?mode=${encodeURIComponent(mode)}`, {
     method: "POST",
     token,
   });

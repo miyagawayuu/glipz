@@ -52,7 +52,7 @@ This repository contains the official Go implementation of the Glipz Federation 
 
 - End-to-end encrypted identity setup
 - File and media sharing
-- Voice and video calls via SkyWay integration
+- Voice and video calls (P2P WebRTC with TURN)
 
 ### Customization
 
@@ -239,17 +239,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
   -d '{"post_id":"'"$POST_ID"'","viewer_acct":"alice@viewer.example"}'
 ```
 
-To allow paid/membership entitlement issuance over federation, configure either:
-
-```env
-GLIPZ_FEDERATION_PAID_UNLOCK_ALLOW_ALL=true
-```
-
-or a trusted allowlist:
-
-```env
-GLIPZ_FEDERATION_PAID_UNLOCK_TRUSTED_INSTANCES=viewer.example,viewer2.example
-```
+Membership entitlement over Glipz federation (`POST .../federation/posts/{postID}/entitlement`) is allowed for any caller that passes `verifyFederationRequest` (valid instance discovery + signature) and whose `ViewerAcct` host matches `X-Glipz-Instance`.
 
 ---
 
@@ -263,7 +253,7 @@ GLIPZ_FEDERATION_PAID_UNLOCK_TRUSTED_INSTANCES=viewer.example,viewer2.example
 | `S3_*` | S3 storage configuration | Yes |
 | `FRONTEND_ORIGIN` | Frontend URL for CORS | Recommended |
 | `GLIPZ_PROTOCOL_*` | Federation settings | Optional |
-| `SKYWAY_*` | Video calling | Optional |
+| `TURN_*` | Video calling | Optional |
 
 See `.env.example` for all options.
 

@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { useRoute, useRouter } from "vue-router";
+import { RouterLink, useRoute, useRouter } from "vue-router";
 import { getAccessToken } from "../auth";
 import ComposerEmojiPicker from "../components/ComposerEmojiPicker.vue";
 import Icon from "../components/Icon.vue";
 import { api, uploadMediaFile } from "../lib/api";
+import { patreonSettingsPath, usePatreonComposer } from "../composables/usePatreonComposer";
 import { avatarInitials, handleAt } from "../lib/feedDisplay";
 import { parseComposerReplyQuery, type ComposerReplyTarget } from "../lib/postComposer";
 import {
@@ -59,6 +60,25 @@ const scheduleLocal = ref("");
 const composerScheduleOpen = ref(false);
 const composerVisibilityOpen = ref(false);
 
+const {
+  patreonAvailable,
+  patreonConnected,
+  patreonCampaigns,
+  composerMembershipOpen,
+  membershipUsePatreon,
+  membershipCampaignId,
+  membershipTierId,
+  patreonConnectBusy,
+  membershipTierOptions,
+  loadPatreon,
+  resetPatreonComposerState,
+  validateMembershipForSubmit,
+  applyMembershipToBody,
+  connectPatreonOAuth,
+} = usePatreonComposer({ viewPassword, viewPasswordConfirm, composerPasswordOpen });
+
+const patreonSettingsHref = patreonSettingsPath;
+
 function hasComposerContent(): boolean {
   if (selectedImages.value.length > 0) return true;
   if (caption.value.trim().length > 0) return true;
@@ -67,6 +87,14 @@ function hasComposerContent(): boolean {
     if (pollOpts.length >= 2) return true;
   }
   return false;
+}
+
+async function connectPatreonFromCompose() {
+  err.value = "";
+  const r = await connectPatreonOAuth("/compose");
+  if (r.error) {
+    err.value = r.error === "patreon_oauth_failed" ? t("views.compose.errors.postFailed") : r.error;
+  }
 }
 
 async function loadMe() {
@@ -81,6 +109,7 @@ async function loadMe() {
     myHandle.value = typeof u.handle === "string" ? u.handle : null;
     myAvatarUrl.value = u.avatar_url && String(u.avatar_url).trim() !== "" ? String(u.avatar_url) : null;
     composerAvatarImgFailed.value = false;
+    void loadPatreon(token);
   } catch {
     myEmail.value = null;
     myHandle.value = null;
@@ -227,6 +256,7 @@ function resetComposer() {
   scheduleLocal.value = "";
   composerScheduleOpen.value = false;
   composerVisibilityOpen.value = false;
+  resetPatreonComposerState();
 }
 
 async function submitPost() {
@@ -243,6 +273,11 @@ async function submitPost() {
   const pw = viewPassword.value.trim();
   const pw2 = viewPasswordConfirm.value.trim();
   const pwScope = composerViewPasswordScope();
+  const memErr = validateMembershipForSubmit(pw, pw2, t);
+  if (memErr) {
+    err.value = memErr;
+    return;
+  }
   if (pw || pw2) {
     if (pw !== pw2) {
       err.value = t("views.compose.errors.viewPasswordMismatch");
@@ -317,6 +352,7 @@ async function submitPost() {
         body.view_password_text_ranges = composerTextRanges.value;
       }
     }
+    applyMembershipToBody(body);
     if (replyingTo.value) {
       if (replyingTo.value.is_federated) {
         const incomingId = replyingTo.value.id.startsWith("federated:")
@@ -374,6 +410,11 @@ watch(
 
 onMounted(() => {
   void loadMe();
+});
+
+onActivated(() => {
+  const tok = getAccessToken();
+  if (tok) void loadPatreon(tok);
 });
 
 onBeforeUnmount(() => {
@@ -492,6 +533,19 @@ onBeforeUnmount(() => {
               <Icon name="lock" class="h-5 w-5" />
             </button>
             <button
+              v-if="patreonAvailable"
+              type="button"
+              class="rounded-full p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800"
+              :class="(membershipUsePatreon || composerMembershipOpen) && 'bg-sky-50 text-sky-800'"
+              :title="composerMembershipOpen ? $t('views.compose.membershipClose') : $t('views.compose.membershipTitle')"
+              :aria-expanded="composerMembershipOpen"
+              aria-controls="composer-membership-panel"
+              @click="composerMembershipOpen = !composerMembershipOpen"
+            >
+              <span class="sr-only">{{ $t("views.compose.membershipOpen") }}</span>
+              <Icon name="user" class="h-5 w-5" />
+            </button>
+            <button
               type="button"
               class="rounded-full p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800"
               :class="composerPollOpen && 'bg-lime-50 text-lime-800'"
@@ -608,7 +662,7 @@ onBeforeUnmount(() => {
             {{ composerVisibilityMeta(composerVisibility).description }}
           </p>
         </div>
-        <div v-if="composerNsfwOpen || composerPasswordOpen" class="mt-3 space-y-3">
+        <div v-if="composerNsfwOpen || composerPasswordOpen || composerMembershipOpen" class="mt-3 space-y-3">
           <div
             v-if="composerNsfwOpen"
             id="composer-nsfw-panel"
@@ -718,6 +772,88 @@ onBeforeUnmount(() => {
                 </ul>
               </div>
             </div>
+          </div>
+          <div
+            v-if="composerMembershipOpen"
+            id="composer-membership-panel"
+            class="rounded-xl border border-sky-200/90 bg-sky-50/70 px-3 py-3 text-sm"
+          >
+            <p class="text-xs font-medium text-sky-950">{{ $t("views.compose.membershipTitle") }}</p>
+            <p class="mt-1 text-xs text-sky-900/80">{{ $t("views.compose.membershipHint") }}</p>
+            <div v-if="!patreonConnected" class="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+              <button
+                type="button"
+                :disabled="patreonConnectBusy"
+                class="inline-flex w-fit rounded-full bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-700 disabled:opacity-50"
+                @click="connectPatreonFromCompose"
+              >
+                {{
+                  patreonConnectBusy
+                    ? $t("views.settings.fanclubPatreon.connecting")
+                    : $t("views.settings.fanclubPatreon.connect")
+                }}
+              </button>
+              <RouterLink :to="patreonSettingsHref" class="text-xs font-medium text-sky-800 underline">{{
+                $t("views.compose.membershipGoSettings")
+              }}</RouterLink>
+            </div>
+            <template v-else>
+              <label class="mt-3 flex cursor-pointer items-center gap-2 text-sm text-sky-950">
+                <input v-model="membershipUsePatreon" type="checkbox" class="h-4 w-4 rounded border-sky-300 text-sky-600" />
+                <span>{{ $t("views.compose.membershipOpen") }}</span>
+              </label>
+              <div v-if="membershipUsePatreon" class="mt-3 space-y-2">
+                <div v-if="patreonCampaigns.length" class="grid gap-2 sm:grid-cols-2">
+                  <div>
+                    <label class="mb-0.5 block text-xs text-sky-900/80" for="mem-camp">{{ $t("views.compose.membershipPickCampaign") }}</label>
+                    <select
+                      id="mem-camp"
+                      v-model="membershipCampaignId"
+                      class="w-full rounded-xl border border-sky-200 bg-white px-2 py-2 text-sm text-neutral-900"
+                    >
+                      <option value="">{{ "—" }}</option>
+                      <option v-for="c in patreonCampaigns" :key="c.id" :value="c.id">{{ c.title || c.id }}</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="mb-0.5 block text-xs text-sky-900/80" for="mem-tier">{{ $t("views.compose.membershipPickTier") }}</label>
+                    <select
+                      id="mem-tier"
+                      v-model="membershipTierId"
+                      :disabled="!membershipCampaignId"
+                      class="w-full rounded-xl border border-sky-200 bg-white px-2 py-2 text-sm text-neutral-900 disabled:opacity-50"
+                    >
+                      <option value="">{{ "—" }}</option>
+                      <option v-for="tier in membershipTierOptions" :key="tier.id" :value="tier.id">{{
+                        tier.name || tier.id
+                      }}</option>
+                    </select>
+                  </div>
+                </div>
+                <div v-else class="grid gap-2 sm:grid-cols-2">
+                  <div>
+                    <label class="mb-0.5 block text-xs text-sky-900/80" for="mem-cid">{{ $t("views.compose.membershipCampaign") }}</label>
+                    <input
+                      id="mem-cid"
+                      v-model="membershipCampaignId"
+                      type="text"
+                      autocomplete="off"
+                      class="w-full rounded-xl border border-sky-200 bg-white px-2 py-2 text-sm text-neutral-900"
+                    />
+                  </div>
+                  <div>
+                    <label class="mb-0.5 block text-xs text-sky-900/80" for="mem-tid">{{ $t("views.compose.membershipTier") }}</label>
+                    <input
+                      id="mem-tid"
+                      v-model="membershipTierId"
+                      type="text"
+                      autocomplete="off"
+                      class="w-full rounded-xl border border-sky-200 bg-white px-2 py-2 text-sm text-neutral-900"
+                    />
+                  </div>
+                </div>
+              </div>
+            </template>
           </div>
         </div>
         <div

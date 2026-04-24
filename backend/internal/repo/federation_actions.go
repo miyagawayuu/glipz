@@ -108,6 +108,51 @@ func (p *Pool) ApplyRemoteReactionToLocalPost(ctx context.Context, postID uuid.U
 	return tag.RowsAffected() > 0, nil
 }
 
+// ApplyRemoteReactionToFederatedIncomingByObjectIRI records or removes a remote actor's reaction
+// on a post cached as federation_incoming_posts. It returns (false, nil) when no row matches objectIRI.
+func (p *Pool) ApplyRemoteReactionToFederatedIncomingByObjectIRI(ctx context.Context, objectIRI, remoteActorID, remoteActorAcct, emoji string, added bool) (bool, error) {
+	objectIRI = strings.TrimSpace(objectIRI)
+	remoteActorID = strings.TrimSpace(remoteActorID)
+	remoteActorAcct = strings.TrimSpace(remoteActorAcct)
+	if objectIRI == "" || remoteActorID == "" {
+		return false, nil
+	}
+	normalized, valid := NormalizePostReactionEmoji(emoji)
+	if !valid {
+		return false, ErrInvalidReactionEmoji
+	}
+	var incomingID uuid.UUID
+	err := p.db.QueryRow(ctx, `
+		SELECT id FROM federation_incoming_posts
+		WHERE deleted_at IS NULL AND object_iri = $1
+	`, objectIRI).Scan(&incomingID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	if added {
+		tag, err := p.db.Exec(ctx, `
+			INSERT INTO federation_incoming_post_remote_reactions (federation_incoming_post_id, remote_actor_id, remote_actor_acct, emoji)
+			VALUES ($1, $2, $3, $4)
+			ON CONFLICT (federation_incoming_post_id, remote_actor_id, emoji) DO NOTHING
+		`, incomingID, remoteActorID, remoteActorAcct, normalized)
+		if err != nil {
+			return false, err
+		}
+		return tag.RowsAffected() > 0, nil
+	}
+	tag, err := p.db.Exec(ctx, `
+		DELETE FROM federation_incoming_post_remote_reactions
+		WHERE federation_incoming_post_id = $1 AND remote_actor_id = $2 AND emoji = $3
+	`, incomingID, remoteActorID, normalized)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
 func (p *Pool) ApplyRemotePollVoteToLocalPost(ctx context.Context, postID uuid.UUID, remoteActorID, remoteActorAcct string, optionPosition int) (bool, error) {
 	remoteActorID = strings.TrimSpace(remoteActorID)
 	remoteActorAcct = strings.TrimSpace(remoteActorAcct)
@@ -386,13 +431,24 @@ func (p *Pool) AttachReactionsToFederatedIncoming(ctx context.Context, viewerID 
 	}
 	reactionsByPost := make(map[uuid.UUID][]PostReaction, len(ids))
 	rowsDB, err := p.db.Query(ctx, `
+		WITH merged_reactions AS (
+			SELECT user_id, federation_incoming_post_id, emoji
+			FROM federation_incoming_post_reactions
+			WHERE federation_incoming_post_id = ANY($1::uuid[])
+			UNION ALL
+			SELECT NULL::uuid AS user_id, federation_incoming_post_id, emoji
+			FROM federation_incoming_post_remote_reactions
+			WHERE federation_incoming_post_id = ANY($1::uuid[])
+		)
 		SELECT
 			federation_incoming_post_id,
 			emoji,
 			COUNT(*)::bigint AS reaction_count,
-			BOOL_OR(CASE WHEN $2::uuid = '00000000-0000-0000-0000-000000000000'::uuid THEN false ELSE user_id = $2 END) AS reacted_by_me
-		FROM federation_incoming_post_reactions
-		WHERE federation_incoming_post_id = ANY($1::uuid[])
+			BOOL_OR(CASE
+				WHEN $2::uuid = '00000000-0000-0000-0000-000000000000'::uuid THEN false
+				ELSE (user_id IS NOT NULL AND user_id = $2)
+			END) AS reacted_by_me
+		FROM merged_reactions
 		GROUP BY federation_incoming_post_id, emoji
 		ORDER BY federation_incoming_post_id, reaction_count DESC, emoji ASC
 	`, ids, viewerID)
