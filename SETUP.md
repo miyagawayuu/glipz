@@ -189,7 +189,7 @@ These are disabled unless configured:
 
 | Feature | Environment Variables |
 |---------|----------------------|
-| **Patreon** | `PATREON_CLIENT_ID`, `PATREON_CLIENT_SECRET` |
+| **Patreon (fan club integration)** | `PATREON_CLIENT_ID`, `PATREON_CLIENT_SECRET` |
 | **SkyWay (calls)** | `SKYWAY_APP_ID`, `SKYWAY_SECRET_KEY` |
 | **Web Push** | `WEB_PUSH_VAPID_*` |
 | **Federation** | `GLIPZ_PROTOCOL_*` |

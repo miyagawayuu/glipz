@@ -22,7 +22,7 @@ This repository contains the official Go implementation of the Glipz Federation 
 ### Who is Glipz for?
 
 - **Community builders** who want a private, customizable social space
-- **Creators** who want to monetize content with Patreon integration
+- **Creators** who want to monetize content with fan club integrations (e.g. Patreon)
 - **Developers** who need a flexible API for building custom frontends
 - **Self-hosters** who prefer running their own infrastructure
 
@@ -45,7 +45,7 @@ This repository contains the official Go implementation of the Glipz Federation 
 ### Notes (Premium Content)
 
 - Create exclusive content for supporters
-- Patreon-gated access control
+- Supporter-gated access control via external fan club integrations (currently Patreon)
 - Public / follower-only / private visibility
 
 ### Direct Messages
@@ -204,7 +204,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 | `S3_*` | S3 storage configuration | Yes |
 | `FRONTEND_ORIGIN` | Frontend URL for CORS | Recommended |
 | `GLIPZ_PROTOCOL_*` | Federation settings | Optional |
-| `PATREON_*` | Patreon integration | Optional |
+| `PATREON_*` | Fan club integration (Patreon) | Optional |
 | `SKYWAY_*` | Video calling | Optional |
 
 See `.env.example` for all options.
@@ -238,6 +238,9 @@ Set `STATIC_WEB_ROOT=../web/dist` in your environment and restart the backend.
 - Open an issue for bugs or feature requests
 - Check SETUP.md for troubleshooting
 - Review DEPLOY.md for production guidance
+- Fan club integration (dev docs):
+  - Backend: [backend/internal/fanclub/kernel/IMPLEMENTATION_GUIDELINES.md](backend/internal/fanclub/kernel/IMPLEMENTATION_GUIDELINES.md)
+  - Frontend: [web/src/fanclub/FRONTEND_IMPLEMENTATION_GUIDELINES.md](web/src/fanclub/FRONTEND_IMPLEMENTATION_GUIDELINES.md)
 
 ---
 
