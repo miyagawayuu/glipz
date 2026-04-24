@@ -26,7 +26,6 @@ export type MeResp = {
   dm_call_scope?: "none" | "all" | "followers" | "specific_users";
   dm_call_allowed_user_ids?: string[];
   dm_invite_auto_accept?: boolean;
-  fanclubs?: Record<string, { member_linked: boolean; creator_linked: boolean }>;
 };
 
 export function useSecuritySettings() {

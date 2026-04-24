@@ -36,6 +36,8 @@ export type TimelinePost = {
   is_nsfw?: boolean;
   /** Whether a view password is configured. */
   has_view_password?: boolean;
+  /** Whether the post is membership-locked (federated/remote gating). */
+  has_membership_lock?: boolean;
   /** Bitmask for protected targets: text, media, or all content. */
   view_password_scope?: number;
   /** Protected text ranges within the caption body. */

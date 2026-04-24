@@ -49,6 +49,7 @@ tags:
   - name: Direct messages
   - name: Search
   - name: Social
+  - name: Notes
   - name: OAuth clients
   - name: Personal access tokens
   - name: Custom emojis
@@ -129,6 +130,31 @@ components:
             ends_at:
               type: string
               format: date-time
+
+    UnlockPostRequest:
+      type: object
+      description: >
+        Unlock a post. Use either a view password, or a short-lived entitlement JWT
+        (JWS) issued by the origin instance for membership-gated content.
+      properties:
+        password:
+          type: string
+          description: View password when the post uses password protection.
+        entitlement_jwt:
+          type: string
+          description: Short-lived JWS for membership unlock (EdDSA/Ed25519).
+
+    AdminIssueFederationEntitlementRequest:
+      type: object
+      description: Issue an entitlement JWT (site-admin only; debugging / PoC).
+      properties:
+        post_id:
+          type: string
+          format: uuid
+        viewer_acct:
+          type: string
+          description: Viewer acct, like user@example.com (must be the federated viewer identity).
+      required: ["post_id", "viewer_acct"]
 paths:
   /auth/register:
     post:
@@ -522,6 +548,25 @@ paths:
           description: Not found
         '429':
           description: Too many requests
+  /users/by-handle/{handle}/notes:
+    get:
+      tags:
+        - Public optional
+      summary: Notes list by handle
+      security:
+        - {}
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
   /users/by-handle/{handle}/post-media-tiles:
     get:
       tags:
@@ -606,6 +651,31 @@ paths:
       description: Requires a valid access token and site-admin privileges.
       security:
         - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /admin/federation/entitlements:
+    post:
+      tags:
+        - Admin
+      summary: Issue federation entitlement JWT (site admin)
+      description: Requires a valid access token and site-admin privileges.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: #/components/schemas/AdminIssueFederationEntitlementRequest
       responses:
         '200':
           description: Success (or streaming body for SSE)
@@ -1823,6 +1893,12 @@ paths:
       summary: Unlock post
       security:
         - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: #/components/schemas/UnlockPostRequest
       responses:
         '200':
           description: Success (or streaming body for SSE)
@@ -1841,6 +1917,12 @@ paths:
       summary: Unlock federated post
       security:
         - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: #/components/schemas/UnlockPostRequest
       responses:
         '200':
           description: Success (or streaming body for SSE)
@@ -2149,6 +2231,76 @@ paths:
       tags:
         - Account
       summary: Patch profile
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /notes:
+    post:
+      tags:
+        - Notes
+      summary: Create note
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /notes/{noteID}:
+    get:
+      tags:
+        - Notes
+      summary: Get note
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+    patch:
+      tags:
+        - Notes
+      summary: Patch note
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+    delete:
+      tags:
+        - Notes
+      summary: Delete note
       security:
         - bearerAuth: []
       responses:

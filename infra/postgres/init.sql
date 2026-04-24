@@ -12,16 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
     header_object_key TEXT,
     totp_secret TEXT,
     totp_enabled BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    patreon_creator_access_token TEXT,
-    patreon_creator_refresh_token TEXT,
-    patreon_creator_token_expires_at TIMESTAMPTZ,
-    patreon_campaign_id TEXT,
-    patreon_required_reward_tier_id TEXT,
-    patreon_member_access_token TEXT,
-    patreon_member_refresh_token TEXT,
-    patreon_member_token_expires_at TIMESTAMPTZ,
-    patreon_member_user_id TEXT
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE UNIQUE INDEX IF NOT EXISTS users_handle_lower ON users (lower(handle));
 
@@ -53,6 +44,9 @@ CREATE TABLE IF NOT EXISTS posts (
     view_password_hash TEXT,
     view_password_scope INTEGER NOT NULL DEFAULT 0,
     view_password_text_ranges JSONB NOT NULL DEFAULT '[]'::jsonb,
+    membership_provider TEXT NOT NULL DEFAULT '',
+    membership_creator_id TEXT NOT NULL DEFAULT '',
+    membership_tier_id TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     visible_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     feed_broadcast_done BOOLEAN NOT NULL DEFAULT TRUE,
@@ -231,8 +225,6 @@ CREATE TABLE IF NOT EXISTS notes (
     editor_mode TEXT NOT NULL DEFAULT 'markdown' CHECK (editor_mode IN ('markdown', 'richtext')),
     status TEXT NOT NULL DEFAULT 'published' CHECK (status IN ('draft', 'published')),
     visibility TEXT NOT NULL DEFAULT 'public' CHECK (visibility IN ('public', 'followers', 'private')),
-    patreon_campaign_id TEXT,
-    patreon_required_reward_tier_id TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

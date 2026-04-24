@@ -42,6 +42,8 @@ func (p *Pool) SearchPostsForViewer(ctx context.Context, viewerID uuid.UUID, que
 				(COALESCE(btrim(p.view_password_hash), '') <> '') AS has_view_password,
 				COALESCE(p.view_password_scope, 0),
 				COALESCE(p.view_password_text_ranges, '[]'::jsonb)::text,
+				(COALESCE(btrim(p.membership_provider), '') <> '') AS has_membership_lock,
+				COALESCE(p.membership_provider, ''), COALESCE(p.membership_creator_id, ''), COALESCE(p.membership_tier_id, ''),
 				p.created_at, p.visible_at,
 				COALESCE(rpl.reply_count, 0)::bigint,
 				COALESCE(lk.like_count, 0)::bigint + COALESCE(rlk.like_count, 0)::bigint,
@@ -90,6 +92,8 @@ func (p *Pool) SearchPostsForViewer(ctx context.Context, viewerID uuid.UUID, que
 				(COALESCE(btrim(p.view_password_hash), '') <> '') AS has_view_password,
 				COALESCE(p.view_password_scope, 0),
 				COALESCE(p.view_password_text_ranges, '[]'::jsonb)::text,
+				(COALESCE(btrim(p.membership_provider), '') <> '') AS has_membership_lock,
+				COALESCE(p.membership_provider, ''), COALESCE(p.membership_creator_id, ''), COALESCE(p.membership_tier_id, ''),
 				p.created_at, p.visible_at,
 				COALESCE(rpl.reply_count, 0)::bigint,
 				COALESCE(lk.like_count, 0)::bigint + COALESCE(rlk.like_count, 0)::bigint,
@@ -255,9 +259,13 @@ func scanPostRows(rows pgx.Rows) ([]PostRow, error) {
 		var av pgtype.Text
 		var scope int
 		var textRanges string
+		var hasMembershipLock bool
+		var membershipProvider, membershipCreatorID, membershipTierID string
 		if err := rows.Scan(
 			&r.ID, &r.UserID, &r.Email, &r.UserHandle, &r.DisplayName, &av, &r.Caption, &r.MediaType, &r.ObjectKeys,
-			&r.IsNSFW, &r.Visibility, &r.HasViewPassword, &scope, &textRanges, &r.CreatedAt, &r.VisibleAt,
+			&r.IsNSFW, &r.Visibility, &r.HasViewPassword, &scope, &textRanges,
+			&hasMembershipLock, &membershipProvider, &membershipCreatorID, &membershipTierID,
+			&r.CreatedAt, &r.VisibleAt,
 			&r.ReplyCount, &r.LikeCount, &r.RepostCount, &r.LikedByMe, &r.RepostedByMe, &r.BookmarkedByMe,
 		); err != nil {
 			return nil, err
@@ -271,6 +279,10 @@ func scanPostRows(rows pgx.Rows) ([]PostRow, error) {
 		if err != nil {
 			return nil, err
 		}
+		r.HasMembershipLock = hasMembershipLock
+		r.MembershipProvider = strings.TrimSpace(membershipProvider)
+		r.MembershipCreatorID = strings.TrimSpace(membershipCreatorID)
+		r.MembershipTierID = strings.TrimSpace(membershipTierID)
 		out = append(out, r)
 	}
 	return out, rows.Err()

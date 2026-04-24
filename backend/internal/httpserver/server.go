@@ -159,6 +159,7 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c *s3client
 			r.Get("/admin/federation/known-instances", s.handleAdminFederationKnownInstancesList)
 			r.Post("/admin/federation/known-instances", s.handleAdminFederationKnownInstancesAdd)
 			r.Delete("/admin/federation/known-instances", s.handleAdminFederationKnownInstancesRemove)
+			r.Post("/admin/federation/entitlements", s.handleAdminFederationIssueEntitlement)
 			r.Get("/admin/reports/posts", s.handleAdminPostReports)
 			r.Get("/admin/reports/federated-posts", s.handleAdminFederatedPostReports)
 			r.Patch("/admin/reports/posts/{reportID}", s.handleAdminUpdatePostReportStatus)
@@ -1271,6 +1272,7 @@ type feedItem struct {
 	IsNSFW                 bool                        `json:"is_nsfw"`
 	Visibility             string                      `json:"visibility"`
 	HasViewPassword        bool                        `json:"has_view_password"`
+	HasMembershipLock      bool                        `json:"has_membership_lock,omitempty"`
 	ViewPasswordScope      int                         `json:"view_password_scope"`
 	ViewPasswordTextRanges []viewPasswordTextRangeJSON `json:"view_password_text_ranges"`
 	ContentLocked          bool                        `json:"content_locked"`
@@ -1846,7 +1848,8 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 }
 
 type unlockPostReq struct {
-	Password string `json:"password"`
+	Password       string `json:"password,omitempty"`
+	EntitlementJWT string `json:"entitlement_jwt,omitempty"`
 }
 
 func (s *Server) handlePostUnlock(w http.ResponseWriter, r *http.Request) {

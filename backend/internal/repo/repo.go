@@ -204,16 +204,6 @@ type User struct {
 	HeaderObjectKey      *string
 	TOTPSecret           *string
 	TOTPEnabled          bool
-	// Patreon OAuth tokens are for internal API use only and are never exposed in JSON.
-	PatreonCreatorAccessToken    *string
-	PatreonCreatorRefreshToken   *string
-	PatreonCreatorTokenExpiresAt *time.Time
-	PatreonCampaignID            *string
-	PatreonRequiredRewardTierID  *string
-	PatreonMemberAccessToken     *string
-	PatreonMemberRefreshToken    *string
-	PatreonMemberTokenExpiresAt  *time.Time
-	PatreonMemberUserID          *string
 }
 
 // PublicProfile contains public user data without password fields.
@@ -414,8 +404,6 @@ func (p *Pool) UserByEmail(ctx context.Context, email string) (User, error) {
 	var suspendedAt pgtype.Timestamptz
 	var allowedUserIDs []uuid.UUID
 	var badges []string
-	var pcAt, pcRt, pcCamp, pcTier, pmAt, pmRt, pmUID pgtype.Text
-	var pcExp, pmExp pgtype.Timestamptz
 	err := p.db.QueryRow(ctx,
 		`SELECT id, email, password_hash, handle, display_name, bio,
 			suspended_at,
@@ -425,17 +413,13 @@ func (p *Pool) UserByEmail(ctx context.Context, email string) (User, error) {
 			COALESCE(dm_call_scope, 'none'),
 			COALESCE(dm_call_allowed_user_ids, '{}'::uuid[]),
 			COALESCE(dm_invite_auto_accept, false),
-			avatar_object_key, header_object_key, totp_secret, totp_enabled,
-			patreon_creator_access_token, patreon_creator_refresh_token, patreon_creator_token_expires_at,
-			patreon_campaign_id, patreon_required_reward_tier_id,
-			patreon_member_access_token, patreon_member_refresh_token, patreon_member_token_expires_at, patreon_member_user_id
+			avatar_object_key, header_object_key, totp_secret, totp_enabled
 		FROM users WHERE email = $1`,
 		email,
 	).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Handle, &u.DisplayName, &u.Bio, &suspendedAt, &badges,
 		&u.DMCallTimeoutSeconds, &u.DMCallEnabled, &u.DMCallScope, &allowedUserIDs,
 		&u.DMInviteAutoAccept,
-		&av, &hdr, &totp, &totpEn,
-		&pcAt, &pcRt, &pcExp, &pcCamp, &pcTier, &pmAt, &pmRt, &pmExp, &pmUID)
+		&av, &hdr, &totp, &totpEn)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return User{}, ErrNotFound
 	}
@@ -460,15 +444,6 @@ func (p *Pool) UserByEmail(ctx context.Context, email string) (User, error) {
 		u.HeaderObjectKey = &s
 	}
 	u.DMCallAllowedUserIDs = allowedUserIDs
-	u.PatreonCreatorAccessToken = ptrText(pcAt)
-	u.PatreonCreatorRefreshToken = ptrText(pcRt)
-	u.PatreonCreatorTokenExpiresAt = ptrTimestamptz(pcExp)
-	u.PatreonCampaignID = ptrText(pcCamp)
-	u.PatreonRequiredRewardTierID = ptrText(pcTier)
-	u.PatreonMemberAccessToken = ptrText(pmAt)
-	u.PatreonMemberRefreshToken = ptrText(pmRt)
-	u.PatreonMemberTokenExpiresAt = ptrTimestamptz(pmExp)
-	u.PatreonMemberUserID = ptrText(pmUID)
 	return u, nil
 }
 
@@ -481,8 +456,6 @@ func (p *Pool) UserByID(ctx context.Context, id uuid.UUID) (User, error) {
 	var suspendedAt pgtype.Timestamptz
 	var allowedUserIDs []uuid.UUID
 	var badges []string
-	var pcAt, pcRt, pcCamp, pcTier, pmAt, pmRt, pmUID pgtype.Text
-	var pcExp, pmExp pgtype.Timestamptz
 	err := p.db.QueryRow(ctx,
 		`SELECT id, email, password_hash, handle, display_name, bio,
 			suspended_at,
@@ -492,17 +465,13 @@ func (p *Pool) UserByID(ctx context.Context, id uuid.UUID) (User, error) {
 			COALESCE(dm_call_scope, 'none'),
 			COALESCE(dm_call_allowed_user_ids, '{}'::uuid[]),
 			COALESCE(dm_invite_auto_accept, false),
-			avatar_object_key, header_object_key, totp_secret, totp_enabled,
-			patreon_creator_access_token, patreon_creator_refresh_token, patreon_creator_token_expires_at,
-			patreon_campaign_id, patreon_required_reward_tier_id,
-			patreon_member_access_token, patreon_member_refresh_token, patreon_member_token_expires_at, patreon_member_user_id
+			avatar_object_key, header_object_key, totp_secret, totp_enabled
 		FROM users WHERE id = $1`,
 		id,
 	).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Handle, &u.DisplayName, &u.Bio, &suspendedAt, &badges,
 		&u.DMCallTimeoutSeconds, &u.DMCallEnabled, &u.DMCallScope, &allowedUserIDs,
 		&u.DMInviteAutoAccept,
-		&av, &hdr, &totp, &totpEn,
-		&pcAt, &pcRt, &pcExp, &pcCamp, &pcTier, &pmAt, &pmRt, &pmExp, &pmUID)
+		&av, &hdr, &totp, &totpEn)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return User{}, ErrNotFound
 	}
@@ -527,15 +496,6 @@ func (p *Pool) UserByID(ctx context.Context, id uuid.UUID) (User, error) {
 		u.HeaderObjectKey = &s
 	}
 	u.DMCallAllowedUserIDs = allowedUserIDs
-	u.PatreonCreatorAccessToken = ptrText(pcAt)
-	u.PatreonCreatorRefreshToken = ptrText(pcRt)
-	u.PatreonCreatorTokenExpiresAt = ptrTimestamptz(pcExp)
-	u.PatreonCampaignID = ptrText(pcCamp)
-	u.PatreonRequiredRewardTierID = ptrText(pcTier)
-	u.PatreonMemberAccessToken = ptrText(pmAt)
-	u.PatreonMemberRefreshToken = ptrText(pmRt)
-	u.PatreonMemberTokenExpiresAt = ptrTimestamptz(pmExp)
-	u.PatreonMemberUserID = ptrText(pmUID)
 	return u, nil
 }
 
@@ -1014,6 +974,10 @@ type PostRow struct {
 	HasViewPassword        bool
 	ViewPasswordScope      int
 	ViewPasswordTextRanges []ViewPasswordTextRange
+	HasMembershipLock      bool
+	MembershipProvider     string
+	MembershipCreatorID    string
+	MembershipTierID       string
 	CreatedAt              time.Time
 	VisibleAt              time.Time
 	Poll                   *PostPoll
@@ -1037,6 +1001,10 @@ type PostSensitive struct {
 	ViewPasswordHash       *string
 	ViewPasswordScope      int
 	ViewPasswordTextRanges []ViewPasswordTextRange
+	HasMembershipLock      bool
+	MembershipProvider     string
+	MembershipCreatorID    string
+	MembershipTierID       string
 }
 
 func (p *Pool) PostSensitiveByID(ctx context.Context, postID uuid.UUID) (PostSensitive, error) {
@@ -1047,9 +1015,12 @@ func (p *Pool) PostSensitiveByID(ctx context.Context, postID uuid.UUID) (PostSen
 	err := p.db.QueryRow(ctx, `
 		SELECT id, user_id, caption, media_type, object_keys, is_nsfw, view_password_hash,
 			COALESCE(view_password_scope, 0),
-			COALESCE(view_password_text_ranges, '[]'::jsonb)::text
+			COALESCE(view_password_text_ranges, '[]'::jsonb)::text,
+			(COALESCE(btrim(membership_provider), '') <> '') AS has_membership_lock,
+			COALESCE(membership_provider, ''), COALESCE(membership_creator_id, ''), COALESCE(membership_tier_id, '')
 		FROM posts WHERE id = $1
-	`, postID).Scan(&row.ID, &row.UserID, &row.Caption, &row.MediaType, &row.ObjectKeys, &row.IsNSFW, &hash, &scope, &textRanges)
+	`, postID).Scan(&row.ID, &row.UserID, &row.Caption, &row.MediaType, &row.ObjectKeys, &row.IsNSFW, &hash, &scope, &textRanges,
+		&row.HasMembershipLock, &row.MembershipProvider, &row.MembershipCreatorID, &row.MembershipTierID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return PostSensitive{}, ErrNotFound
 	}
@@ -1080,6 +1051,8 @@ func (p *Pool) PostRowForViewer(ctx context.Context, viewerID, postID uuid.UUID)
 			(COALESCE(btrim(p.view_password_hash), '') <> '') AS has_view_password,
 			COALESCE(p.view_password_scope, 0),
 			COALESCE(p.view_password_text_ranges, '[]'::jsonb)::text,
+			(COALESCE(btrim(p.membership_provider), '') <> '') AS has_membership_lock,
+			COALESCE(p.membership_provider, ''), COALESCE(p.membership_creator_id, ''), COALESCE(p.membership_tier_id, ''),
 			p.created_at, p.visible_at,
 			(COALESCE(rpl.reply_count, 0) + COALESCE(frpl.reply_count, 0))::bigint,
 			COALESCE(lk.like_count, 0)::bigint + COALESCE(rlk.like_count, 0)::bigint,
@@ -1116,7 +1089,9 @@ func (p *Pool) PostRowForViewer(ctx context.Context, viewerID, postID uuid.UUID)
 		  AND `+postReadableByViewerSQL("p", "$1")+`
 	`, viewerID, postID).Scan(
 		&r.ID, &r.UserID, &r.Email, &r.UserHandle, &r.DisplayName, &av, &r.Caption, &r.MediaType, &r.ObjectKeys,
-		&r.IsNSFW, &r.Visibility, &r.HasViewPassword, &scope, &textRanges, &r.CreatedAt, &r.VisibleAt,
+		&r.IsNSFW, &r.Visibility, &r.HasViewPassword, &scope, &textRanges,
+		&r.HasMembershipLock, &r.MembershipProvider, &r.MembershipCreatorID, &r.MembershipTierID,
+		&r.CreatedAt, &r.VisibleAt,
 		&r.ReplyCount, &r.LikeCount, &r.RepostCount, &r.LikedByMe, &r.RepostedByMe, &r.BookmarkedByMe,
 	)
 	if av.Valid && strings.TrimSpace(av.String) != "" {
@@ -1168,6 +1143,8 @@ func (p *Pool) ListThreadDescendants(ctx context.Context, viewerID, rootPostID u
 			(COALESCE(btrim(p.view_password_hash), '') <> '') AS has_view_password,
 			COALESCE(p.view_password_scope, 0),
 			COALESCE(p.view_password_text_ranges, '[]'::jsonb)::text,
+			(COALESCE(btrim(p.membership_provider), '') <> '') AS has_membership_lock,
+			COALESCE(p.membership_provider, ''), COALESCE(p.membership_creator_id, ''), COALESCE(p.membership_tier_id, ''),
 			p.created_at, p.visible_at,
 			(COALESCE(rpl.reply_count, 0) + COALESCE(frpl.reply_count, 0))::bigint,
 			COALESCE(lk.like_count, 0)::bigint + COALESCE(rlk.like_count, 0)::bigint,
@@ -1218,9 +1195,13 @@ func (p *Pool) ListThreadDescendants(ctx context.Context, viewerID, rootPostID u
 		var replyTo pgtype.UUID
 		var scope int
 		var textRanges string
+		var hasMembershipLock bool
+		var membershipProvider, membershipCreatorID, membershipTierID string
 		if err := rows.Scan(
 			&r.ID, &r.UserID, &r.Email, &r.UserHandle, &r.DisplayName, &av, &r.Caption, &r.MediaType, &r.ObjectKeys,
-			&r.IsNSFW, &r.Visibility, &r.HasViewPassword, &scope, &textRanges, &r.CreatedAt, &r.VisibleAt,
+			&r.IsNSFW, &r.Visibility, &r.HasViewPassword, &scope, &textRanges,
+			&hasMembershipLock, &membershipProvider, &membershipCreatorID, &membershipTierID,
+			&r.CreatedAt, &r.VisibleAt,
 			&r.ReplyCount, &r.LikeCount, &r.RepostCount, &r.LikedByMe, &r.RepostedByMe, &r.BookmarkedByMe,
 			&replyTo,
 		); err != nil {
@@ -1235,6 +1216,10 @@ func (p *Pool) ListThreadDescendants(ctx context.Context, viewerID, rootPostID u
 		if err != nil {
 			return nil, err
 		}
+		r.HasMembershipLock = hasMembershipLock
+		r.MembershipProvider = strings.TrimSpace(membershipProvider)
+		r.MembershipCreatorID = strings.TrimSpace(membershipCreatorID)
+		r.MembershipTierID = strings.TrimSpace(membershipTierID)
 		var replyToID *uuid.UUID
 		if replyTo.Valid {
 			x := uuid.UUID(replyTo.Bytes)
@@ -1367,6 +1352,8 @@ func (p *Pool) ListFeed(ctx context.Context, viewerID uuid.UUID, limit int) ([]P
 			(COALESCE(btrim(p.view_password_hash), '') <> '') AS has_view_password,
 			COALESCE(p.view_password_scope, 0),
 			COALESCE(p.view_password_text_ranges, '[]'::jsonb)::text,
+			(COALESCE(btrim(p.membership_provider), '') <> '') AS has_membership_lock,
+			COALESCE(p.membership_provider, ''), COALESCE(p.membership_creator_id, ''), COALESCE(p.membership_tier_id, ''),
 			p.created_at, p.visible_at,
 			(COALESCE(rpl.reply_count, 0) + COALESCE(frpl.reply_count, 0))::bigint,
 			COALESCE(lk.like_count, 0)::bigint + COALESCE(rlk.like_count, 0)::bigint,
@@ -1416,9 +1403,13 @@ func (p *Pool) ListFeed(ctx context.Context, viewerID uuid.UUID, limit int) ([]P
 		var av pgtype.Text
 		var scope int
 		var textRanges string
+		var hasMembershipLock bool
+		var membershipProvider, membershipCreatorID, membershipTierID string
 		if err := rows.Scan(
 			&r.ID, &r.UserID, &r.Email, &r.UserHandle, &r.DisplayName, &av, &r.Caption, &r.MediaType, &r.ObjectKeys,
-			&r.IsNSFW, &r.Visibility, &r.HasViewPassword, &scope, &textRanges, &r.CreatedAt, &r.VisibleAt,
+			&r.IsNSFW, &r.Visibility, &r.HasViewPassword, &scope, &textRanges,
+			&hasMembershipLock, &membershipProvider, &membershipCreatorID, &membershipTierID,
+			&r.CreatedAt, &r.VisibleAt,
 			&r.ReplyCount, &r.LikeCount, &r.RepostCount, &r.LikedByMe, &r.RepostedByMe, &r.BookmarkedByMe,
 		); err != nil {
 			return nil, err
@@ -1432,6 +1423,10 @@ func (p *Pool) ListFeed(ctx context.Context, viewerID uuid.UUID, limit int) ([]P
 		if err != nil {
 			return nil, err
 		}
+		r.HasMembershipLock = hasMembershipLock
+		r.MembershipProvider = strings.TrimSpace(membershipProvider)
+		r.MembershipCreatorID = strings.TrimSpace(membershipCreatorID)
+		r.MembershipTierID = strings.TrimSpace(membershipTierID)
 		out = append(out, r)
 	}
 	return out, rows.Err()
@@ -1448,6 +1443,8 @@ func (p *Pool) ListUserPosts(ctx context.Context, viewerID, authorID uuid.UUID, 
 			(COALESCE(btrim(p.view_password_hash), '') <> '') AS has_view_password,
 			COALESCE(p.view_password_scope, 0),
 			COALESCE(p.view_password_text_ranges, '[]'::jsonb)::text,
+			(COALESCE(btrim(p.membership_provider), '') <> '') AS has_membership_lock,
+			COALESCE(p.membership_provider, ''), COALESCE(p.membership_creator_id, ''), COALESCE(p.membership_tier_id, ''),
 			p.created_at, p.visible_at,
 			COALESCE(rpl.reply_count, 0)::bigint,
 			COALESCE(lk.like_count, 0)::bigint + COALESCE(rlk.like_count, 0)::bigint,
@@ -1491,9 +1488,13 @@ func (p *Pool) ListUserPosts(ctx context.Context, viewerID, authorID uuid.UUID, 
 		var av pgtype.Text
 		var scope int
 		var textRanges string
+		var hasMembershipLock bool
+		var membershipProvider, membershipCreatorID, membershipTierID string
 		if err := rows.Scan(
 			&r.ID, &r.UserID, &r.Email, &r.UserHandle, &r.DisplayName, &av, &r.Caption, &r.MediaType, &r.ObjectKeys,
-			&r.IsNSFW, &r.Visibility, &r.HasViewPassword, &scope, &textRanges, &r.CreatedAt, &r.VisibleAt,
+			&r.IsNSFW, &r.Visibility, &r.HasViewPassword, &scope, &textRanges,
+			&hasMembershipLock, &membershipProvider, &membershipCreatorID, &membershipTierID,
+			&r.CreatedAt, &r.VisibleAt,
 			&r.ReplyCount, &r.LikeCount, &r.RepostCount, &r.LikedByMe, &r.RepostedByMe, &r.BookmarkedByMe,
 		); err != nil {
 			return nil, err
@@ -1507,6 +1508,10 @@ func (p *Pool) ListUserPosts(ctx context.Context, viewerID, authorID uuid.UUID, 
 		if err != nil {
 			return nil, err
 		}
+		r.HasMembershipLock = hasMembershipLock
+		r.MembershipProvider = strings.TrimSpace(membershipProvider)
+		r.MembershipCreatorID = strings.TrimSpace(membershipCreatorID)
+		r.MembershipTierID = strings.TrimSpace(membershipTierID)
 		out = append(out, r)
 	}
 	return out, rows.Err()
@@ -1524,6 +1529,8 @@ func (p *Pool) ListUserReplyPosts(ctx context.Context, viewerID, authorID uuid.U
 			(COALESCE(btrim(p.view_password_hash), '') <> '') AS has_view_password,
 			COALESCE(p.view_password_scope, 0),
 			COALESCE(p.view_password_text_ranges, '[]'::jsonb)::text,
+			(COALESCE(btrim(p.membership_provider), '') <> '') AS has_membership_lock,
+			COALESCE(p.membership_provider, ''), COALESCE(p.membership_creator_id, ''), COALESCE(p.membership_tier_id, ''),
 			p.created_at, p.visible_at,
 			COALESCE(rpl.reply_count, 0)::bigint,
 			COALESCE(lk.like_count, 0)::bigint + COALESCE(rlk.like_count, 0)::bigint,
@@ -1570,9 +1577,13 @@ func (p *Pool) ListUserReplyPosts(ctx context.Context, viewerID, authorID uuid.U
 		var replyToRemote string
 		var scope int
 		var textRanges string
+		var hasMembershipLock bool
+		var membershipProvider, membershipCreatorID, membershipTierID string
 		if err := rows.Scan(
 			&r.ID, &r.UserID, &r.Email, &r.UserHandle, &r.DisplayName, &av, &r.Caption, &r.MediaType, &r.ObjectKeys,
-			&r.IsNSFW, &r.Visibility, &r.HasViewPassword, &scope, &textRanges, &r.CreatedAt, &r.VisibleAt,
+			&r.IsNSFW, &r.Visibility, &r.HasViewPassword, &scope, &textRanges,
+			&hasMembershipLock, &membershipProvider, &membershipCreatorID, &membershipTierID,
+			&r.CreatedAt, &r.VisibleAt,
 			&r.ReplyCount, &r.LikeCount, &r.RepostCount, &r.LikedByMe, &r.RepostedByMe, &r.BookmarkedByMe,
 			&replyTo, &replyToRemote,
 		); err != nil {
@@ -1587,6 +1598,10 @@ func (p *Pool) ListUserReplyPosts(ctx context.Context, viewerID, authorID uuid.U
 		if err != nil {
 			return nil, err
 		}
+		r.HasMembershipLock = hasMembershipLock
+		r.MembershipProvider = strings.TrimSpace(membershipProvider)
+		r.MembershipCreatorID = strings.TrimSpace(membershipCreatorID)
+		r.MembershipTierID = strings.TrimSpace(membershipTierID)
 		var replyToID *uuid.UUID
 		if replyTo.Valid {
 			x := uuid.UUID(replyTo.Bytes)
@@ -1616,6 +1631,8 @@ func (p *Pool) ListPostsByReplyToRemoteObjectIRI(ctx context.Context, viewerID u
 			(COALESCE(btrim(p.view_password_hash), '') <> '') AS has_view_password,
 			COALESCE(p.view_password_scope, 0),
 			COALESCE(p.view_password_text_ranges, '[]'::jsonb)::text,
+			(COALESCE(btrim(p.membership_provider), '') <> '') AS has_membership_lock,
+			COALESCE(p.membership_provider, ''), COALESCE(p.membership_creator_id, ''), COALESCE(p.membership_tier_id, ''),
 			p.created_at, p.visible_at,
 			COALESCE(rpl.reply_count, 0)::bigint,
 			COALESCE(lk.like_count, 0)::bigint + COALESCE(rlk.like_count, 0)::bigint,
@@ -1759,6 +1776,8 @@ func (p *Pool) ListBookmarkedPosts(ctx context.Context, viewerID uuid.UUID, limi
 			(COALESCE(btrim(p.view_password_hash), '') <> '') AS has_view_password,
 			COALESCE(p.view_password_scope, 0),
 			COALESCE(p.view_password_text_ranges, '[]'::jsonb)::text,
+			(COALESCE(btrim(p.membership_provider), '') <> '') AS has_membership_lock,
+			COALESCE(p.membership_provider, ''), COALESCE(p.membership_creator_id, ''), COALESCE(p.membership_tier_id, ''),
 			p.created_at, p.visible_at,
 			(COALESCE(rpl.reply_count, 0) + COALESCE(frpl.reply_count, 0))::bigint,
 			COALESCE(lk.like_count, 0)::bigint + COALESCE(rlk.like_count, 0)::bigint,
@@ -1809,9 +1828,13 @@ func (p *Pool) ListBookmarkedPosts(ctx context.Context, viewerID uuid.UUID, limi
 		var av pgtype.Text
 		var scope int
 		var textRanges string
+		var hasMembershipLock bool
+		var membershipProvider, membershipCreatorID, membershipTierID string
 		if err := rows.Scan(
 			&row.ID, &row.UserID, &row.Email, &row.UserHandle, &row.DisplayName, &av, &row.Caption, &row.MediaType, &row.ObjectKeys,
-			&row.IsNSFW, &row.Visibility, &row.HasViewPassword, &scope, &textRanges, &row.CreatedAt, &row.VisibleAt,
+			&row.IsNSFW, &row.Visibility, &row.HasViewPassword, &scope, &textRanges,
+			&hasMembershipLock, &membershipProvider, &membershipCreatorID, &membershipTierID,
+			&row.CreatedAt, &row.VisibleAt,
 			&row.ReplyCount, &row.LikeCount, &row.RepostCount, &row.LikedByMe, &row.RepostedByMe, &row.BookmarkedByMe,
 			&row.BookmarkedAt,
 		); err != nil {
@@ -1826,6 +1849,10 @@ func (p *Pool) ListBookmarkedPosts(ctx context.Context, viewerID uuid.UUID, limi
 		if err != nil {
 			return nil, err
 		}
+		row.HasMembershipLock = hasMembershipLock
+		row.MembershipProvider = strings.TrimSpace(membershipProvider)
+		row.MembershipCreatorID = strings.TrimSpace(membershipCreatorID)
+		row.MembershipTierID = strings.TrimSpace(membershipTierID)
 		out = append(out, row)
 	}
 	return out, rows.Err()
@@ -2046,6 +2073,8 @@ func (p *Pool) ListFeedFollowing(ctx context.Context, viewerID uuid.UUID, limit 
 			(COALESCE(btrim(p.view_password_hash), '') <> '') AS has_view_password,
 			COALESCE(p.view_password_scope, 0),
 			COALESCE(p.view_password_text_ranges, '[]'::jsonb)::text,
+			(COALESCE(btrim(p.membership_provider), '') <> '') AS has_membership_lock,
+			COALESCE(p.membership_provider, ''), COALESCE(p.membership_creator_id, ''), COALESCE(p.membership_tier_id, ''),
 			p.created_at, p.visible_at,
 			COALESCE(rpl.reply_count, 0)::bigint,
 			COALESCE(lk.like_count, 0)::bigint + COALESCE(rlk.like_count, 0)::bigint,
@@ -2092,9 +2121,13 @@ func (p *Pool) ListFeedFollowing(ctx context.Context, viewerID uuid.UUID, limit 
 		var av pgtype.Text
 		var scope int
 		var textRanges string
+		var hasMembershipLock bool
+		var membershipProvider, membershipCreatorID, membershipTierID string
 		if err := rows.Scan(
 			&r.ID, &r.UserID, &r.Email, &r.UserHandle, &r.DisplayName, &av, &r.Caption, &r.MediaType, &r.ObjectKeys,
-			&r.IsNSFW, &r.Visibility, &r.HasViewPassword, &scope, &textRanges, &r.CreatedAt, &r.VisibleAt,
+			&r.IsNSFW, &r.Visibility, &r.HasViewPassword, &scope, &textRanges,
+			&hasMembershipLock, &membershipProvider, &membershipCreatorID, &membershipTierID,
+			&r.CreatedAt, &r.VisibleAt,
 			&r.ReplyCount, &r.LikeCount, &r.RepostCount, &r.LikedByMe, &r.RepostedByMe, &r.BookmarkedByMe,
 		); err != nil {
 			return nil, err
@@ -2108,6 +2141,10 @@ func (p *Pool) ListFeedFollowing(ctx context.Context, viewerID uuid.UUID, limit 
 		if err != nil {
 			return nil, err
 		}
+		r.HasMembershipLock = hasMembershipLock
+		r.MembershipProvider = strings.TrimSpace(membershipProvider)
+		r.MembershipCreatorID = strings.TrimSpace(membershipCreatorID)
+		r.MembershipTierID = strings.TrimSpace(membershipTierID)
 		out = append(out, r)
 	}
 	return out, rows.Err()

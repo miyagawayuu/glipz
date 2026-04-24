@@ -120,7 +120,10 @@ func (s *Server) federationAuthorPayload(ctx context.Context, authorID uuid.UUID
 func (s *Server) federationEventPostPayload(row repo.FederationPublicPostRow) federationEventPost {
 	caption := row.Caption
 	keys := append([]string(nil), row.ObjectKeys...)
-	if row.HasViewPassword {
+	if row.HasMembershipLock {
+		caption = ""
+		keys = []string{}
+	} else if row.HasViewPassword {
 		if scopeProtectsText(row.ViewPasswordScope) {
 			if row.ViewPasswordScope == repo.ViewPasswordScopeAll {
 				caption = ""
@@ -150,7 +153,10 @@ func (s *Server) federationEventPostPayload(row repo.FederationPublicPostRow) fe
 	if row.ReplyToID != nil {
 		out.ReplyToObjectURL = s.localPostURL(*row.ReplyToID)
 	}
-	if row.HasViewPassword {
+	if row.HasMembershipLock {
+		out.HasMembershipLock = true
+		out.UnlockURL = s.localFederationPostUnlockURL(row.ID)
+	} else if row.HasViewPassword {
 		out.HasViewPassword = true
 		out.ViewPasswordScope = row.ViewPasswordScope
 		out.ViewPasswordTextRanges = repoRangesToJSON(row.ViewPasswordTextRanges)

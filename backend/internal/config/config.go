@@ -22,10 +22,6 @@ type Config struct {
 	S3SecretKey      string
 	S3Bucket         string
 	S3UsePathStyle   bool
-	// Optional Patreon settings (fanclub provider). OAuth and membership APIs stay disabled when unset.
-	PatreonClientID     string
-	PatreonClientSecret string
-	PatreonRedirectURI  string
 	// Primary frontend origin, derived from the first FRONTEND_ORIGIN entry.
 	FrontendOrigin string
 	// Full frontend origin list for CORS. The first entry matches FrontendOrigin.
@@ -97,9 +93,6 @@ func Load() (Config, error) {
 	if v := os.Getenv("S3_USE_PATH_STYLE"); v != "" {
 		c.S3UsePathStyle, _ = strconv.ParseBool(v)
 	}
-	c.PatreonClientID = strings.TrimSpace(os.Getenv("PATREON_CLIENT_ID"))
-	c.PatreonClientSecret = strings.TrimSpace(os.Getenv("PATREON_CLIENT_SECRET"))
-	c.PatreonRedirectURI = strings.TrimSpace(os.Getenv("PATREON_REDIRECT_URI"))
 	c.StaticWebRoot = strings.TrimSpace(os.Getenv("STATIC_WEB_ROOT"))
 	fe := strings.TrimSpace(os.Getenv("FRONTEND_ORIGIN"))
 	if fe == "" {

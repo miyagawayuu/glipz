@@ -298,10 +298,7 @@ func (s *Server) handleFederatedPostUnlock(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	req.Password = strings.TrimSpace(req.Password)
-	if req.Password == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_password"})
-		return
-	}
+	req.EntitlementJWT = strings.TrimSpace(req.EntitlementJWT)
 	row, err := s.loadFederatedIncomingForAction(r.Context(), incomingID, r.URL.Query().Get("object_url"))
 	if err != nil {
 		if errors.Is(err, repo.ErrNotFound) {
@@ -324,10 +321,43 @@ func (s *Server) handleFederatedPostUnlock(w http.ResponseWriter, r *http.Reques
 		writeServerError(w, "federationAuthorPayload", err)
 		return
 	}
+
+	// Membership unlock: when neither password nor entitlement is provided,
+	// try to mint a short-lived entitlement via the remote origin first.
+	if req.Password == "" && req.EntitlementJWT == "" {
+		entURL := ""
+		if strings.HasSuffix(unlockURL, "/unlock") {
+			entURL = strings.TrimSuffix(unlockURL, "/unlock") + "/entitlement"
+		}
+		if entURL == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_unlock"})
+			return
+		}
+		entBody, err := s.signedFederationPOSTJSON(r.Context(), entURL, federationEntitlementRequest{
+			EventID:    federationNewEventID(),
+			ViewerAcct: actor.Acct,
+		})
+		if err != nil {
+			if strings.Contains(err.Error(), "403") || strings.Contains(err.Error(), "untrusted_instance") {
+				writeJSON(w, http.StatusForbidden, map[string]string{"error": "untrusted_instance"})
+				return
+			}
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "remote_unavailable"})
+			return
+		}
+		var ent federationEntitlementResponse
+		if err := json.Unmarshal(entBody, &ent); err != nil || strings.TrimSpace(ent.EntitlementJWT) == "" {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "remote_invalid_response"})
+			return
+		}
+		req.EntitlementJWT = strings.TrimSpace(ent.EntitlementJWT)
+	}
+
 	body, err := s.signedFederationPOSTJSON(r.Context(), unlockURL, federationUnlockRequest{
 		EventID:    federationNewEventID(),
 		ViewerAcct: actor.Acct,
 		Password:   req.Password,
+		EntitlementJWT: req.EntitlementJWT,
 	})
 	if err != nil {
 		if strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "wrong_password") {
@@ -362,6 +392,48 @@ func (s *Server) handleFederatedPostUnlock(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, http.StatusOK, unlocked)
+}
+
+type adminIssueEntitlementReq struct {
+	PostID     string `json:"post_id"`
+	ViewerAcct string `json:"viewer_acct"`
+}
+
+func (s *Server) handleAdminFederationIssueEntitlement(w http.ResponseWriter, r *http.Request) {
+	var req adminIssueEntitlementReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_json"})
+		return
+	}
+	postID, err := uuid.Parse(strings.TrimSpace(req.PostID))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_post_id"})
+		return
+	}
+	viewerAcct := strings.TrimSpace(req.ViewerAcct)
+	if viewerAcct == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_viewer"})
+		return
+	}
+	row, err := s.db.PostSensitiveByID(r.Context(), postID)
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+			return
+		}
+		writeServerError(w, "PostSensitiveByID admin entitlement", err)
+		return
+	}
+	if !row.HasMembershipLock {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "not_membership_locked"})
+		return
+	}
+	jws, err := s.mintFederationEntitlementJWT(viewerAcct, row, postID)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "cannot_issue"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"entitlement_jwt": jws})
 }
 
 func (s *Server) handleFederatedToggleRepost(w http.ResponseWriter, r *http.Request) {

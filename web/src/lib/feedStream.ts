@@ -79,6 +79,7 @@ function mapFeedItem(x: {
   visibility?: string;
   is_nsfw?: boolean;
   has_view_password?: boolean;
+  has_membership_lock?: boolean;
   view_password_scope?: number;
   view_password_text_ranges?: { start?: number; end?: number }[];
   content_locked?: boolean;
@@ -130,6 +131,7 @@ function mapFeedItem(x: {
         : "public",
     is_nsfw: Boolean(x.is_nsfw),
     has_view_password: Boolean(x.has_view_password),
+    has_membership_lock: Boolean(x.has_membership_lock),
     view_password_scope: typeof x.view_password_scope === "number" ? x.view_password_scope : 0,
     view_password_text_ranges: Array.isArray(x.view_password_text_ranges)
       ? x.view_password_text_ranges

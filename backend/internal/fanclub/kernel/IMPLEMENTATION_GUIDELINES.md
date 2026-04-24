@@ -4,7 +4,7 @@ This document describes how to add a **new third-party fan club / membership sit
 
 ## What belongs in `kernel`
 
-- **Stable provider IDs** (string constants, e.g. `Patreon`) for namespacing Redis keys and, later, database rows.
+- **Stable provider IDs** (string constants, e.g. `example`) for namespacing Redis keys and, later, database rows.
 - **Redis key helpers** such as `OAuthStateKey` and `EntitledCacheKey` so every provider uses the same prefix and layout: `fanclub:oauth:<provider>:…`, `fanclub:entitled:<provider>:…`.
 - **OAuth state helpers** — `RandomOAuthState`, `SaveOAuthState`, `GetDelOAuthState` — that do *not* interpret payloads; the provider’s HTTP handlers own the JSON shape.
 
@@ -15,22 +15,22 @@ Do **not** put here: authorize URLs, token endpoints, API clients, “tier vs pl
 - OAuth (or API keys, webhooks, etc.) **as required by that site’s documentation**.
 - HTTP-facing logic can stay in `internal/fanclub/<provider>/` *or* thin wrappers in `internal/httpserver/`, but the **site-specific rules must not leak into `kernel`**.
 
-Patreon is available as a reference provider implementation under `internal/fanclub/patreon/`. Add future providers by reusing this kernel package (keys + OAuth state helpers) and keeping all provider-specific rules inside `internal/fanclub/<provider>/`.
+Add future providers by reusing this kernel package (keys + OAuth state helpers) and keeping all provider-specific rules inside `internal/fanclub/<provider>/`.
 
 ## Adding a new provider
 
-1. **Choose a short, stable provider ID** (lowercase, no spaces), e.g. `fantia`. Add a constant in `kernel` (same style as `Patreon`) or define `ProviderID` in the provider package and use it whenever calling `kernel` helpers.
+1. **Choose a short, stable provider ID** (lowercase, no spaces), e.g. `example`. Add a constant in `kernel` or define `ProviderID` in the provider package and use it whenever calling `kernel` helpers.
 2. **Create `internal/fanclub/<id>/`** with:
    - Configuration struct loaded from env (provider-specific env vars).
    - Token exchange / refresh (if applicable).
    - **Creator** flows: whatever the author must pick in the UI (e.g. campaigns, plans, store IDs) — your types, your API calls.
    - **Member** flows: check whether a viewer’s credentials satisfy the author’s required rule for a note. This may look nothing like Patreon’s “campaign + reward tier” model; that is fine.
 3. **Persistence**: either extend the schema (provider-specific columns, a generic `user_fanclub_connections` table, or JSONB) in `internal/migrate` and `internal/repo`. Keep token columns out of public JSON in API responses.
-4. **HTTP routes**: mount routes under `/api/v1/…` (Patreon uses `/api/v1/patreon/…` for history). Reuse `kernel` for OAuth `state` storage by passing your provider ID into `SaveOAuthState` / `GetDelOAuthState`.
+4. **HTTP routes**: mount routes under `/api/v1/…`. Reuse `kernel` for OAuth `state` storage by passing your provider ID into `SaveOAuthState` / `GetDelOAuthState`.
 5. **Note paywall**: in `notePremiumProjection` (or equivalent), branch on the note’s (and author’s) paywall fields. A new provider adds its own entitlement check (or a single dispatcher reading `paywall_spec`).
 6. **Cache**: use `kernel.EntitledCacheKey(provider, viewerUUID, authorUUID, scopeID, tierID)` (or repurpose the last two segments as opaque IDs if your site’s model differs; document the meaning in the provider package).
 7. **Config & deployment**: add env vars, document in `.env.example` / operator docs, and register routes in `internal/httpserver/server.go`.
-8. **OpenAPI & web**: add paths and UI only for the new provider; avoid hard-coding a single global “fan club shape” in the client — Patreon’s campaign/tier UI is not universal.
+8. **OpenAPI & web**: add paths and UI only for the new provider; avoid hard-coding a single global “fan club shape” in the client.
 
 ## Redis compatibility
 

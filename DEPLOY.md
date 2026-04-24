@@ -270,7 +270,6 @@ Run these checks after deployment:
 | Feature | Enable With |
 |---------|-------------|
 | **Federation** | Set `GLIPZ_PROTOCOL_*` variables |
-| **Patreon (fan club integration)** | Set `PATREON_*` variables |
 | **SkyWay Calls** | Set `SKYWAY_*` variables |
 | **Web Push** | Set `WEB_PUSH_VAPID_*` variables |
 

@@ -70,12 +70,16 @@ export async function voteTimelinePoll(token: string, it: TimelinePost, optionId
   return mapFeedItem(res.item as Parameters<typeof mapFeedItem>[0]);
 }
 
-export async function unlockTimelinePost(token: string, it: TimelinePost, password: string): Promise<Partial<TimelinePost>> {
+export async function unlockTimelinePost(
+  token: string,
+  it: TimelinePost,
+  opts: { password?: string; entitlement_jwt?: string },
+): Promise<Partial<TimelinePost>> {
   const path = federationActionPath(it, "unlock");
   const res = await api<Record<string, unknown>>(path, {
     method: "POST",
     token,
-    json: { password },
+    json: { password: opts.password ?? "", entitlement_jwt: opts.entitlement_jwt ?? "" },
   });
   const mapped = mapFeedItem({
     id: it.id,

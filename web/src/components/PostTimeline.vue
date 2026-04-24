@@ -732,14 +732,10 @@ async function submitUnlock(it: TimelinePost) {
   const token = getAccessToken();
   if (!token || unlockBusy.value === it.id) return;
   const pwd = (unlockPwd[it.id] ?? "").trim();
-  if (!pwd) {
-    unlockErr[it.id] = t("components.postTimeline.unlock.passwordRequired");
-    return;
-  }
   unlockBusy.value = it.id;
   unlockErr[it.id] = "";
   try {
-    const res = await unlockTimelinePost(token, it, pwd);
+    const res = await unlockTimelinePost(token, it, { password: pwd });
     emit("patchItem", {
       id: it.id,
       patch: {
@@ -762,6 +758,8 @@ async function submitUnlock(it: TimelinePost) {
         ? t("components.postTimeline.unlock.wrongPassword")
         : msg === "no_password"
           ? t("components.postTimeline.unlock.noPassword")
+          : msg === "invalid_unlock"
+            ? t("components.postTimeline.unlock.passwordRequired")
           : msg;
   } finally {
     unlockBusy.value = null;
@@ -1075,6 +1073,31 @@ async function submitUnlock(it: TimelinePost) {
               @click="submitUnlock(it)"
             >
               {{ unlockBusy === it.id ? $t("components.postTimeline.unlockSubmitting") : $t("components.postTimeline.unlockSubmit") }}
+            </button>
+          </div>
+          <p v-if="unlockErr[it.id]" class="mt-2 text-xs text-red-600">{{ unlockErr[it.id] }}</p>
+        </div>
+
+        <div
+          v-else-if="it.content_locked && it.has_membership_lock"
+          class="mt-3 rounded-2xl border border-sky-200 bg-sky-50/90 p-4"
+        >
+          <p class="text-sm font-medium text-sky-950">{{ $t("components.postTimeline.membershipLockedTitle") }}</p>
+          <p class="mt-1 text-xs text-sky-900/80">
+            {{ $t("components.postTimeline.membershipLockedBody") }}
+          </p>
+          <div class="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+            <button
+              type="button"
+              class="shrink-0 rounded-full bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50"
+              :disabled="unlockBusy === it.id"
+              @click="submitUnlock(it)"
+            >
+              {{
+                unlockBusy === it.id
+                  ? $t("components.postTimeline.unlockSubmitting")
+                  : $t("components.postTimeline.membershipUnlockSubmit")
+              }}
             </button>
           </div>
           <p v-if="unlockErr[it.id]" class="mt-2 text-xs text-red-600">{{ unlockErr[it.id] }}</p>

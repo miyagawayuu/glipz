@@ -484,11 +484,17 @@ func (s *Server) federatedIncomingToFeedItem(row repo.FederatedIncomingPost) fee
 	textLocked := false
 	mediaLocked := false
 	unlocked := strings.TrimSpace(row.UnlockedMediaType) != ""
-	if row.HasViewPassword && !unlocked {
+	hasMembershipLock := !row.HasViewPassword && strings.TrimSpace(row.UnlockURL) != ""
+	if (row.HasViewPassword || hasMembershipLock) && !unlocked {
 		if scopeProtectsText(row.ViewPasswordScope) {
 			textLocked = true
 		}
 		if scopeProtectsMedia(row.ViewPasswordScope) {
+			mediaLocked = true
+		}
+		if hasMembershipLock && !textLocked && !mediaLocked {
+			// Membership locks always hide both text and media when not yet unlocked.
+			textLocked = true
 			mediaLocked = true
 		}
 		contentLocked = textLocked || mediaLocked
@@ -523,6 +529,7 @@ func (s *Server) federatedIncomingToFeedItem(row repo.FederatedIncomingPost) fee
 		MediaURLs:              mediaURLs,
 		IsNSFW:                 isNSFW,
 		HasViewPassword:        row.HasViewPassword,
+		HasMembershipLock:      hasMembershipLock,
 		ViewPasswordScope:      row.ViewPasswordScope,
 		ViewPasswordTextRanges: repoRangesToJSON(row.ViewPasswordTextRanges),
 		ContentLocked:          contentLocked,

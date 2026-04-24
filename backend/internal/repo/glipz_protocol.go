@@ -32,6 +32,10 @@ type GlipzProtocolPostRow struct {
 	HasViewPassword        bool
 	ViewPasswordScope      int
 	ViewPasswordTextRanges []ViewPasswordTextRange
+	HasMembershipLock      bool
+	MembershipProvider     string
+	MembershipCreatorID    string
+	MembershipTierID       string
 }
 
 // GlipzProtocolUserKeys stores the PEM key pair used for HTTP signatures.
@@ -100,7 +104,9 @@ func (p *Pool) ListGlipzProtocolOutboxPosts(ctx context.Context, authorID uuid.U
 			SELECT p.id, COALESCE(p.caption, ''), p.media_type, p.object_keys, p.created_at, p.visible_at, p.is_nsfw,
 				COALESCE(lk.like_count, 0)::bigint + COALESCE(rlk.like_count, 0)::bigint,
 				p.reply_to_id, (COALESCE(btrim(p.view_password_hash), '') <> '') AS has_view_password,
-				COALESCE(p.view_password_scope, 0), COALESCE(p.view_password_text_ranges, '[]'::jsonb)::text
+				COALESCE(p.view_password_scope, 0), COALESCE(p.view_password_text_ranges, '[]'::jsonb)::text,
+				(COALESCE(btrim(p.membership_provider), '') <> '') AS has_membership_lock,
+				COALESCE(p.membership_provider, ''), COALESCE(p.membership_creator_id, ''), COALESCE(p.membership_tier_id, '')
 			FROM posts p
 			LEFT JOIN (
 				SELECT post_id, COUNT(*)::bigint AS like_count FROM post_likes GROUP BY post_id
@@ -124,7 +130,9 @@ func (p *Pool) ListGlipzProtocolOutboxPosts(ctx context.Context, authorID uuid.U
 			SELECT p.id, COALESCE(p.caption, ''), p.media_type, p.object_keys, p.created_at, p.visible_at, p.is_nsfw,
 				COALESCE(lk.like_count, 0)::bigint + COALESCE(rlk.like_count, 0)::bigint,
 				p.reply_to_id, (COALESCE(btrim(p.view_password_hash), '') <> '') AS has_view_password,
-				COALESCE(p.view_password_scope, 0), COALESCE(p.view_password_text_ranges, '[]'::jsonb)::text
+				COALESCE(p.view_password_scope, 0), COALESCE(p.view_password_text_ranges, '[]'::jsonb)::text,
+				(COALESCE(btrim(p.membership_provider), '') <> '') AS has_membership_lock,
+				COALESCE(p.membership_provider, ''), COALESCE(p.membership_creator_id, ''), COALESCE(p.membership_tier_id, '')
 			FROM posts p
 			LEFT JOIN (
 				SELECT post_id, COUNT(*)::bigint AS like_count FROM post_likes GROUP BY post_id
@@ -150,7 +158,7 @@ func (p *Pool) ListGlipzProtocolOutboxPosts(ctx context.Context, authorID uuid.U
 		var reply pgtype.UUID
 		var scope int
 		var textRanges string
-		if err := rows.Scan(&r.ID, &r.Caption, &r.MediaType, &r.ObjectKeys, &r.CreatedAt, &r.VisibleAt, &r.IsNSFW, &r.LikeCount, &reply, &r.HasViewPassword, &scope, &textRanges); err != nil {
+		if err := rows.Scan(&r.ID, &r.Caption, &r.MediaType, &r.ObjectKeys, &r.CreatedAt, &r.VisibleAt, &r.IsNSFW, &r.LikeCount, &reply, &r.HasViewPassword, &scope, &textRanges, &r.HasMembershipLock, &r.MembershipProvider, &r.MembershipCreatorID, &r.MembershipTierID); err != nil {
 			return nil, err
 		}
 		if reply.Valid {
@@ -315,7 +323,9 @@ func (p *Pool) GetGlipzProtocolPostForDelivery(ctx context.Context, authorID, po
 		SELECT p.id, COALESCE(p.caption, ''), p.media_type, p.object_keys, p.created_at, p.visible_at, p.is_nsfw,
 			COALESCE(lk.like_count, 0)::bigint + COALESCE(rlk.like_count, 0)::bigint,
 			p.reply_to_id, (COALESCE(btrim(p.view_password_hash), '') <> '') AS has_view_password,
-			COALESCE(p.view_password_scope, 0), COALESCE(p.view_password_text_ranges, '[]'::jsonb)::text
+			COALESCE(p.view_password_scope, 0), COALESCE(p.view_password_text_ranges, '[]'::jsonb)::text,
+			(COALESCE(btrim(p.membership_provider), '') <> '') AS has_membership_lock,
+			COALESCE(p.membership_provider, ''), COALESCE(p.membership_creator_id, ''), COALESCE(p.membership_tier_id, '')
 		FROM posts p
 		LEFT JOIN (
 			SELECT post_id, COUNT(*)::bigint AS like_count FROM post_likes GROUP BY post_id
@@ -328,7 +338,7 @@ func (p *Pool) GetGlipzProtocolPostForDelivery(ctx context.Context, authorID, po
 			AND p.visible_at <= NOW()
 			AND p.group_id IS NULL
 			AND `+postVisibilityExpr("p")+` = 'public'
-	`, postID, authorID).Scan(&r.ID, &r.Caption, &r.MediaType, &r.ObjectKeys, &r.CreatedAt, &r.VisibleAt, &r.IsNSFW, &r.LikeCount, &reply, &r.HasViewPassword, &scope, &textRanges)
+	`, postID, authorID).Scan(&r.ID, &r.Caption, &r.MediaType, &r.ObjectKeys, &r.CreatedAt, &r.VisibleAt, &r.IsNSFW, &r.LikeCount, &reply, &r.HasViewPassword, &scope, &textRanges, &r.HasMembershipLock, &r.MembershipProvider, &r.MembershipCreatorID, &r.MembershipTierID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return GlipzProtocolPostRow{}, ErrNotFound
 	}

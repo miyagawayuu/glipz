@@ -22,7 +22,7 @@ This repository contains the official Go implementation of the Glipz Federation 
 ### Who is Glipz for?
 
 - **Community builders** who want a private, customizable social space
-- **Creators** who want to monetize content with fan club integrations (e.g. Patreon)
+- **Creators** who want to monetize content with password-protected or gated content (Unlock)
 - **Developers** who need a flexible API for building custom frontends
 - **Self-hosters** who prefer running their own infrastructure
 
@@ -45,7 +45,7 @@ This repository contains the official Go implementation of the Glipz Federation 
 ### Notes (Premium Content)
 
 - Create exclusive content for supporters
-- Supporter-gated access control via external fan club integrations (currently Patreon)
+- Password-protected access control via the built-in Unlock flow
 - Public / follower-only / private visibility
 
 ### Direct Messages
@@ -207,7 +207,6 @@ curl -H "Authorization: Bearer $TOKEN" \
 | `S3_*` | S3 storage configuration | Yes |
 | `FRONTEND_ORIGIN` | Frontend URL for CORS | Recommended |
 | `GLIPZ_PROTOCOL_*` | Federation settings | Optional |
-| `PATREON_*` | Fan club integration (Patreon) | Optional |
 | `SKYWAY_*` | Video calling | Optional |
 
 See `.env.example` for all options.

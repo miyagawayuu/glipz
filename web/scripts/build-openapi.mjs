@@ -48,7 +48,6 @@ const routes = [
   { path: "/auth/login", method: "post", summary: "Login (JWT)", tag: "Auth", security: "none" },
   { path: "/auth/mfa/verify", method: "post", summary: "Complete MFA login", tag: "Auth", security: "none" },
   { path: "/oauth/token", method: "post", summary: "OAuth2 token endpoint", tag: "Auth", security: "none" },
-  { path: "/patreon/oauth/callback", method: "get", summary: "Patreon OAuth callback", tag: "Patreon", security: "none" },
   { path: "/custom-emojis", method: "get", summary: "List enabled custom emojis", tag: "Custom emojis", security: "none" },
   { path: "/public/posts/feed", method: "get", summary: "Public feed", tag: "Public", security: "none" },
   { path: "/public/posts/feed/stream", method: "get", summary: "Public feed SSE", tag: "Public", security: "none" },
@@ -70,6 +69,7 @@ const routes = [
   { path: "/posts/{postID}/thread", method: "get", summary: "Post thread", tag: "Public optional", security: "optional" },
   { path: "/admin/federation/deliveries", method: "get", summary: "List federation deliveries (site admin)", tag: "Admin", security: "admin" },
   { path: "/admin/federation/delivery-counts", method: "get", summary: "Federation delivery counts", tag: "Admin", security: "admin" },
+  { path: "/admin/federation/entitlements", method: "post", summary: "Issue federation entitlement JWT (site admin)", tag: "Admin", security: "admin" },
   { path: "/admin/federation/domain-blocks", method: "get", summary: "List domain blocks", tag: "Admin", security: "admin" },
   { path: "/admin/federation/domain-blocks", method: "post", summary: "Add domain block", tag: "Admin", security: "admin" },
   { path: "/admin/federation/domain-blocks", method: "delete", summary: "Remove domain block", tag: "Admin", security: "admin" },
@@ -155,13 +155,6 @@ const routes = [
   { path: "/posts", method: "post", summary: "Create post", tag: "Posts", security: "bearer" },
   { path: "/users/by-handle/{handle}/follow", method: "post", summary: "Toggle follow", tag: "Social", security: "bearer" },
   { path: "/me/profile", method: "patch", summary: "Patch profile", tag: "Account", security: "bearer" },
-  { path: "/me/patreon-note-paywall", method: "patch", summary: "Patch Patreon note paywall", tag: "Account", security: "bearer" },
-  { path: "/patreon/member/authorize-url", method: "get", summary: "Patreon member authorize URL", tag: "Patreon", security: "bearer" },
-  { path: "/patreon/creator/authorize-url", method: "get", summary: "Patreon creator authorize URL", tag: "Patreon", security: "bearer" },
-  { path: "/patreon/creator/campaigns", method: "get", summary: "Patreon creator campaigns", tag: "Patreon", security: "bearer" },
-  { path: "/patreon/creator/tiers", method: "get", summary: "Patreon creator tiers", tag: "Patreon", security: "bearer" },
-  { path: "/patreon/member/disconnect", method: "post", summary: "Disconnect Patreon member", tag: "Patreon", security: "bearer" },
-  { path: "/patreon/creator/disconnect", method: "post", summary: "Disconnect Patreon creator", tag: "Patreon", security: "bearer" },
   { path: "/notes", method: "post", summary: "Create note", tag: "Notes", security: "bearer" },
   { path: "/notes/{noteID}", method: "get", summary: "Get note", tag: "Notes", security: "bearer" },
   { path: "/notes/{noteID}", method: "patch", summary: "Patch note", tag: "Notes", security: "bearer" },
@@ -199,7 +192,6 @@ const tags = [
   "Notes",
   "OAuth clients",
   "Personal access tokens",
-  "Patreon",
   "Custom emojis",
   "Admin",
 ];
@@ -301,6 +293,32 @@ const postCreateYamlBlock = `
 `;
 
 yaml += postCreateYamlBlock;
+yaml += `
+    UnlockPostRequest:
+      type: object
+      description: >
+        Unlock a post. Use either a view password, or a short-lived entitlement JWT
+        (JWS) issued by the origin instance for membership-gated content.
+      properties:
+        password:
+          type: string
+          description: View password when the post uses password protection.
+        entitlement_jwt:
+          type: string
+          description: Short-lived JWS for membership unlock (EdDSA/Ed25519).
+
+    AdminIssueFederationEntitlementRequest:
+      type: object
+      description: Issue an entitlement JWT (site-admin only; debugging / PoC).
+      properties:
+        post_id:
+          type: string
+          format: uuid
+        viewer_acct:
+          type: string
+          description: Viewer acct, like user@example.com (must be the federated viewer identity).
+      required: ["post_id", "viewer_acct"]
+`;
 yaml += `paths: {}
 `;
 
@@ -329,6 +347,26 @@ for (const r of routes) {
       content: {
         "application/json": {
           schema: { $ref: "#/components/schemas/PostCreate" },
+        },
+      },
+    };
+  }
+  if ((r.path === "/posts/{postID}/unlock" || r.path === "/federation/posts/{incomingID}/unlock") && r.method === "post") {
+    op.requestBody = {
+      required: true,
+      content: {
+        "application/json": {
+          schema: { $ref: "#/components/schemas/UnlockPostRequest" },
+        },
+      },
+    };
+  }
+  if (r.path === "/admin/federation/entitlements" && r.method === "post") {
+    op.requestBody = {
+      required: true,
+      content: {
+        "application/json": {
+          schema: { $ref: "#/components/schemas/AdminIssueFederationEntitlementRequest" },
         },
       },
     };

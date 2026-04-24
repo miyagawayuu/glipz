@@ -30,6 +30,12 @@ func RunPostsExtras(ctx context.Context, pool *pgxpool.Pool) error {
 
 		`ALTER TABLE posts ADD COLUMN IF NOT EXISTS feed_broadcast_done BOOLEAN NOT NULL DEFAULT TRUE`,
 
+		// Membership locks (fanclub-style entitlements).
+		// When membership_provider is non-empty, the post is considered membership-locked.
+		`ALTER TABLE posts ADD COLUMN IF NOT EXISTS membership_provider TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE posts ADD COLUMN IF NOT EXISTS membership_creator_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE posts ADD COLUMN IF NOT EXISTS membership_tier_id TEXT NOT NULL DEFAULT ''`,
+
 		`ALTER TABLE posts DROP CONSTRAINT IF EXISTS posts_object_keys_len`,
 		`ALTER TABLE posts DROP CONSTRAINT IF EXISTS posts_video_single`,
 		`ALTER TABLE posts DROP CONSTRAINT IF EXISTS posts_media_type_check`,
