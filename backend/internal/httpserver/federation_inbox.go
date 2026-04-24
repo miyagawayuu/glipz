@@ -484,7 +484,7 @@ func (s *Server) federatedIncomingToFeedItem(row repo.FederatedIncomingPost) fee
 	textLocked := false
 	mediaLocked := false
 	unlocked := strings.TrimSpace(row.UnlockedMediaType) != ""
-	hasMembershipLock := !row.HasViewPassword && strings.TrimSpace(row.UnlockURL) != ""
+	hasMembershipLock := strings.TrimSpace(row.MembershipProvider) != "" || (!row.HasViewPassword && strings.TrimSpace(row.UnlockURL) != "")
 	if (row.HasViewPassword || hasMembershipLock) && !unlocked {
 		if scopeProtectsText(row.ViewPasswordScope) {
 			textLocked = true
@@ -530,6 +530,9 @@ func (s *Server) federatedIncomingToFeedItem(row repo.FederatedIncomingPost) fee
 		IsNSFW:                 isNSFW,
 		HasViewPassword:        row.HasViewPassword,
 		HasMembershipLock:      hasMembershipLock,
+		MembershipProvider:     row.MembershipProvider,
+		MembershipCreatorID:    row.MembershipCreatorID,
+		MembershipTierID:       row.MembershipTierID,
 		ViewPasswordScope:      row.ViewPasswordScope,
 		ViewPasswordTextRanges: repoRangesToJSON(row.ViewPasswordTextRanges),
 		ContentLocked:          contentLocked,
@@ -708,7 +711,7 @@ func (s *Server) apInboxUpdateActivity(ctx context.Context, envelope map[string]
 			pubAt = time.Now().UTC()
 		}
 		mt, urls := noteAttachmentsToMedia(note)
-		if err := s.db.UpdateFederatedIncomingFromNote(ctx, noteID, stripHTMLToCaption(content), mt, urls, sensitive, pubAt, 0, "", "", "", false, 0, nil, ""); err != nil {
+		if err := s.db.UpdateFederatedIncomingFromNote(ctx, noteID, stripHTMLToCaption(content), mt, urls, sensitive, pubAt, 0, "", "", "", false, 0, nil, "", "", "", ""); err != nil {
 			return err
 		}
 		s.publishFederatedIncomingUpsertByObjectIRI(ctx, noteID)

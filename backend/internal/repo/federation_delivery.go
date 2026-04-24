@@ -93,7 +93,7 @@ func (p *Pool) UpdateFederationIncomingPost(ctx context.Context, in InsertFedera
 	if inserted {
 		return nil
 	}
-	return p.UpdateFederatedIncomingFromNote(ctx, in.ObjectIRI, in.CaptionText, in.MediaType, in.MediaURLs, in.IsNSFW, in.PublishedAt, in.LikeCount, in.ReplyToObjectIRI, in.RepostOfObjectIRI, in.RepostComment, in.HasViewPassword, in.ViewPasswordScope, in.ViewPasswordTextRanges, in.UnlockURL)
+	return p.UpdateFederatedIncomingFromNote(ctx, in.ObjectIRI, in.CaptionText, in.MediaType, in.MediaURLs, in.IsNSFW, in.PublishedAt, in.LikeCount, in.ReplyToObjectIRI, in.RepostOfObjectIRI, in.RepostComment, in.HasViewPassword, in.ViewPasswordScope, in.ViewPasswordTextRanges, in.UnlockURL, in.MembershipProvider, in.MembershipCreatorID, in.MembershipTierID)
 }
 
 func MustMarshalJSON(v any) json.RawMessage {

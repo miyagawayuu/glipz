@@ -12,7 +12,7 @@ import { getAccessToken } from "../auth";
 import { api } from "../lib/api";
 import { customEmojiMap, ensureCustomEmojiCatalog, pickerCustomEmojisForHandle, unicodeReactionPickerCategories } from "../lib/customEmojis";
 import { blockFederationUser, muteFederationUser } from "../lib/federationPrivacy";
-import { requestPatreonEntitlement } from "../lib/fanclubPatreon";
+import { requestPatreonEntitlement, requestPatreonEntitlementFederated } from "../lib/fanclubPatreon";
 import { unlockTimelinePost, voteTimelinePoll } from "../lib/federationActions";
 import type { TimelinePoll, TimelinePost } from "../types/timeline";
 import {
@@ -738,12 +738,13 @@ async function submitUnlock(it: TimelinePost) {
   try {
     let entitlementJwt: string | undefined;
     if (
-      !it.is_federated &&
       it.has_membership_lock &&
       (it.membership_provider || "").toLowerCase() === "patreon"
     ) {
       try {
-        entitlementJwt = await requestPatreonEntitlement(token, it.id);
+        entitlementJwt = it.is_federated
+          ? await requestPatreonEntitlementFederated(token, it.id, it.remote_object_url)
+          : await requestPatreonEntitlement(token, it.id);
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : "";
         unlockErr[it.id] =
@@ -782,7 +783,11 @@ async function submitUnlock(it: TimelinePost) {
           ? t("components.postTimeline.unlock.noPassword")
           : msg === "invalid_unlock"
             ? t("components.postTimeline.unlock.passwordRequired")
-          : msg;
+            : msg === "federation_patreon_entitlement_unsupported"
+              ? t("components.postTimeline.unlock.patreonFederationUnsupported")
+              : msg === "untrusted_instance"
+                ? t("components.postTimeline.unlock.untrustedInstance")
+                : msg;
   } finally {
     unlockBusy.value = null;
   }

@@ -43,6 +43,9 @@ type FederatedIncomingPost struct {
 	ViewPasswordScope      int
 	ViewPasswordTextRanges []ViewPasswordTextRange
 	UnlockURL              string
+	MembershipProvider     string
+	MembershipCreatorID    string
+	MembershipTierID       string
 	UnlockedCaptionText    string
 	UnlockedMediaType      string
 	UnlockedMediaURLs      []string
@@ -71,6 +74,9 @@ type InsertFederatedIncomingInput struct {
 	ViewPasswordScope      int
 	ViewPasswordTextRanges []ViewPasswordTextRange
 	UnlockURL              string
+	MembershipProvider     string
+	MembershipCreatorID    string
+	MembershipTierID       string
 }
 
 // InsertFederatedIncomingPost stores an inbound Create payload.
@@ -103,9 +109,11 @@ func (p *Pool) InsertFederatedIncomingPost(ctx context.Context, in InsertFederat
 			object_iri, create_activity_iri, actor_iri, actor_acct, actor_name, actor_icon_url, actor_profile_url,
 			caption_text, media_type, media_urls, is_nsfw, published_at, recipient_user_id, like_count,
 			reply_to_object_iri, repost_of_object_iri, repost_comment,
-			has_view_password, view_password_scope, view_password_text_ranges, unlock_url
+			has_view_password, view_password_scope, view_password_text_ranges, unlock_url,
+			membership_provider, membership_creator_id, membership_tier_id
 		) VALUES ($1, NULLIF(trim($2), ''), $3, $4, $5, NULLIF(trim($6), ''), NULLIF(trim($7), ''),
-			$8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20::jsonb, NULLIF(trim($21), ''))
+			$8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20::jsonb, NULLIF(trim($21), ''),
+			NULLIF(trim($22), ''), NULLIF(trim($23), ''), NULLIF(trim($24), ''))
 		ON CONFLICT (object_iri) DO NOTHING
 		RETURNING id
 	`, strings.TrimSpace(in.ObjectIRI), strings.TrimSpace(in.CreateActivityIRI),
@@ -115,6 +123,7 @@ func (p *Pool) InsertFederatedIncomingPost(ctx context.Context, in InsertFederat
 		truncateRunes(in.CaptionText, 10000), mt, in.MediaURLs, in.IsNSFW, in.PublishedAt.UTC(), in.RecipientUserID, maxInt64(in.LikeCount, 0),
 		strings.TrimSpace(in.ReplyToObjectIRI), strings.TrimSpace(in.RepostOfObjectIRI), truncateRunes(strings.TrimSpace(in.RepostComment), 2000),
 		in.HasViewPassword, in.ViewPasswordScope, MarshalViewPasswordTextRanges(in.ViewPasswordTextRanges), strings.TrimSpace(in.UnlockURL),
+		strings.TrimSpace(in.MembershipProvider), strings.TrimSpace(in.MembershipCreatorID), strings.TrimSpace(in.MembershipTierID),
 	).Scan(&postID)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -192,7 +201,8 @@ func (p *Pool) ListFederatedIncomingForViewer(ctx context.Context, viewerID uuid
 				COALESCE(f.actor_icon_url, ''), COALESCE(f.actor_profile_url, ''),
 				f.caption_text, f.media_type, f.media_urls, f.is_nsfw, f.published_at, f.received_at, f.like_count,
 				COALESCE(f.reply_to_object_iri, ''), COALESCE(f.repost_of_object_iri, ''), COALESCE(f.repost_comment, ''),
-				f.has_view_password, COALESCE(f.view_password_scope, 0), COALESCE(f.view_password_text_ranges, '[]'::jsonb)::text, COALESCE(f.unlock_url, '')
+				f.has_view_password, COALESCE(f.view_password_scope, 0), COALESCE(f.view_password_text_ranges, '[]'::jsonb)::text, COALESCE(f.unlock_url, ''),
+			COALESCE(f.membership_provider, ''), COALESCE(f.membership_creator_id, ''), COALESCE(f.membership_tier_id, '')
 			FROM federation_incoming_posts f
 			WHERE f.deleted_at IS NULL
 				AND (f.recipient_user_id IS NULL OR f.recipient_user_id = $1)
@@ -210,7 +220,8 @@ func (p *Pool) ListFederatedIncomingForViewer(ctx context.Context, viewerID uuid
 				COALESCE(f.actor_icon_url, ''), COALESCE(f.actor_profile_url, ''),
 				f.caption_text, f.media_type, f.media_urls, f.is_nsfw, f.published_at, f.received_at, f.like_count,
 				COALESCE(f.reply_to_object_iri, ''), COALESCE(f.repost_of_object_iri, ''), COALESCE(f.repost_comment, ''),
-				f.has_view_password, COALESCE(f.view_password_scope, 0), COALESCE(f.view_password_text_ranges, '[]'::jsonb)::text, COALESCE(f.unlock_url, '')
+				f.has_view_password, COALESCE(f.view_password_scope, 0), COALESCE(f.view_password_text_ranges, '[]'::jsonb)::text, COALESCE(f.unlock_url, ''),
+			COALESCE(f.membership_provider, ''), COALESCE(f.membership_creator_id, ''), COALESCE(f.membership_tier_id, '')
 			FROM federation_incoming_posts f
 			WHERE f.deleted_at IS NULL
 				AND (f.recipient_user_id IS NULL OR f.recipient_user_id = $1)
@@ -233,7 +244,8 @@ func (p *Pool) ListFederatedIncomingForViewer(ctx context.Context, viewerID uuid
 			&r.ActorIconURL, &r.ActorProfileURL, &r.CaptionText, &r.MediaType, &r.MediaURLs,
 			&r.IsNSFW, &r.PublishedAt, &r.ReceivedAt, &r.LikeCount,
 			&r.ReplyToObjectIRI, &r.RepostOfObjectIRI, &r.RepostComment,
-			&r.HasViewPassword, &scope, &textRanges, &r.UnlockURL); err != nil {
+			&r.HasViewPassword, &scope, &textRanges, &r.UnlockURL,
+			&r.MembershipProvider, &r.MembershipCreatorID, &r.MembershipTierID); err != nil {
 			return nil, err
 		}
 		r.ViewPasswordScope, r.ViewPasswordTextRanges, err = decodeFederatedIncomingViewPasswordProtection(r.HasViewPassword, scope, textRanges)
@@ -265,14 +277,16 @@ func (p *Pool) GetFederatedIncomingByID(ctx context.Context, id uuid.UUID) (Fede
 			COALESCE(actor_icon_url, ''), COALESCE(actor_profile_url, ''),
 			caption_text, media_type, media_urls, is_nsfw, published_at, received_at, recipient_user_id, like_count,
 			COALESCE(reply_to_object_iri, ''), COALESCE(repost_of_object_iri, ''), COALESCE(repost_comment, ''),
-			has_view_password, COALESCE(view_password_scope, 0), COALESCE(view_password_text_ranges, '[]'::jsonb)::text, COALESCE(unlock_url, '')
+			has_view_password, COALESCE(view_password_scope, 0), COALESCE(view_password_text_ranges, '[]'::jsonb)::text, COALESCE(unlock_url, ''),
+			COALESCE(membership_provider, ''), COALESCE(membership_creator_id, ''), COALESCE(membership_tier_id, '')
 		FROM federation_incoming_posts
 		WHERE deleted_at IS NULL AND id = $1
 	`, id).Scan(&r.ID, &r.ObjectIRI, &r.CreateActivityIRI, &r.ActorIRI, &r.ActorAcct, &r.ActorName,
 		&r.ActorIconURL, &r.ActorProfileURL, &r.CaptionText, &r.MediaType, &r.MediaURLs,
 		&r.IsNSFW, &r.PublishedAt, &r.ReceivedAt, &recipient, &r.LikeCount,
 		&r.ReplyToObjectIRI, &r.RepostOfObjectIRI, &r.RepostComment,
-		&r.HasViewPassword, &scope, &textRanges, &r.UnlockURL)
+		&r.HasViewPassword, &scope, &textRanges, &r.UnlockURL,
+		&r.MembershipProvider, &r.MembershipCreatorID, &r.MembershipTierID)
 	if recipient.Valid {
 		id := uuid.UUID(recipient.Bytes)
 		r.RecipientUserID = &id
@@ -293,14 +307,16 @@ func (p *Pool) GetFederatedIncomingByObjectIRI(ctx context.Context, objectIRI st
 			COALESCE(actor_icon_url, ''), COALESCE(actor_profile_url, ''),
 			caption_text, media_type, media_urls, is_nsfw, published_at, received_at, recipient_user_id, like_count,
 			COALESCE(reply_to_object_iri, ''), COALESCE(repost_of_object_iri, ''), COALESCE(repost_comment, ''),
-			has_view_password, COALESCE(view_password_scope, 0), COALESCE(view_password_text_ranges, '[]'::jsonb)::text, COALESCE(unlock_url, '')
+			has_view_password, COALESCE(view_password_scope, 0), COALESCE(view_password_text_ranges, '[]'::jsonb)::text, COALESCE(unlock_url, ''),
+			COALESCE(membership_provider, ''), COALESCE(membership_creator_id, ''), COALESCE(membership_tier_id, '')
 		FROM federation_incoming_posts
 		WHERE deleted_at IS NULL AND object_iri = $1
 	`, strings.TrimSpace(objectIRI)).Scan(&r.ID, &r.ObjectIRI, &r.CreateActivityIRI, &r.ActorIRI, &r.ActorAcct, &r.ActorName,
 		&r.ActorIconURL, &r.ActorProfileURL, &r.CaptionText, &r.MediaType, &r.MediaURLs,
 		&r.IsNSFW, &r.PublishedAt, &r.ReceivedAt, &recipient, &r.LikeCount,
 		&r.ReplyToObjectIRI, &r.RepostOfObjectIRI, &r.RepostComment,
-		&r.HasViewPassword, &scope, &textRanges, &r.UnlockURL)
+		&r.HasViewPassword, &scope, &textRanges, &r.UnlockURL,
+		&r.MembershipProvider, &r.MembershipCreatorID, &r.MembershipTierID)
 	if recipient.Valid {
 		id := uuid.UUID(recipient.Bytes)
 		r.RecipientUserID = &id
@@ -326,6 +342,7 @@ func (p *Pool) ListBookmarkedFederatedIncoming(ctx context.Context, viewerID uui
 			f.caption_text, f.media_type, f.media_urls, f.is_nsfw, f.published_at, f.received_at, f.like_count,
 			COALESCE(f.reply_to_object_iri, ''), COALESCE(f.repost_of_object_iri, ''), COALESCE(f.repost_comment, ''),
 			f.has_view_password, COALESCE(f.view_password_scope, 0), COALESCE(f.view_password_text_ranges, '[]'::jsonb)::text, COALESCE(f.unlock_url, ''),
+			COALESCE(f.membership_provider, ''), COALESCE(f.membership_creator_id, ''), COALESCE(f.membership_tier_id, ''),
 			fb.created_at
 		FROM federation_incoming_post_bookmarks fb
 		JOIN federation_incoming_posts f ON f.id = fb.federation_incoming_post_id
@@ -348,7 +365,8 @@ func (p *Pool) ListBookmarkedFederatedIncoming(ctx context.Context, viewerID uui
 			&r.ActorIconURL, &r.ActorProfileURL, &r.CaptionText, &r.MediaType, &r.MediaURLs,
 			&r.IsNSFW, &r.PublishedAt, &r.ReceivedAt, &r.LikeCount,
 			&r.ReplyToObjectIRI, &r.RepostOfObjectIRI, &r.RepostComment,
-			&r.HasViewPassword, &scope, &textRanges, &r.UnlockURL, &r.BookmarkedAt); err != nil {
+			&r.HasViewPassword, &scope, &textRanges, &r.UnlockURL,
+			&r.MembershipProvider, &r.MembershipCreatorID, &r.MembershipTierID, &r.BookmarkedAt); err != nil {
 			return nil, err
 		}
 		r.ViewPasswordScope, r.ViewPasswordTextRanges, err = decodeFederatedIncomingViewPasswordProtection(r.HasViewPassword, scope, textRanges)
@@ -391,7 +409,8 @@ func (p *Pool) ListFederatedIncomingRepliesByObjectIRI(ctx context.Context, view
 			COALESCE(f.actor_icon_url, ''), COALESCE(f.actor_profile_url, ''),
 			f.caption_text, f.media_type, f.media_urls, f.is_nsfw, f.published_at, f.received_at, f.like_count,
 			COALESCE(f.reply_to_object_iri, ''), COALESCE(f.repost_of_object_iri, ''), COALESCE(f.repost_comment, ''),
-			f.has_view_password, COALESCE(f.view_password_scope, 0), COALESCE(f.view_password_text_ranges, '[]'::jsonb)::text, COALESCE(f.unlock_url, '')
+			f.has_view_password, COALESCE(f.view_password_scope, 0), COALESCE(f.view_password_text_ranges, '[]'::jsonb)::text, COALESCE(f.unlock_url, ''),
+			COALESCE(f.membership_provider, ''), COALESCE(f.membership_creator_id, ''), COALESCE(f.membership_tier_id, '')
 		FROM federation_incoming_posts f
 		WHERE f.deleted_at IS NULL
 			AND (f.recipient_user_id IS NULL OR f.recipient_user_id = $1)
@@ -412,7 +431,8 @@ func (p *Pool) ListFederatedIncomingRepliesByObjectIRI(ctx context.Context, view
 			&r.ActorIconURL, &r.ActorProfileURL, &r.CaptionText, &r.MediaType, &r.MediaURLs,
 			&r.IsNSFW, &r.PublishedAt, &r.ReceivedAt, &r.LikeCount,
 			&r.ReplyToObjectIRI, &r.RepostOfObjectIRI, &r.RepostComment,
-			&r.HasViewPassword, &scope, &textRanges, &r.UnlockURL); err != nil {
+			&r.HasViewPassword, &scope, &textRanges, &r.UnlockURL,
+			&r.MembershipProvider, &r.MembershipCreatorID, &r.MembershipTierID); err != nil {
 			return nil, err
 		}
 		r.ViewPasswordScope, r.ViewPasswordTextRanges, err = decodeFederatedIncomingViewPasswordProtection(r.HasViewPassword, scope, textRanges)
@@ -446,7 +466,8 @@ func (p *Pool) ListFederatedIncomingRepliesByLocalPostIDSuffix(ctx context.Conte
 			COALESCE(f.actor_icon_url, ''), COALESCE(f.actor_profile_url, ''),
 			f.caption_text, f.media_type, f.media_urls, f.is_nsfw, f.published_at, f.received_at, f.like_count,
 			COALESCE(f.reply_to_object_iri, ''), COALESCE(f.repost_of_object_iri, ''), COALESCE(f.repost_comment, ''),
-			f.has_view_password, COALESCE(f.view_password_scope, 0), COALESCE(f.view_password_text_ranges, '[]'::jsonb)::text, COALESCE(f.unlock_url, '')
+			f.has_view_password, COALESCE(f.view_password_scope, 0), COALESCE(f.view_password_text_ranges, '[]'::jsonb)::text, COALESCE(f.unlock_url, ''),
+			COALESCE(f.membership_provider, ''), COALESCE(f.membership_creator_id, ''), COALESCE(f.membership_tier_id, '')
 		FROM federation_incoming_posts f
 		WHERE f.deleted_at IS NULL
 			AND (f.recipient_user_id IS NULL OR f.recipient_user_id = $1)
@@ -467,7 +488,8 @@ func (p *Pool) ListFederatedIncomingRepliesByLocalPostIDSuffix(ctx context.Conte
 			&r.ActorIconURL, &r.ActorProfileURL, &r.CaptionText, &r.MediaType, &r.MediaURLs,
 			&r.IsNSFW, &r.PublishedAt, &r.ReceivedAt, &r.LikeCount,
 			&r.ReplyToObjectIRI, &r.RepostOfObjectIRI, &r.RepostComment,
-			&r.HasViewPassword, &scope, &textRanges, &r.UnlockURL); err != nil {
+			&r.HasViewPassword, &scope, &textRanges, &r.UnlockURL,
+			&r.MembershipProvider, &r.MembershipCreatorID, &r.MembershipTierID); err != nil {
 			return nil, err
 		}
 		r.ViewPasswordScope, r.ViewPasswordTextRanges, err = decodeFederatedIncomingViewPasswordProtection(r.HasViewPassword, scope, textRanges)
@@ -489,7 +511,7 @@ func (p *Pool) ListFederatedIncomingRepliesByLocalPostIDSuffix(ctx context.Conte
 }
 
 // UpdateFederatedIncomingFromNote updates caption, media, and related fields for the row matching an inbound Note object ID.
-func (p *Pool) UpdateFederatedIncomingFromNote(ctx context.Context, objectIRI, caption string, mediaType string, mediaURLs []string, isNSFW bool, publishedAt time.Time, likeCount int64, replyToObjectIRI, repostOfObjectIRI, repostComment string, hasViewPassword bool, viewPasswordScope int, viewPasswordTextRanges []ViewPasswordTextRange, unlockURL string) error {
+func (p *Pool) UpdateFederatedIncomingFromNote(ctx context.Context, objectIRI, caption string, mediaType string, mediaURLs []string, isNSFW bool, publishedAt time.Time, likeCount int64, replyToObjectIRI, repostOfObjectIRI, repostComment string, hasViewPassword bool, viewPasswordScope int, viewPasswordTextRanges []ViewPasswordTextRange, unlockURL, membershipProvider, membershipCreatorID, membershipTierID string) error {
 	oi := strings.TrimSpace(objectIRI)
 	if oi == "" {
 		return fmt.Errorf("empty object iri")
@@ -528,12 +550,16 @@ func (p *Pool) UpdateFederatedIncomingFromNote(ctx context.Context, objectIRI, c
 			has_view_password = $11,
 			view_password_scope = $12,
 			view_password_text_ranges = $13::jsonb,
-			unlock_url = NULLIF(trim($14), '')
+			unlock_url = NULLIF(trim($14), ''),
+			membership_provider = NULLIF(trim($15), ''),
+			membership_creator_id = NULLIF(trim($16), ''),
+			membership_tier_id = NULLIF(trim($17), '')
 		WHERE deleted_at IS NULL AND object_iri = $1
 		RETURNING id
 	`, oi, truncateRunes(caption, 10000), mt, mediaURLs, isNSFW, publishedAt.UTC(), maxInt64(likeCount, 0),
 		strings.TrimSpace(replyToObjectIRI), strings.TrimSpace(repostOfObjectIRI), truncateRunes(strings.TrimSpace(repostComment), 2000),
-		hasViewPassword, scope, MarshalViewPasswordTextRanges(ranges), strings.TrimSpace(unlockURL)).Scan(&postID)
+		hasViewPassword, scope, MarshalViewPasswordTextRanges(ranges), strings.TrimSpace(unlockURL),
+		strings.TrimSpace(membershipProvider), strings.TrimSpace(membershipCreatorID), strings.TrimSpace(membershipTierID)).Scan(&postID)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil
@@ -592,7 +618,8 @@ func (p *Pool) ListFederatedIncomingPublicByActorIRI(ctx context.Context, actorI
 			COALESCE(actor_icon_url, ''), COALESCE(actor_profile_url, ''),
 			caption_text, media_type, media_urls, is_nsfw, published_at, received_at, like_count,
 			COALESCE(reply_to_object_iri, ''), COALESCE(repost_of_object_iri, ''), COALESCE(repost_comment, ''),
-			has_view_password, COALESCE(view_password_scope, 0), COALESCE(view_password_text_ranges, '[]'::jsonb)::text, COALESCE(unlock_url, '')
+			has_view_password, COALESCE(view_password_scope, 0), COALESCE(view_password_text_ranges, '[]'::jsonb)::text, COALESCE(unlock_url, ''),
+			COALESCE(membership_provider, ''), COALESCE(membership_creator_id, ''), COALESCE(membership_tier_id, '')
 		FROM federation_incoming_posts
 		WHERE deleted_at IS NULL
 			AND recipient_user_id IS NULL
@@ -614,7 +641,8 @@ func (p *Pool) ListFederatedIncomingPublicByActorIRI(ctx context.Context, actorI
 			&r.ActorIconURL, &r.ActorProfileURL, &r.CaptionText, &r.MediaType, &r.MediaURLs,
 			&r.IsNSFW, &r.PublishedAt, &r.ReceivedAt, &r.LikeCount,
 			&r.ReplyToObjectIRI, &r.RepostOfObjectIRI, &r.RepostComment,
-			&r.HasViewPassword, &scope, &textRanges, &r.UnlockURL); err != nil {
+			&r.HasViewPassword, &scope, &textRanges, &r.UnlockURL,
+			&r.MembershipProvider, &r.MembershipCreatorID, &r.MembershipTierID); err != nil {
 			return nil, err
 		}
 		var err error
@@ -654,7 +682,8 @@ func (p *Pool) ListFederatedIncomingPublicByActorIRIForViewer(ctx context.Contex
 			COALESCE(f.actor_icon_url, ''), COALESCE(f.actor_profile_url, ''),
 			f.caption_text, f.media_type, f.media_urls, f.is_nsfw, f.published_at, f.received_at, f.like_count,
 			COALESCE(f.reply_to_object_iri, ''), COALESCE(f.repost_of_object_iri, ''), COALESCE(f.repost_comment, ''),
-			f.has_view_password, COALESCE(f.view_password_scope, 0), COALESCE(f.view_password_text_ranges, '[]'::jsonb)::text, COALESCE(f.unlock_url, '')
+			f.has_view_password, COALESCE(f.view_password_scope, 0), COALESCE(f.view_password_text_ranges, '[]'::jsonb)::text, COALESCE(f.unlock_url, ''),
+			COALESCE(f.membership_provider, ''), COALESCE(f.membership_creator_id, ''), COALESCE(f.membership_tier_id, '')
 		FROM federation_incoming_posts f
 		WHERE f.deleted_at IS NULL
 			AND f.recipient_user_id IS NULL
@@ -676,7 +705,8 @@ func (p *Pool) ListFederatedIncomingPublicByActorIRIForViewer(ctx context.Contex
 			&r.ActorIconURL, &r.ActorProfileURL, &r.CaptionText, &r.MediaType, &r.MediaURLs,
 			&r.IsNSFW, &r.PublishedAt, &r.ReceivedAt, &r.LikeCount,
 			&r.ReplyToObjectIRI, &r.RepostOfObjectIRI, &r.RepostComment,
-			&r.HasViewPassword, &scope, &textRanges, &r.UnlockURL); err != nil {
+			&r.HasViewPassword, &scope, &textRanges, &r.UnlockURL,
+			&r.MembershipProvider, &r.MembershipCreatorID, &r.MembershipTierID); err != nil {
 			return nil, err
 		}
 		var err error
@@ -708,7 +738,8 @@ func (p *Pool) ListFederatedIncomingForRemoteFollows(ctx context.Context, viewer
 			COALESCE(f.actor_icon_url, ''), COALESCE(f.actor_profile_url, ''),
 			f.caption_text, f.media_type, f.media_urls, f.is_nsfw, f.published_at, f.received_at, f.like_count,
 			COALESCE(f.reply_to_object_iri, ''), COALESCE(f.repost_of_object_iri, ''), COALESCE(f.repost_comment, ''),
-			f.has_view_password, COALESCE(f.view_password_scope, 0), COALESCE(f.view_password_text_ranges, '[]'::jsonb)::text, COALESCE(f.unlock_url, '')
+			f.has_view_password, COALESCE(f.view_password_scope, 0), COALESCE(f.view_password_text_ranges, '[]'::jsonb)::text, COALESCE(f.unlock_url, ''),
+			COALESCE(f.membership_provider, ''), COALESCE(f.membership_creator_id, ''), COALESCE(f.membership_tier_id, '')
 		FROM federation_incoming_posts f
 		WHERE f.deleted_at IS NULL
 			AND (f.recipient_user_id IS NULL OR f.recipient_user_id = $1)
@@ -735,7 +766,8 @@ func (p *Pool) ListFederatedIncomingForRemoteFollows(ctx context.Context, viewer
 			&r.ActorIconURL, &r.ActorProfileURL, &r.CaptionText, &r.MediaType, &r.MediaURLs,
 			&r.IsNSFW, &r.PublishedAt, &r.ReceivedAt, &r.LikeCount,
 			&r.ReplyToObjectIRI, &r.RepostOfObjectIRI, &r.RepostComment,
-			&r.HasViewPassword, &scope, &textRanges, &r.UnlockURL); err != nil {
+			&r.HasViewPassword, &scope, &textRanges, &r.UnlockURL,
+			&r.MembershipProvider, &r.MembershipCreatorID, &r.MembershipTierID); err != nil {
 			return nil, err
 		}
 		r.ViewPasswordScope, r.ViewPasswordTextRanges, err = decodeFederatedIncomingViewPasswordProtection(r.HasViewPassword, scope, textRanges)
@@ -770,7 +802,8 @@ func (p *Pool) ListFederatedIncomingByActorIRI(ctx context.Context, actorIRI str
 			COALESCE(actor_icon_url, ''), COALESCE(actor_profile_url, ''),
 			caption_text, media_type, media_urls, is_nsfw, published_at, received_at, like_count,
 			COALESCE(reply_to_object_iri, ''), COALESCE(repost_of_object_iri, ''), COALESCE(repost_comment, ''),
-			has_view_password, COALESCE(view_password_scope, 0), COALESCE(view_password_text_ranges, '[]'::jsonb)::text, COALESCE(unlock_url, '')
+			has_view_password, COALESCE(view_password_scope, 0), COALESCE(view_password_text_ranges, '[]'::jsonb)::text, COALESCE(unlock_url, ''),
+			COALESCE(membership_provider, ''), COALESCE(membership_creator_id, ''), COALESCE(membership_tier_id, '')
 		FROM federation_incoming_posts
 		WHERE deleted_at IS NULL
 			AND actor_iri = $1
@@ -791,7 +824,8 @@ func (p *Pool) ListFederatedIncomingByActorIRI(ctx context.Context, actorIRI str
 			&r.ActorIconURL, &r.ActorProfileURL, &r.CaptionText, &r.MediaType, &r.MediaURLs,
 			&r.IsNSFW, &r.PublishedAt, &r.ReceivedAt, &r.LikeCount,
 			&r.ReplyToObjectIRI, &r.RepostOfObjectIRI, &r.RepostComment,
-			&r.HasViewPassword, &scope, &textRanges, &r.UnlockURL); err != nil {
+			&r.HasViewPassword, &scope, &textRanges, &r.UnlockURL,
+			&r.MembershipProvider, &r.MembershipCreatorID, &r.MembershipTierID); err != nil {
 			return nil, err
 		}
 		r.ViewPasswordScope, r.ViewPasswordTextRanges, err = decodeFederatedIncomingViewPasswordProtection(r.HasViewPassword, scope, textRanges)

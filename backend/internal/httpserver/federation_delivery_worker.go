@@ -156,6 +156,9 @@ func (s *Server) federationEventPostPayload(row repo.FederationPublicPostRow) fe
 	if row.HasMembershipLock {
 		out.HasMembershipLock = true
 		out.UnlockURL = s.localFederationPostUnlockURL(row.ID)
+		out.MembershipProvider = strings.TrimSpace(row.MembershipProvider)
+		out.MembershipCreatorID = strings.TrimSpace(row.MembershipCreatorID)
+		out.MembershipTierID = strings.TrimSpace(row.MembershipTierID)
 	} else if row.HasViewPassword {
 		out.HasViewPassword = true
 		out.ViewPasswordScope = row.ViewPasswordScope

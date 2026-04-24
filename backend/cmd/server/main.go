@@ -114,6 +114,9 @@ func main() {
 	if err := migrate.RunFanclubPatreon(ctx, pool); err != nil {
 		log.Fatalf("migrate fanclub patreon: %v", err)
 	}
+	if err := migrate.RunFederationIncomingMembership(ctx, pool); err != nil {
+		log.Fatalf("migrate federation incoming membership: %v", err)
+	}
 
 	opt, err := redis.ParseURL(cfg.RedisURL)
 	if err != nil {

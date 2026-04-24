@@ -16,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
+	"glipz.io/backend/internal/fanclub/patreon"
 	"glipz.io/backend/internal/repo"
 )
 
@@ -323,34 +324,67 @@ func (s *Server) handleFederatedPostUnlock(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Membership unlock: when neither password nor entitlement is provided,
-	// try to mint a short-lived entitlement via the remote origin first.
+	// try local Patreon verification (viewer's home has OAuth) for federated rows with campaign/tier metadata,
+	// then fall back to the remote origin entitlement endpoint for other providers.
 	if req.Password == "" && req.EntitlementJWT == "" {
-		entURL := ""
-		if strings.HasSuffix(unlockURL, "/unlock") {
-			entURL = strings.TrimSuffix(unlockURL, "/unlock") + "/entitlement"
-		}
-		if entURL == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_unlock"})
-			return
-		}
-		entBody, err := s.signedFederationPOSTJSON(r.Context(), entURL, federationEntitlementRequest{
-			EventID:    federationNewEventID(),
-			ViewerAcct: actor.Acct,
-		})
-		if err != nil {
-			if strings.Contains(err.Error(), "403") || strings.Contains(err.Error(), "untrusted_instance") {
-				writeJSON(w, http.StatusForbidden, map[string]string{"error": "untrusted_instance"})
+		if s.patreonIntegrationAvailable() &&
+			strings.EqualFold(strings.TrimSpace(row.MembershipProvider), patreon.ProviderID) &&
+			strings.TrimSpace(row.MembershipCreatorID) != "" && strings.TrimSpace(row.MembershipTierID) != "" {
+			if jws, err := s.mintPatreonEntitlementJWTFederatedIncoming(r.Context(), uid, row); err == nil && strings.TrimSpace(jws) != "" {
+				req.EntitlementJWT = strings.TrimSpace(jws)
+			} else if err != nil {
+				msg := err.Error()
+				switch {
+				case strings.Contains(msg, "not_entitled"):
+					writeJSON(w, http.StatusForbidden, map[string]string{"error": "not_entitled"})
+					return
+				case strings.Contains(msg, "patreon_not_connected"):
+					writeJSON(w, http.StatusBadRequest, map[string]string{"error": "patreon_not_connected"})
+					return
+				case strings.Contains(msg, "patreon_api_error"):
+					writeJSON(w, http.StatusBadGateway, map[string]string{"error": "patreon_api_error"})
+					return
+				case strings.Contains(msg, "missing_membership_metadata"), strings.Contains(msg, "bad_object_iri"):
+					writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_unlock"})
+					return
+				}
+				writeServerError(w, "mintPatreonEntitlementJWTFederatedIncoming", err)
 				return
 			}
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "remote_unavailable"})
-			return
 		}
-		var ent federationEntitlementResponse
-		if err := json.Unmarshal(entBody, &ent); err != nil || strings.TrimSpace(ent.EntitlementJWT) == "" {
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "remote_invalid_response"})
-			return
+		if req.EntitlementJWT == "" {
+			entURL := ""
+			if strings.HasSuffix(unlockURL, "/unlock") {
+				entURL = strings.TrimSuffix(unlockURL, "/unlock") + "/entitlement"
+			}
+			if entURL == "" {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_unlock"})
+				return
+			}
+			entBody, err := s.signedFederationPOSTJSON(r.Context(), entURL, federationEntitlementRequest{
+				EventID:    federationNewEventID(),
+				ViewerAcct: actor.Acct,
+			})
+			if err != nil {
+				es := err.Error()
+				if strings.Contains(es, "federation_patreon_entitlement_unsupported") {
+					writeJSON(w, http.StatusBadGateway, map[string]string{"error": "federation_patreon_entitlement_unsupported"})
+					return
+				}
+				if strings.Contains(es, "status 403:") && strings.Contains(es, "untrusted_instance") {
+					writeJSON(w, http.StatusForbidden, map[string]string{"error": "untrusted_instance"})
+					return
+				}
+				writeJSON(w, http.StatusBadGateway, map[string]string{"error": "remote_unavailable"})
+				return
+			}
+			var ent federationEntitlementResponse
+			if err := json.Unmarshal(entBody, &ent); err != nil || strings.TrimSpace(ent.EntitlementJWT) == "" {
+				writeJSON(w, http.StatusBadGateway, map[string]string{"error": "remote_invalid_response"})
+				return
+			}
+			req.EntitlementJWT = strings.TrimSpace(ent.EntitlementJWT)
 		}
-		req.EntitlementJWT = strings.TrimSpace(ent.EntitlementJWT)
 	}
 
 	body, err := s.signedFederationPOSTJSON(r.Context(), unlockURL, federationUnlockRequest{
@@ -428,7 +462,7 @@ func (s *Server) handleAdminFederationIssueEntitlement(w http.ResponseWriter, r 
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "not_membership_locked"})
 		return
 	}
-	jws, err := s.mintFederationEntitlementJWT(viewerAcct, row, postID)
+	jws, err := s.mintFederationEntitlementJWT(r.Context(), viewerAcct, row, postID, nil)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "cannot_issue"})
 		return

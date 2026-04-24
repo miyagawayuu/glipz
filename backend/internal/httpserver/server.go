@@ -179,6 +179,7 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c *s3client
 			r.Get("/fanclub/patreon/status", s.handlePatreonStatus)
 			r.Delete("/fanclub/patreon/connection", s.handlePatreonDeleteConnection)
 			r.Post("/fanclub/patreon/entitlement", s.handlePatreonEntitlement)
+			r.Post("/fanclub/patreon/entitlement-federated", s.handlePatreonEntitlementFederated)
 			r.Get("/fanclub/patreon/campaigns", s.handlePatreonCampaigns)
 			r.Get("/me", s.handleMe)
 			r.Get("/me/custom-emojis", s.handleMeListCustomEmojis)
@@ -1969,27 +1970,34 @@ func (s *Server) handlePostUnlock(w http.ResponseWriter, r *http.Request) {
 	viewerAcct := s.localFullAcct(u.Handle)
 	pass := strings.TrimSpace(req.Password)
 	ent := strings.TrimSpace(req.EntitlementJWT)
-	if hasPW && pass != "" {
-		if err := bcrypt.CompareHashAndPassword([]byte(*row.ViewPasswordHash), []byte(req.Password)); err != nil {
-			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "wrong_password"})
+	if hasMem {
+		if ent == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_unlock"})
 			return
 		}
-	} else if hasMem && ent != "" {
-		if err := s.verifyFederationEntitlementJWT(ent, viewerAcct, row, postID); err != nil {
+		if err := s.verifyFederationEntitlementJWT(r.Context(), ent, viewerAcct, row, postID); err != nil {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_entitlement"})
 			return
 		}
-	} else {
 		if hasPW {
-			if hasMem {
-				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_unlock"})
-			} else {
+			if pass == "" {
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no_password"})
+				return
 			}
+			if err := bcrypt.CompareHashAndPassword([]byte(*row.ViewPasswordHash), []byte(pass)); err != nil {
+				writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "wrong_password"})
+				return
+			}
+		}
+	} else if hasPW {
+		if pass == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no_password"})
 			return
 		}
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_unlock"})
-		return
+		if err := bcrypt.CompareHashAndPassword([]byte(*row.ViewPasswordHash), []byte(pass)); err != nil {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "wrong_password"})
+			return
+		}
 	}
 	rk := postUnlockRedisKey(uid, postID)
 	if err := s.rdb.Set(r.Context(), rk, "1", postUnlockRedisTTL).Err(); err != nil {
@@ -2126,6 +2134,10 @@ func (s *Server) handlePatchPost(w http.ResponseWriter, r *http.Request) {
 		}
 		if errors.Is(err, repo.ErrInvalidViewPasswordTextRanges) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_view_password_text_ranges"})
+			return
+		}
+		if errors.Is(err, repo.ErrMembershipWithPassword) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "membership_with_password"})
 			return
 		}
 		writeServerError(w, "UpdatePost", err)

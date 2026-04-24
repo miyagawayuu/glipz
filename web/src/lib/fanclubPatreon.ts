@@ -70,3 +70,24 @@ export async function requestPatreonEntitlement(token: string, postId: string): 
   });
   return res.entitlement_jwt;
 }
+
+/** Patreon 解錠 JWT（閲覧者インスタンスで Patreon を検証し、投稿元向け audience で mint）。 */
+export async function requestPatreonEntitlementFederated(
+  token: string,
+  incomingIdOrPrefixed: string,
+  objectUrl?: string,
+): Promise<string> {
+  const prefix = "federated:";
+  const federation_incoming_id = incomingIdOrPrefixed.startsWith(prefix)
+    ? incomingIdOrPrefixed.slice(prefix.length)
+    : incomingIdOrPrefixed;
+  const json: { federation_incoming_id: string; object_url?: string } = { federation_incoming_id };
+  const ou = (objectUrl ?? "").trim();
+  if (ou) json.object_url = ou;
+  const res = await api<{ entitlement_jwt: string }>("/api/v1/fanclub/patreon/entitlement-federated", {
+    method: "POST",
+    token,
+    json,
+  });
+  return res.entitlement_jwt;
+}

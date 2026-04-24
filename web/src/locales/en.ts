@@ -238,6 +238,10 @@ export const enOverrides: DeepPartial<AppMessageSchema> = {
         patreonNotConnected: "Connect Patreon in Settings to verify membership.",
         notEntitled: "This reward tier is not in your current Patreon pledges.",
         patreonApiError: "Patreon could not be reached. Try again later.",
+        patreonFederationUnsupported:
+          "Patreon-locked posts cannot be unlocked across federation on this server. Open them on the origin instance.",
+        untrustedInstance:
+          "The remote server does not trust this instance for this federation action.",
       },
       voteFailed: "Failed to vote",
     },

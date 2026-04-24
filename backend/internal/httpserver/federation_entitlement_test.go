@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -32,14 +33,14 @@ func TestFederationEntitlementJWT_MintAndVerify_OK(t *testing.T) {
 		MembershipTierID:    "tierA",
 	}
 
-	jws, err := s.mintFederationEntitlementJWT(viewer, row, postID)
+	jws, err := s.mintFederationEntitlementJWT(context.Background(), viewer, row, postID, nil)
 	if err != nil {
 		t.Fatalf("mint error: %v", err)
 	}
 	if jws == "" {
 		t.Fatalf("empty token")
 	}
-	if err := s.verifyFederationEntitlementJWT(jws, viewer, row, postID); err != nil {
+	if err := s.verifyFederationEntitlementJWT(context.Background(), jws, viewer, row, postID); err != nil {
 		t.Fatalf("verify error: %v", err)
 	}
 }
@@ -54,11 +55,11 @@ func TestFederationEntitlementJWT_Verify_SubMismatch(t *testing.T) {
 		MembershipTierID:    "tierA",
 	}
 
-	jws, err := s.mintFederationEntitlementJWT("alice@viewer.example", row, postID)
+	jws, err := s.mintFederationEntitlementJWT(context.Background(), "alice@viewer.example", row, postID, nil)
 	if err != nil {
 		t.Fatalf("mint error: %v", err)
 	}
-	if err := s.verifyFederationEntitlementJWT(jws, "bob@viewer.example", row, postID); err == nil {
+	if err := s.verifyFederationEntitlementJWT(context.Background(), jws, "bob@viewer.example", row, postID); err == nil {
 		t.Fatalf("expected verify failure")
 	}
 }
@@ -73,14 +74,14 @@ func TestFederationEntitlementJWT_Verify_LockMismatch(t *testing.T) {
 		MembershipTierID:    "tierA",
 	}
 
-	jws, err := s.mintFederationEntitlementJWT("alice@viewer.example", row, postID)
+	jws, err := s.mintFederationEntitlementJWT(context.Background(), "alice@viewer.example", row, postID, nil)
 	if err != nil {
 		t.Fatalf("mint error: %v", err)
 	}
 
 	otherRow := row
 	otherRow.MembershipTierID = "tierB"
-	if err := s.verifyFederationEntitlementJWT(jws, "alice@viewer.example", otherRow, postID); err == nil {
+	if err := s.verifyFederationEntitlementJWT(context.Background(), jws, "alice@viewer.example", otherRow, postID); err == nil {
 		t.Fatalf("expected verify failure")
 	}
 }
@@ -98,14 +99,14 @@ func TestFederationEntitlementJWT_Verify_Expired(t *testing.T) {
 
 	// Mint, then wait until it expires is too slow; instead, use a server with a patched mint duration
 	// by directly crafting a near-expiry token via mint then sleeping beyond exp.
-	jws, err := s.mintFederationEntitlementJWT(viewer, row, postID)
+	jws, err := s.mintFederationEntitlementJWT(context.Background(), viewer, row, postID, nil)
 	if err != nil {
 		t.Fatalf("mint error: %v", err)
 	}
 	time.Sleep(1 * time.Millisecond) // keep test stable on fast clocks
 	// We can't control exp without refactoring; so just ensure verification fails when passed a different post ID
 	// to cover a negative path. This keeps the suite fast and still validates claim checks.
-	if err := s.verifyFederationEntitlementJWT(jws, viewer, row, uuid.New()); err == nil {
+	if err := s.verifyFederationEntitlementJWT(context.Background(), jws, viewer, row, uuid.New()); err == nil {
 		t.Fatalf("expected verify failure")
 	}
 }

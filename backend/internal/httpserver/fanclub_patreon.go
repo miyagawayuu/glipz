@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -283,7 +285,7 @@ func (s *Server) handlePatreonEntitlement(w http.ResponseWriter, r *http.Request
 	cacheKey := patreon.EntitledCacheKey(uid.String(), authorID.String(), row.MembershipCreatorID, row.MembershipTierID)
 	_ = s.rdb.Set(r.Context(), cacheKey, "1", 5*time.Minute).Err()
 	viewerAcct := s.localFullAcct(viewer.Handle)
-	jws, err := s.mintFederationEntitlementJWT(viewerAcct, row, postID)
+	jws, err := s.mintFederationEntitlementJWT(r.Context(), viewerAcct, row, postID, nil)
 	if err != nil {
 		writeServerError(w, "mintFederationEntitlementJWT patreon", err)
 		return
@@ -367,4 +369,144 @@ func (s *Server) handlePatreonCampaigns(w http.ResponseWriter, r *http.Request) 
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"campaigns": out})
+}
+
+var patreonFedPostUUIDRE = regexp.MustCompile(`(?i)/posts/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})`)
+
+func patreonFedPostUUIDFromObjectIRI(iri string) (uuid.UUID, bool) {
+	m := patreonFedPostUUIDRE.FindStringSubmatch(strings.TrimSpace(iri))
+	if len(m) < 2 {
+		return uuid.Nil, false
+	}
+	id, err := uuid.Parse(m[1])
+	if err != nil {
+		return uuid.Nil, false
+	}
+	return id, true
+}
+
+// mintPatreonEntitlementJWTFederatedIncoming verifies Patreon for the local viewer against a federated row's
+// membership lock, then mints a JWT signed by this instance for consumption when unlocking on the post author's origin.
+func (s *Server) mintPatreonEntitlementJWTFederatedIncoming(ctx context.Context, viewerID uuid.UUID, row repo.FederatedIncomingPost) (string, error) {
+	if !s.patreonIntegrationAvailable() {
+		return "", fmt.Errorf("patreon_not_connected")
+	}
+	if !strings.EqualFold(strings.TrimSpace(row.MembershipProvider), patreon.ProviderID) {
+		return "", fmt.Errorf("not_patreon_federated")
+	}
+	camp := strings.TrimSpace(row.MembershipCreatorID)
+	tier := strings.TrimSpace(row.MembershipTierID)
+	if camp == "" || tier == "" {
+		return "", fmt.Errorf("missing_membership_metadata")
+	}
+	remotePostID, ok := patreonFedPostUUIDFromObjectIRI(row.ObjectIRI)
+	if !ok {
+		return "", fmt.Errorf("bad_object_iri")
+	}
+	oi := strings.TrimSpace(row.ObjectIRI)
+	u, err := url.Parse(oi)
+	if err != nil || strings.TrimSpace(u.Hostname()) == "" {
+		return "", fmt.Errorf("bad_object_iri")
+	}
+	disc, err := fetchRemoteFederationDiscovery(ctx, strings.ToLower(strings.TrimSpace(u.Hostname())))
+	if err != nil {
+		return "", err
+	}
+	access, err := s.patreonAccessToken(ctx, viewerID)
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			return "", fmt.Errorf("patreon_not_connected")
+		}
+		return "", err
+	}
+	cl := s.patreonClient()
+	_, match, err := cl.EntitlementMatch(ctx, access, patreon.EntitlementArgs{CampaignID: camp, TierID: tier})
+	if err != nil {
+		return "", fmt.Errorf("patreon_api_error")
+	}
+	if !match {
+		return "", fmt.Errorf("not_entitled")
+	}
+	urow, err := s.db.UserByID(ctx, viewerID)
+	if err != nil {
+		return "", err
+	}
+	viewerAcct := s.localFullAcct(urow.Handle)
+	synth := repo.PostSensitive{
+		HasMembershipLock:   true,
+		MembershipProvider:  strings.TrimSpace(row.MembershipProvider),
+		MembershipCreatorID: camp,
+		MembershipTierID:    tier,
+	}
+	aud := []string{strings.TrimSpace(disc.Server.Host)}
+	if o := strings.TrimSpace(disc.Server.Origin); o != "" {
+		aud = append(aud, strings.TrimSuffix(o, "/"))
+	}
+	opts := &federationEntitlementMintOpts{
+		AudienceTargets: aud,
+		PostURLOverride:   oi,
+	}
+	return s.mintFederationEntitlementJWT(ctx, viewerAcct, synth, remotePostID, opts)
+}
+
+type patreonEntitlementFederatedReq struct {
+	FederationIncomingID string `json:"federation_incoming_id"`
+	ObjectURL            string `json:"object_url,omitempty"`
+}
+
+// POST /api/v1/fanclub/patreon/entitlement-federated
+func (s *Server) handlePatreonEntitlementFederated(w http.ResponseWriter, r *http.Request) {
+	if !s.patreonIntegrationAvailable() {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "patreon_not_configured"})
+		return
+	}
+	uid, ok := userIDFrom(r.Context())
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	var req patreonEntitlementFederatedReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_json"})
+		return
+	}
+	incomingID, err := uuid.Parse(strings.TrimSpace(req.FederationIncomingID))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_incoming_id"})
+		return
+	}
+	row, err := s.loadFederatedIncomingForAction(r.Context(), incomingID, strings.TrimSpace(req.ObjectURL))
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+			return
+		}
+		writeServerError(w, "loadFederatedIncoming patreon fed", err)
+		return
+	}
+	if s.rejectIfFederatedIncomingHidden(w, r, uid, row) {
+		return
+	}
+	jws, err := s.mintPatreonEntitlementJWTFederatedIncoming(r.Context(), uid, row)
+	if err != nil {
+		msg := err.Error()
+		switch {
+		case strings.Contains(msg, "not_entitled"):
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "not_entitled"})
+			return
+		case strings.Contains(msg, "patreon_not_connected"):
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "patreon_not_connected"})
+			return
+		case strings.Contains(msg, "patreon_api_error"):
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "patreon_api_error"})
+			return
+		case strings.Contains(msg, "missing_membership_metadata"), strings.Contains(msg, "bad_object_iri"), strings.Contains(msg, "not_patreon_federated"):
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_unlock"})
+			return
+		default:
+			writeServerError(w, "mintPatreonEntitlementJWTFederatedIncoming http", err)
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"entitlement_jwt": jws})
 }

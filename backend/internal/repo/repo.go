@@ -36,6 +36,9 @@ var ErrInvalidViewPasswordScope = errors.New("invalid view password scope")
 // ErrInvalidViewPasswordTextRanges is returned when protected text ranges are invalid.
 var ErrInvalidViewPasswordTextRanges = errors.New("invalid view password text ranges")
 
+// ErrMembershipWithPassword is returned when a membership-locked post cannot also get a view password.
+var ErrMembershipWithPassword = errors.New("membership with view password")
+
 // ErrHandleTaken is returned when a handle is already in use.
 var ErrHandleTaken = errors.New("handle taken")
 
@@ -1244,6 +1247,9 @@ func (p *Pool) UpdatePost(ctx context.Context, ownerID, postID uuid.UUID, captio
 	}
 	if row.UserID != ownerID {
 		return ErrForbidden
+	}
+	if row.HasMembershipLock && newPassword != nil && strings.TrimSpace(*newPassword) != "" {
+		return ErrMembershipWithPassword
 	}
 	var hash *string
 	scope := row.ViewPasswordScope

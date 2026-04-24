@@ -21,6 +21,7 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 
+	"glipz.io/backend/internal/fanclub/patreon"
 	"glipz.io/backend/internal/repo"
 )
 
@@ -122,6 +123,9 @@ type federationEventPost struct {
 	ViewPasswordTextRanges []viewPasswordTextRangeJSON `json:"view_password_text_ranges,omitempty"`
 	HasMembershipLock      bool                        `json:"has_membership_lock,omitempty"`
 	UnlockURL              string                      `json:"unlock_url,omitempty"`
+	MembershipProvider     string                      `json:"membership_provider,omitempty"`
+	MembershipCreatorID    string                      `json:"membership_creator_id,omitempty"`
+	MembershipTierID       string                      `json:"membership_tier_id,omitempty"`
 }
 
 type federationEventPollOption struct {
@@ -851,7 +855,13 @@ func (s *Server) handleFederationPostEntitlementInbound(w http.ResponseWriter, r
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "not_membership_locked"})
 		return
 	}
-	jws, err := s.mintFederationEntitlementJWT(viewerAcct, row, postID)
+	if strings.EqualFold(strings.TrimSpace(row.MembershipProvider), patreon.ProviderID) {
+		// Remote instances cannot prove a viewer's Patreon tier to this node; minting here would bypass paywalls.
+		// Use 501 (not 403): consumers must not treat this as federation trust / "untrusted_instance".
+		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "federation_patreon_entitlement_unsupported"})
+		return
+	}
+	jws, err := s.mintFederationEntitlementJWT(r.Context(), viewerAcct, row, postID, nil)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "cannot_issue"})
 		return
@@ -903,23 +913,43 @@ func (s *Server) handleFederationPostUnlockInbound(w http.ResponseWriter, r *htt
 	}
 	pass := strings.TrimSpace(req.Password)
 	ent := strings.TrimSpace(req.EntitlementJWT)
+	hasPW := row.ViewPasswordHash != nil && strings.TrimSpace(*row.ViewPasswordHash) != ""
+	hasMem := row.HasMembershipLock
+	if !hasPW && !hasMem {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "not_protected"})
+		return
+	}
 	if pass == "" && ent == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_unlock"})
 		return
 	}
 
-	if pass != "" {
-		if row.ViewPasswordHash == nil || strings.TrimSpace(*row.ViewPasswordHash) == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no_password"})
+	if hasMem {
+		if ent == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_unlock"})
+			return
+		}
+		if err := s.verifyFederationEntitlementJWT(r.Context(), ent, req.ViewerAcct, row, postID); err != nil {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_entitlement"})
+			return
+		}
+		if hasPW {
+			if pass == "" {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no_password"})
+				return
+			}
+			if err := bcrypt.CompareHashAndPassword([]byte(*row.ViewPasswordHash), []byte(pass)); err != nil {
+				writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "wrong_password"})
+				return
+			}
+		}
+	} else if hasPW {
+		if pass == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_unlock"})
 			return
 		}
 		if err := bcrypt.CompareHashAndPassword([]byte(*row.ViewPasswordHash), []byte(pass)); err != nil {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "wrong_password"})
-			return
-		}
-	} else {
-		if err := s.verifyFederationEntitlementJWT(ent, req.ViewerAcct, row, postID); err != nil {
-			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_entitlement"})
 			return
 		}
 	}
@@ -940,7 +970,14 @@ type federationEntitlementJWTClaims struct {
 	jwt.RegisteredClaims
 }
 
-func (s *Server) mintFederationEntitlementJWT(viewerAcct string, row repo.PostSensitive, postID uuid.UUID) (string, error) {
+// federationEntitlementMintOpts configures entitlement JWTs minted on the viewer's home instance for unlock on a remote origin.
+type federationEntitlementMintOpts struct {
+	AudienceTargets []string // hosts/or origins accepted by verify on the post author's instance
+	PostURLOverride string     // canonical post object IRI when unlocking a remote post
+}
+
+func (s *Server) mintFederationEntitlementJWT(ctx context.Context, viewerAcct string, row repo.PostSensitive, postID uuid.UUID, opts *federationEntitlementMintOpts) (string, error) {
+	_ = ctx
 	viewerAcct = strings.TrimSpace(viewerAcct)
 	if viewerAcct == "" {
 		return "", fmt.Errorf("empty viewer")
@@ -953,12 +990,39 @@ func (s *Server) mintFederationEntitlementJWT(viewerAcct string, row repo.PostSe
 		return "", fmt.Errorf("invalid viewer")
 	}
 
+	postURL := s.localPostURL(postID)
+	if opts != nil && strings.TrimSpace(opts.PostURLOverride) != "" {
+		postURL = strings.TrimSpace(opts.PostURLOverride)
+	}
+	aud := []string{s.federationDisplayHost()}
+	if o := strings.TrimSpace(s.federationPublicOrigin()); o != "" {
+		aud = append(aud, o)
+	}
+	if opts != nil {
+		for _, x := range opts.AudienceTargets {
+			x = strings.TrimSpace(x)
+			if x == "" {
+				continue
+			}
+			dup := false
+			for _, a := range aud {
+				if strings.EqualFold(a, x) {
+					dup = true
+					break
+				}
+			}
+			if !dup {
+				aud = append(aud, x)
+			}
+		}
+	}
+
 	_, priv := s.federationServerKeys()
 	now := time.Now().UTC()
 	claims := federationEntitlementJWTClaims{
 		Lock: federationEntitlementLockClaims{
 			PostID:    postID.String(),
-			PostURL:   s.localPostURL(postID),
+			PostURL:   postURL,
 			Provider:  row.MembershipProvider,
 			CreatorID: row.MembershipCreatorID,
 			TierID:    row.MembershipTierID,
@@ -966,7 +1030,7 @@ func (s *Server) mintFederationEntitlementJWT(viewerAcct string, row repo.PostSe
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    s.federationServerKeyID(),
 			Subject:   viewerAcct,
-			Audience:  []string{s.federationDisplayHost()},
+			Audience:  jwt.ClaimStrings(aud),
 			ExpiresAt: jwt.NewNumericDate(now.Add(10 * time.Minute)),
 			NotBefore: jwt.NewNumericDate(now.Add(-30 * time.Second)),
 			IssuedAt:  jwt.NewNumericDate(now),
@@ -981,7 +1045,7 @@ func (s *Server) mintFederationEntitlementJWT(viewerAcct string, row repo.PostSe
 	return signed, nil
 }
 
-func (s *Server) verifyFederationEntitlementJWT(tokenStr, viewerAcct string, row repo.PostSensitive, postID uuid.UUID) error {
+func (s *Server) verifyFederationEntitlementJWT(ctx context.Context, tokenStr, viewerAcct string, row repo.PostSensitive, postID uuid.UUID) error {
 	tokenStr = strings.TrimSpace(tokenStr)
 	viewerAcct = strings.TrimSpace(viewerAcct)
 	if tokenStr == "" || viewerAcct == "" {
@@ -991,26 +1055,64 @@ func (s *Server) verifyFederationEntitlementJWT(tokenStr, viewerAcct string, row
 		return fmt.Errorf("post not membership-locked")
 	}
 
-	pub, _ := s.federationServerKeys()
+	var unverified federationEntitlementJWTClaims
+	if _, _, err := jwt.NewParser().ParseUnverified(tokenStr, &unverified); err != nil {
+		return err
+	}
+	iss := strings.TrimSpace(unverified.Issuer)
+	if iss == "" {
+		return fmt.Errorf("bad iss")
+	}
+
+	var pub ed25519.PublicKey
+	localKeyID := s.federationServerKeyID()
+	if iss == localKeyID {
+		pub, _ = s.federationServerKeys()
+	} else {
+		_, viewerHost, err := splitAcct(viewerAcct)
+		if err != nil {
+			return err
+		}
+		issURL, err := url.Parse(iss)
+		if err != nil || issURL.Host == "" {
+			return fmt.Errorf("bad iss")
+		}
+		keyFetchHost := strings.ToLower(strings.TrimSpace(issURL.Hostname()))
+		if keyFetchHost == "" {
+			return fmt.Errorf("bad iss")
+		}
+		disc, err := fetchRemoteFederationDiscovery(ctx, keyFetchHost)
+		if err != nil {
+			return err
+		}
+		if !strings.EqualFold(strings.TrimSpace(disc.Server.Host), viewerHost) {
+			return fmt.Errorf("issuer not viewer home")
+		}
+		if _, err := federationValidateDiscoveryForInstance(disc, disc.Server.Host, iss); err != nil {
+			return err
+		}
+		pubRaw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(disc.Server.PublicKey))
+		if err != nil {
+			return fmt.Errorf("bad federation public key")
+		}
+		pub = ed25519.PublicKey(pubRaw)
+	}
 
 	parser := jwt.NewParser(jwt.WithValidMethods([]string{jwt.SigningMethodEdDSA.Alg()}))
 	var claims federationEntitlementJWTClaims
-	_, err := parser.ParseWithClaims(tokenStr, &claims, func(token *jwt.Token) (any, error) {
-		return ed25519.PublicKey(pub), nil
-	})
-	if err != nil {
+	if _, err := parser.ParseWithClaims(tokenStr, &claims, func(token *jwt.Token) (any, error) {
+		return pub, nil
+	}); err != nil {
 		return err
 	}
 
-	iss := strings.TrimSpace(claims.Issuer)
-	if iss == "" || iss != s.federationServerKeyID() {
+	if strings.TrimSpace(claims.Issuer) != iss {
 		return fmt.Errorf("bad iss")
 	}
 	if strings.TrimSpace(claims.Subject) != viewerAcct {
 		return fmt.Errorf("bad sub")
 	}
 
-	// Accept either instance host or public origin in aud.
 	audOK := false
 	for _, a := range claims.Audience {
 		a = strings.TrimSpace(a)
@@ -1029,7 +1131,6 @@ func (s *Server) verifyFederationEntitlementJWT(tokenStr, viewerAcct string, row
 	if claims.ExpiresAt == nil {
 		return fmt.Errorf("missing exp")
 	}
-	// Keep tokens short-lived even if clock skew passes jwt validation.
 	if time.Until(claims.ExpiresAt.Time) > 15*time.Minute {
 		return fmt.Errorf("exp too far")
 	}
@@ -1340,6 +1441,11 @@ func (s *Server) handleFederationEventInbound(w http.ResponseWriter, r *http.Req
 			ViewPasswordTextRanges: jsonRangesToRepo(ev.Post.ViewPasswordTextRanges),
 			UnlockURL:              ev.Post.UnlockURL,
 		}
+		if ev.Post.HasMembershipLock {
+			in.MembershipProvider = strings.TrimSpace(ev.Post.MembershipProvider)
+			in.MembershipCreatorID = strings.TrimSpace(ev.Post.MembershipCreatorID)
+			in.MembershipTierID = strings.TrimSpace(ev.Post.MembershipTierID)
+		}
 		if err := s.db.UpdateFederationIncomingPost(r.Context(), in); err != nil {
 			writeServerError(w, "UpdateFederationIncomingPost", err)
 			return
@@ -1370,6 +1476,9 @@ func (s *Server) handleFederationEventInbound(w http.ResponseWriter, r *http.Req
 			ev.Post.ViewPasswordScope,
 			jsonRangesToRepo(ev.Post.ViewPasswordTextRanges),
 			ev.Post.UnlockURL,
+			strings.TrimSpace(ev.Post.MembershipProvider),
+			strings.TrimSpace(ev.Post.MembershipCreatorID),
+			strings.TrimSpace(ev.Post.MembershipTierID),
 		); err != nil {
 			writeServerError(w, "UpdateFederatedIncomingFromNote", err)
 			return

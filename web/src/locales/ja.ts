@@ -237,6 +237,10 @@ export const jaMessages = {
         patreonNotConnected: "Patreon を設定から接続してから、会員として表示解除してください。",
         notEntitled: "条件に合う Patreon の支援（ティア）が見つかりません。",
         patreonApiError: "Patreon との通信に失敗しました。時間をおいて再試行してください。",
+        patreonFederationUnsupported:
+          "Patreon 会員限定の投稿は、連合経由ではこのサーバー上で解除できません。元のインスタンスで閲覧してください。",
+        untrustedInstance:
+          "相手サーバーが、このサーバーを連合の信頼リストに入れていないため、この操作はできません。",
       },
       voteFailed: "投票に失敗しました",
     },
