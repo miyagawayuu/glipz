@@ -2,6 +2,8 @@
 
 This document describes how to add a **new third-party fan club / membership site** to Glipz. The `kernel` package only contains **site-agnostic infrastructure** (key naming, OAuth state helpers). All provider-specific behavior lives under `internal/fanclub/<provider>/`.
 
+**Reference implementation:** Patreon lives in `internal/fanclub/patreon/` (OAuth, token handling, UI-facing settings). Operator-facing env vars are documented in the repository root [.env.example](../../../../.env.example) (search for `PATREON_`). Routes are registered from `internal/httpserver/server.go` (e.g. `/api/v1/fanclub/patreon/...`, callback under `/api/v1/fanclub/patreon/callback`).
+
 ## What belongs in `kernel`
 
 - **Stable provider IDs** (string constants, e.g. `example`) for namespacing Redis keys and, later, database rows.

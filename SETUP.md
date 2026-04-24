@@ -14,7 +14,7 @@ Install these before starting:
 | Tool | Required | Notes |
 |------|----------|-------|
 | **Docker & Docker Compose** | Yes | Runs PostgreSQL, Redis, Mailpit, Backend |
-| **Node.js 18+** | Yes (frontend) | For running the Vue dev server |
+| **Node.js 22+** | Yes (frontend) | Matches `web/package.json` `engines`; Docker image uses Node 22 |
 | **npm** | Yes (frontend) | Comes with Node.js |
 | **Go 1.22+** | No | Only if running backend outside Docker |
 | **S3-compatible storage** | Yes | Wasabi, MinIO, AWS S3, etc. |
@@ -24,7 +24,7 @@ Install these before starting:
 ## Step 1: Clone the Repository
 
 ```bash
-git clone https://github.com/your-repo/glipz.git
+git clone https://github.com/miyagawayuu/glipz.git
 cd glipz
 ```
 
@@ -65,13 +65,36 @@ FRONTEND_ORIGIN=http://localhost:5173
 GLIPZ_VERSION=dev
 ```
 
+### Admin users (optional)
+
+Comma-separated user UUIDs for built-in admin and moderation UIs:
+
+```env
+GLIPZ_ADMIN_USER_IDS=
+```
+
 ### Federation (Optional)
 
 ```env
 GLIPZ_PROTOCOL_PUBLIC_ORIGIN=http://localhost:8080
 GLIPZ_PROTOCOL_HOST=localhost:8080
 GLIPZ_PROTOCOL_MEDIA_PUBLIC_BASE=http://localhost:8080/api/v1/media/object
+# FEDERATION_POLICY_SUMMARY=Short text shown as your instance federation policy
 ```
+
+### Patreon fan club (Optional)
+
+Register an API client at Patreon and set (redirect URI must match your deployment; see comments in [.env.example](.env.example)):
+
+```env
+PATREON_CLIENT_ID=
+PATREON_CLIENT_SECRET=
+# PATREON_REDIRECT_URI=http://localhost:8080/api/v1/fanclub/patreon/callback
+```
+
+### Production web build
+
+For `npm run build`, copy [web/.env.production.example](web/.env.production.example) to `web/.env.production` when you need `VITE_API_URL` (cross-origin API or Capacitor). Same-origin deployments can usually omit it.
 
 ---
 
@@ -111,8 +134,9 @@ npm run dev
 
 Frontend: http://localhost:5173
 
-Vite proxies these routes to the backend:
-- `/api` → Backend API
+Vite proxies these routes to the backend (override backend host with `VITE_PROXY_TARGET` if needed, for example when the API runs only inside Docker):
+
+- `/api` → Backend API (including SSE: feed, notifications, DMs)
 - `/.well-known` → Federation discovery
 - `/ap` → Federation endpoints
 
@@ -189,11 +213,12 @@ These are disabled unless configured:
 
 | Feature | Environment Variables |
 |---------|----------------------|
-| **TURN (calls)** | `TURN_HOST`, `TURN_SHARED_SECRET` |
+| **TURN (calls)** | `TURN_HOST`, `TURN_SHARED_SECRET`, `TURN_TTL_SECONDS`, ports |
 | **Web Push** | `WEB_PUSH_VAPID_*` |
-| **Federation** | `GLIPZ_PROTOCOL_*` |
+| **Federation** | `GLIPZ_PROTOCOL_*`, optional `FEDERATION_POLICY_SUMMARY` |
+| **Patreon** | `PATREON_CLIENT_ID`, `PATREON_CLIENT_SECRET`, optional `PATREON_REDIRECT_URI` |
 
-See `.env.example` for all options.
+See [.env.example](.env.example) for all options.
 
 ---
 
@@ -223,6 +248,11 @@ See `.env.example` for all options.
 - `GLIPZ_PROTOCOL_PUBLIC_ORIGIN` is set
 - `GLIPZ_PROTOCOL_HOST` is set
 - `GLIPZ_PROTOCOL_MEDIA_PUBLIC_BASE` is set
+
+### Patreon OAuth errors after deploy
+
+- Redirect URI in the Patreon developer console exactly matches `PATREON_REDIRECT_URI` or `{GLIPZ_PROTOCOL_PUBLIC_ORIGIN}/api/v1/fanclub/patreon/callback`
+- `GLIPZ_PROTOCOL_PUBLIC_ORIGIN` uses HTTPS in production
 
 ### Emails not sending
 
@@ -264,4 +294,6 @@ To enable federation between instances, configure these variables in your `.env`
 | `GLIPZ_PROTOCOL_HOST` | Your display hostname (e.g., social.com) |
 | `GLIPZ_PROTOCOL_MEDIA_PUBLIC_BASE` | Base URL for serving media assets |
 
-> **Note:** Federation requires a valid HTTPS endpoint and an Ed25519 key pair (generated automatically on first boot).
+> **Note:** Federation between public instances expects HTTPS and stable hostnames. Signing keys are managed by the server (see federation code under `backend/internal/`).
+
+For **adding another fan-club provider** (not Patreon-specific), follow [backend/internal/fanclub/kernel/IMPLEMENTATION_GUIDELINES.md](backend/internal/fanclub/kernel/IMPLEMENTATION_GUIDELINES.md).

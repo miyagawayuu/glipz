@@ -64,8 +64,9 @@ This repository contains the official Go implementation of the Glipz Federation 
 
 - **Glipz Protocol**: Lightweight federation between Glipz instances
 - Remote follow support
-- Inbound federation timeline
+- Inbound federation timeline and federated direct messages (instance-to-instance)
 - Delivery workers for reliable delivery
+- Optional instance policy summary for operators (`FEDERATION_POLICY_SUMMARY`)
 
 ### Media
 
@@ -73,11 +74,17 @@ This repository contains the official Go implementation of the Glipz Federation 
 - Backend media proxy for privacy
 - Image and video support
 
+### Fan club (Patreon, optional)
+
+- Creators can link Patreon via OAuth for membership-aware flows
+- Configure `PATREON_*` in `.env` (see [.env.example](.env.example)); callback path is documented there
+
 ### Developer Features
 
 - OAuth 2.0 client support
 - Personal access tokens
-- RESTful API
+- RESTful API (`/api/v1/…`)
+- In-app OpenAPI reference (Scalar) for exploring endpoints
 
 ### Administration
 
@@ -99,11 +106,12 @@ This repository contains the official Go implementation of the Glipz Federation 
 | Layer | Technology |
 |-------|------------|
 | **Backend** | Go 1.22, Chi router, pgx, Redis |
-| **Frontend** | Vue 3, TypeScript, Vite, Tailwind CSS |
+| **Frontend** | Vue 3, TypeScript, Vite, Tailwind CSS, vue-i18n (en / ja) |
 | **Database** | PostgreSQL 16 |
 | **Cache** | Redis 7 |
 | **Storage** | S3-compatible (Wasabi, MinIO, etc.) |
-| **Deployment** | Docker, Docker Compose |
+| **Mobile (optional)** | Capacitor 7 (Android / iOS) |
+| **Deployment** | Docker, Docker Compose (image builds Node 22 + Go 1.22) |
 
 ---
 
@@ -112,14 +120,14 @@ This repository contains the official Go implementation of the Glipz Federation 
 ### Prerequisites
 
 - Docker & Docker Compose
-- Node.js 18+ (for frontend development)
-- Go 1.22+ (optional, for backend development)
+- Node.js 22+ (for frontend development; matches `web/package.json` engines)
+- Go 1.22+ (optional, for backend development outside Docker)
 - S3-compatible storage bucket
 
 ### 1. Clone and configure
 
 ```bash
-git clone https://github.com/your-repo/glipz.git
+git clone https://github.com/miyagawayuu/glipz.git
 cd glipz
 cp .env.example .env
 ```
@@ -172,15 +180,17 @@ Mailpit (started with the Docker stack) is for local development. In production,
 - [ ] Strong `JWT_SECRET`
 - [ ] HTTPS via reverse proxy (Nginx, Caddy, Traefik)
 - [ ] S3-compatible storage configured
-- [ ] `FRONTEND_ORIGIN` and `GLIPZ_PROTOCOL_PUBLIC_ORIGIN` set
+- [ ] `FRONTEND_ORIGIN` and (if federation) `GLIPZ_PROTOCOL_*` variables set
 - [ ] Database and Redis secured
 - [ ] Email provider configured (Mailgun, etc.)
+- [ ] `GLIPZ_ADMIN_USER_IDS` set if you need built-in admin UIs
+- [ ] Patreon fan club: `PATREON_CLIENT_ID`, `PATREON_CLIENT_SECRET`, and matching redirect URI
 
 ---
 
 ## API
 
-The backend exposes a REST API at `/api/v1/`. See the source code for endpoint documentation.
+The backend exposes a REST API at `/api/v1/`. Use the in-app **API / OpenAPI** screen for an interactive catalog, or browse handlers under `backend/internal/httpserver/`.
 
 ### Authentication
 
@@ -248,14 +258,17 @@ Membership entitlement over Glipz federation (`POST .../federation/posts/{postID
 | Variable | Description | Required |
 |----------|-------------|----------|
 | `JWT_SECRET` | Secret for JWT signing | Yes |
-| `DATABASE_URL` | PostgreSQL connection string | Docker |
-| `REDIS_URL` | Redis connection string | Docker |
-| `S3_*` | S3 storage configuration | Yes |
-| `FRONTEND_ORIGIN` | Frontend URL for CORS | Recommended |
-| `GLIPZ_PROTOCOL_*` | Federation settings | Optional |
-| `TURN_*` | Video calling | Optional |
+| `DATABASE_URL` | PostgreSQL connection string | Provided by Compose when using Docker |
+| `REDIS_URL` | Redis connection string | Provided by Compose when using Docker |
+| `S3_*` | S3 storage configuration | Yes (local or cloud bucket) |
+| `FRONTEND_ORIGIN` | Frontend origin(s) for CORS; comma-separated if apex + www | Recommended |
+| `GLIPZ_PROTOCOL_*` | Federation / discovery / media URLs | Optional |
+| `GLIPZ_ADMIN_USER_IDS` | Comma-separated user UUIDs with site admin | Optional |
+| `PATREON_*` | Patreon OAuth for fan club features | Optional |
+| `TURN_*` | WebRTC TURN credentials for DM calls | Optional |
+| `WEB_PUSH_VAPID_*` | Web Push (VAPID) keys | Optional |
 
-See `.env.example` for all options.
+See [.env.example](.env.example) for every variable, including legacy aliases and mail (`MAILGUN_*`, `SMTP_*`).
 
 ---
 

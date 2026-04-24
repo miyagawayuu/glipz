@@ -323,9 +323,6 @@ async function loadAll() {
     replyPostsLoaded.value = false;
     replyPosts.value = [];
     replyPostsErr.value = "";
-    profileNotesLoaded.value = false;
-    profileNotes.value = [];
-    profileNotesErr.value = "";
     mediaTilesLoaded.value = false;
     mediaTiles.value = [];
     mediaTilesErr.value = "";

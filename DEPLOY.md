@@ -114,6 +114,13 @@ MAILGUN_DOMAIN=your-domain.com
 MAILGUN_API_KEY=key-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 MAIL_FROM_EMAIL=no-reply@your-domain.com
 MAIL_FROM_NAME=Glipz
+
+# === Optional: site admin + Patreon fan club ===
+
+# GLIPZ_ADMIN_USER_IDS=uuid-of-admin-user
+# PATREON_CLIENT_ID=...
+# PATREON_CLIENT_SECRET=...
+# PATREON_REDIRECT_URI=https://your-domain.com/api/v1/fanclub/patreon/callback
 ```
 
 ### Key Configuration Notes
@@ -124,6 +131,10 @@ MAIL_FROM_NAME=Glipz
 | `FRONTEND_ORIGIN` | Your public web app URL |
 | `GLIPZ_PROTOCOL_PUBLIC_ORIGIN` | Backend API URL (can be same as frontend if behind same proxy) |
 | `GLIPZ_PROTOCOL_MEDIA_PUBLIC_BASE` | Media proxy URL for federation |
+| `GLIPZ_ADMIN_USER_IDS` | Built-in moderation / admin API access |
+| `PATREON_*` | Patreon OAuth; redirect URI must match your public API origin |
+
+The production image is built from the **repository root** with `backend/Dockerfile` (see [docker-compose.yml](docker-compose.yml)): it runs `npm ci` / `npm run build` in `web/` on **Node 22**, then compiles the Go server with **Go 1.22**, and sets `STATIC_WEB_ROOT=/app/web/dist` by default.
 
 ---
 
@@ -175,8 +186,8 @@ server {
 
     client_max_body_size 100m;
 
-    # SSE endpoints - disable buffering
-    location ~ ^/api/v1/(posts/feed/stream|notifications/stream)$ {
+    # SSE endpoints - disable buffering (authenticated + public streams)
+    location ~ ^/api/v1/(posts/feed/stream|notifications/stream|dm/stream|public/posts/feed/stream|public/federation/incoming/stream)$ {
         proxy_pass http://127.0.0.1:8080;
         proxy_http_version 1.1;
         proxy_buffering off;
@@ -209,14 +220,9 @@ your-domain.com {
         max_size 100MB
     }
 
-    @feedStream path /api/v1/posts/feed/stream
-    @notificationStream path /api/v1/notifications/stream
+    @sse path_regexp ^/api/v1/(posts/feed/stream|notifications/stream|dm/stream|public/posts/feed/stream|public/federation/incoming/stream)$
 
-    reverse_proxy @feedStream 127.0.0.1:8080 {
-        flush_interval -1
-    }
-
-    reverse_proxy @notificationStream 127.0.0.1:8080 {
+    reverse_proxy @sse 127.0.0.1:8080 {
         flush_interval -1
     }
 
@@ -231,8 +237,11 @@ Ensure these paths are proxied correctly:
 | Path | Description |
 |------|-------------|
 | `/api/*` | REST API |
-| `/api/v1/posts/feed/stream` | SSE timeline |
+| `/api/v1/posts/feed/stream` | SSE home / feed timeline |
 | `/api/v1/notifications/stream` | SSE notifications |
+| `/api/v1/dm/stream` | SSE direct messages |
+| `/api/v1/public/posts/feed/stream` | Public SSE feed (no auth; configure caching carefully) |
+| `/api/v1/public/federation/incoming/stream` | Public SSE federated incoming stream |
 | `/.well-known/*` | Federation discovery |
 | `/ap/*` | Federation endpoints |
 
@@ -272,6 +281,7 @@ Run these checks after deployment:
 | **Federation** | Set `GLIPZ_PROTOCOL_*` variables |
 | **TURN Calls** | Set `TURN_HOST`, `TURN_SHARED_SECRET`, `TURN_TTL_SECONDS` |
 | **Web Push** | Set `WEB_PUSH_VAPID_*` variables |
+| **Patreon fan club** | Set `PATREON_CLIENT_ID`, `PATREON_CLIENT_SECRET`, `PATREON_REDIRECT_URI` (or rely on default derived from `GLIPZ_PROTOCOL_PUBLIC_ORIGIN`) |
 
 ---
 
