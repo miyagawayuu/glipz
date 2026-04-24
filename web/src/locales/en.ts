@@ -221,6 +221,21 @@ export const enOverrides: DeepPartial<AppMessageSchema> = {
         deleteOwnConfirm: "Delete this post? This cannot be undone.",
         deleteAdminConfirm: "Delete this post as a moderator? This cannot be undone.",
       },
+      federationPrivacy: {
+        mute: "Mute (federation)",
+        block: "Block (federation)",
+        unmute: "Unmute",
+        unblock: "Unblock",
+        muteConfirm:
+          "Mute this federated account? Their posts will stop appearing in your timelines. Their server is not notified.",
+        blockConfirm:
+          "Block this federated account? Your public posts will no longer be delivered to them, while follow responses still look normal so they cannot tell they are blocked.",
+        doneMute: "Muted",
+        doneBlock: "Blocked",
+        doneUnmute: "Unmuted",
+        doneUnblock: "Unblocked",
+        failed: "Something went wrong",
+      },
       unlock: {
         passwordRequired: "Enter a password",
         unlockFailed: "Failed to unlock",
@@ -444,6 +459,23 @@ export const enOverrides: DeepPartial<AppMessageSchema> = {
       shareFailed: "Failed to share",
       shareFallbackTitle: "Glipz",
       shareFallbackText: "Post",
+    },
+    remoteFederationProfile: {
+      actionsMenuSr: "More actions (DM, mute, block)",
+      dmInvite: "Invite to DM",
+      mute: "Mute",
+      block: "Block",
+      unmute: "Unmute",
+      unblock: "Unblock",
+      muteConfirm:
+        "Mute this federated account? Their posts will stop appearing for you. Their server is not notified.",
+      blockConfirm:
+        "Block this federated account? Delivery of your public posts stops, while follow responses still look normal so they cannot tell they are blocked.",
+      doneMute: "Muted",
+      doneBlock: "Blocked",
+      doneUnmute: "Unmuted",
+      doneUnblock: "Unblocked",
+      failed: "Something went wrong",
     },
     compose: {
       title: "Compose",

@@ -113,6 +113,9 @@ func (s *Server) handleFederatedToggleLike(w http.ResponseWriter, r *http.Reques
 		writeServerError(w, "loadFederatedIncomingForAction", err)
 		return
 	}
+	if s.rejectIfFederatedIncomingHidden(w, r, uid, row) {
+		return
+	}
 	inboxURL, err := s.resolveIncomingPostEventsInbox(r.Context(), row)
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "remote_unavailable"})
@@ -172,6 +175,9 @@ func (s *Server) handleFederatedToggleBookmark(w http.ResponseWriter, r *http.Re
 		writeServerError(w, "loadFederatedIncomingForAction", err)
 		return
 	}
+	if s.rejectIfFederatedIncomingHidden(w, r, uid, row) {
+		return
+	}
 	bookmarked, err := s.db.ToggleFederatedIncomingBookmark(r.Context(), uid, row.ID)
 	if err != nil {
 		if errors.Is(err, repo.ErrNotFound) {
@@ -207,6 +213,9 @@ func (s *Server) handleFederatedPollVote(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		writeServerError(w, "loadFederatedIncomingForAction", err)
+		return
+	}
+	if s.rejectIfFederatedIncomingHidden(w, r, uid, row) {
 		return
 	}
 	inboxURL, err := s.resolveIncomingPostEventsInbox(r.Context(), row)
@@ -302,6 +311,9 @@ func (s *Server) handleFederatedPostUnlock(w http.ResponseWriter, r *http.Reques
 		writeServerError(w, "loadFederatedIncomingForAction", err)
 		return
 	}
+	if s.rejectIfFederatedIncomingHidden(w, r, uid, row) {
+		return
+	}
 	unlockURL := strings.TrimSpace(row.UnlockURL)
 	if unlockURL == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no_password"})
@@ -395,6 +407,9 @@ func (s *Server) handleFederatedToggleRepost(w http.ResponseWriter, r *http.Requ
 			return
 		}
 		writeServerError(w, "loadFederatedIncomingForAction", err)
+		return
+	}
+	if s.rejectIfFederatedIncomingHidden(w, r, uid, row) {
 		return
 	}
 	inboxURL, err := s.resolveIncomingPostEventsInbox(r.Context(), row)

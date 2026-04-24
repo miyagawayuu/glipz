@@ -207,7 +207,7 @@ func (p *Pool) SearchFederatedIncomingForViewer(ctx context.Context, viewerID uu
 						WHERE fih.federation_incoming_post_id = f.id AND h.tag = $2
 					)
 					OR LOWER(COALESCE(f.caption_text, '')) LIKE $3
-				)
+				)`+FedIncomingActorVisibleSQL("f", "$1")+`
 			ORDER BY f.published_at DESC, f.id DESC
 			LIMIT $4
 		`, viewerID, tag, pattern, limit)
@@ -220,7 +220,7 @@ func (p *Pool) SearchFederatedIncomingForViewer(ctx context.Context, viewerID uu
 			FROM federation_incoming_posts f
 			WHERE f.deleted_at IS NULL
 				AND (f.recipient_user_id IS NULL OR f.recipient_user_id = $1)
-				AND COALESCE(f.caption_text, '') ILIKE $2
+				AND COALESCE(f.caption_text, '') ILIKE $2`+FedIncomingActorVisibleSQL("f", "$1")+`
 			ORDER BY f.published_at DESC, f.id DESC
 			LIMIT $3
 		`, viewerID, pattern, limit)

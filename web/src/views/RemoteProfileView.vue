@@ -1,9 +1,17 @@
 <script setup lang="ts">
 import DOMPurify from "dompurify";
-import { computed, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { getAccessToken } from "../auth";
 import { api, apiBase, apiPublicGet } from "../lib/api";
+import {
+  blockFederationUser,
+  getFederationRelationship,
+  muteFederationUser,
+  unblockFederationUser,
+  unmuteFederationUser,
+} from "../lib/federationPrivacy";
 import { addTimelineReaction, removeTimelineReaction, toggleTimelineBookmark, toggleTimelineRepost } from "../lib/federationActions";
 import { mapFeedItem } from "../lib/feedStream";
 import { buildComposerReplyQuery, composeRoutePath } from "../lib/postComposer";
@@ -22,6 +30,7 @@ type RemoteProfile = {
 
 const route = useRoute();
 const router = useRouter();
+const { t } = useI18n();
 
 const profile = ref<RemoteProfile | null>(null);
 const posts = ref<TimelinePost[]>([]);
@@ -33,6 +42,32 @@ const toast = ref("");
 const remoteFollowState = ref<"none" | "pending" | "accepted">("none");
 const actionBusy = ref<string | null>(null);
 const dmBusy = ref(false);
+const federationRel = ref<{ blocked: boolean; muted: boolean } | null>(null);
+const federationPrivacyBusy = ref(false);
+const profileActionsMenuOpen = ref(false);
+const profileActionsMenuRoot = ref<HTMLElement | null>(null);
+
+function closeProfileActionsMenu() {
+  profileActionsMenuOpen.value = false;
+}
+
+function onProfileActionsDocumentClick(ev: MouseEvent) {
+  const el = profileActionsMenuRoot.value;
+  if (el && !el.contains(ev.target as Node)) {
+    closeProfileActionsMenu();
+  }
+}
+
+watch(profileActionsMenuOpen, async (open) => {
+  document.removeEventListener("click", onProfileActionsDocumentClick);
+  if (!open) return;
+  await nextTick();
+  document.addEventListener("click", onProfileActionsDocumentClick);
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener("click", onProfileActionsDocumentClick);
+});
 
 const acctForQuery = computed(() => {
   const fu = route.params.fedUser;
@@ -102,6 +137,7 @@ async function loadProfile() {
       return;
     }
     profile.value = await apiPublicGet<RemoteProfile>(path);
+    await loadRelationship();
     await loadPosts();
     await refreshRemoteFollowState();
     startIncomingStream();
@@ -112,12 +148,26 @@ async function loadProfile() {
   }
 }
 
+async function loadRelationship() {
+  federationRel.value = null;
+  const token = getAccessToken();
+  const acct = profile.value?.acct?.trim();
+  if (!token || !acct) return;
+  try {
+    federationRel.value = await getFederationRelationship(token, acct);
+  } catch {
+    federationRel.value = null;
+  }
+}
+
 async function loadPosts() {
   if (!profile.value?.actor_id) return;
+  const path = `/api/v1/public/federation/incoming?actor=${encodeURIComponent(profile.value.actor_id)}`;
+  const token = getAccessToken();
   try {
-    const res = await apiPublicGet<{ items: unknown[] }>(
-      `/api/v1/public/federation/incoming?actor=${encodeURIComponent(profile.value.actor_id)}`,
-    );
+    const res = token
+      ? await api<{ items: unknown[] }>(path, { method: "GET", token })
+      : await apiPublicGet<{ items: unknown[] }>(path);
     posts.value = (res.items ?? []).map((x) => mapFeedItem(x as never));
   } catch {
     posts.value = [];
@@ -145,7 +195,11 @@ async function onIncomingEvent(payload: any) {
   }
   if (kind !== "federated_post_upsert") return;
   try {
-    const res = await apiPublicGet<{ item: unknown }>(`/api/v1/public/federation/incoming/${encodeURIComponent(id)}`);
+    const token = getAccessToken();
+    const path = `/api/v1/public/federation/incoming/${encodeURIComponent(id)}`;
+    const res = token
+      ? await api<{ item: unknown }>(path, { method: "GET", token })
+      : await apiPublicGet<{ item: unknown }>(path);
     const it = mapFeedItem(res.item as never);
     const itId = String((it as any).id ?? "");
     posts.value = [it, ...posts.value.filter((x) => String((x as any).id ?? "") !== itId)];
@@ -233,6 +287,85 @@ async function toggleBookmark(it: TimelinePost) {
   }
 }
 
+function removeFederatedPostFromList(id: string) {
+  posts.value = posts.value.filter((x) => x.id !== id);
+}
+
+async function doFederationMuteProfile() {
+  closeProfileActionsMenu();
+  const token = getAccessToken();
+  const acct = profile.value?.acct;
+  if (!token || !acct) return;
+  if (!window.confirm(t("views.remoteFederationProfile.muteConfirm"))) return;
+  federationPrivacyBusy.value = true;
+  try {
+    await muteFederationUser(token, acct);
+    showToast(t("views.remoteFederationProfile.doneMute"));
+    await loadRelationship();
+    await loadPosts();
+  } catch (e: unknown) {
+    showToast(e instanceof Error ? e.message : t("views.remoteFederationProfile.failed"));
+  } finally {
+    federationPrivacyBusy.value = false;
+  }
+}
+
+async function doFederationUnmuteProfile() {
+  closeProfileActionsMenu();
+  const token = getAccessToken();
+  const acct = profile.value?.acct;
+  if (!token || !acct) return;
+  federationPrivacyBusy.value = true;
+  try {
+    await unmuteFederationUser(token, acct);
+    showToast(t("views.remoteFederationProfile.doneUnmute"));
+    await loadRelationship();
+    await loadPosts();
+  } catch (e: unknown) {
+    showToast(e instanceof Error ? e.message : t("views.remoteFederationProfile.failed"));
+  } finally {
+    federationPrivacyBusy.value = false;
+  }
+}
+
+async function doFederationBlockProfile() {
+  closeProfileActionsMenu();
+  const token = getAccessToken();
+  const acct = profile.value?.acct;
+  if (!token || !acct) return;
+  if (!window.confirm(t("views.remoteFederationProfile.blockConfirm"))) return;
+  federationPrivacyBusy.value = true;
+  try {
+    await blockFederationUser(token, acct);
+    showToast(t("views.remoteFederationProfile.doneBlock"));
+    await loadRelationship();
+    await refreshRemoteFollowState();
+    await loadPosts();
+  } catch (e: unknown) {
+    showToast(e instanceof Error ? e.message : t("views.remoteFederationProfile.failed"));
+  } finally {
+    federationPrivacyBusy.value = false;
+  }
+}
+
+async function doFederationUnblockProfile() {
+  closeProfileActionsMenu();
+  const token = getAccessToken();
+  const acct = profile.value?.acct;
+  if (!token || !acct) return;
+  federationPrivacyBusy.value = true;
+  try {
+    await unblockFederationUser(token, acct);
+    showToast(t("views.remoteFederationProfile.doneUnblock"));
+    await loadRelationship();
+    await loadPosts();
+  } catch (e: unknown) {
+    showToast(e instanceof Error ? e.message : t("views.remoteFederationProfile.failed"));
+  } finally {
+    federationPrivacyBusy.value = false;
+  }
+}
+
 async function refreshRemoteFollowState() {
   remoteFollowState.value = "none";
   const token = getAccessToken();
@@ -307,6 +440,7 @@ async function copyActorURL() {
 }
 
 async function inviteFederationDM() {
+  closeProfileActionsMenu();
   const token = getAccessToken();
   if (!token || !profile.value?.acct || dmBusy.value) return;
   dmBusy.value = true;
@@ -412,15 +546,6 @@ watch(
               >
                 {{ followButtonLabel }}
               </button>
-              <button
-                v-if="viewerAuthed && remoteFollowState === 'accepted'"
-                type="button"
-                class="shrink-0 rounded-full border border-neutral-900 bg-neutral-900 px-4 py-1.5 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-50"
-                :disabled="dmBusy"
-                @click="inviteFederationDM"
-              >
-                DM招待
-              </button>
               <a
                 v-if="profile.profile_url"
                 :href="profile.profile_url"
@@ -437,6 +562,79 @@ watch(
               >
                 ログイン
               </RouterLink>
+              <div
+                v-if="viewerAuthed && profile.acct"
+                ref="profileActionsMenuRoot"
+                class="relative shrink-0"
+              >
+                <button
+                  type="button"
+                  class="rounded-full p-1.5 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-800"
+                  :aria-expanded="profileActionsMenuOpen"
+                  aria-haspopup="true"
+                  @click.stop="profileActionsMenuOpen = !profileActionsMenuOpen"
+                >
+                  <span class="sr-only">{{ t("views.remoteFederationProfile.actionsMenuSr") }}</span>
+                  <Icon name="ellipsis" filled class="h-5 w-5" />
+                </button>
+                <div
+                  v-if="profileActionsMenuOpen"
+                  class="absolute right-0 top-full z-[60] mt-1 min-w-[11rem] overflow-hidden rounded-xl border border-neutral-200 bg-white py-1 shadow-lg"
+                  role="menu"
+                  @click.stop
+                >
+                  <button
+                    v-if="remoteFollowState === 'accepted'"
+                    type="button"
+                    role="menuitem"
+                    class="block w-full px-4 py-2.5 text-left text-sm text-neutral-800 hover:bg-neutral-50 disabled:opacity-50"
+                    :disabled="dmBusy || federationPrivacyBusy"
+                    @click.stop="inviteFederationDM"
+                  >
+                    {{ t("views.remoteFederationProfile.dmInvite") }}
+                  </button>
+                  <button
+                    v-if="!federationRel?.muted"
+                    type="button"
+                    role="menuitem"
+                    class="block w-full px-4 py-2.5 text-left text-sm text-neutral-800 hover:bg-neutral-50 disabled:opacity-50"
+                    :disabled="federationPrivacyBusy"
+                    @click.stop="doFederationMuteProfile"
+                  >
+                    {{ t("views.remoteFederationProfile.mute") }}
+                  </button>
+                  <button
+                    v-else
+                    type="button"
+                    role="menuitem"
+                    class="block w-full px-4 py-2.5 text-left text-sm text-neutral-800 hover:bg-neutral-50 disabled:opacity-50"
+                    :disabled="federationPrivacyBusy"
+                    @click.stop="doFederationUnmuteProfile"
+                  >
+                    {{ t("views.remoteFederationProfile.unmute") }}
+                  </button>
+                  <button
+                    v-if="!federationRel?.blocked"
+                    type="button"
+                    role="menuitem"
+                    class="block w-full px-4 py-2.5 text-left text-sm text-red-700 hover:bg-red-50 disabled:opacity-50"
+                    :disabled="federationPrivacyBusy"
+                    @click.stop="doFederationBlockProfile"
+                  >
+                    {{ t("views.remoteFederationProfile.block") }}
+                  </button>
+                  <button
+                    v-else
+                    type="button"
+                    role="menuitem"
+                    class="block w-full px-4 py-2.5 text-left text-sm text-neutral-800 hover:bg-neutral-50 disabled:opacity-50"
+                    :disabled="federationPrivacyBusy"
+                    @click.stop="doFederationUnblockProfile"
+                  >
+                    {{ t("views.remoteFederationProfile.unblock") }}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
           <div>
@@ -479,6 +677,7 @@ watch(
           @toggle-reaction="toggleReaction"
           @toggle-bookmark="toggleBookmark"
           @patch-item="({ id, patch }) => patchPost(id, patch)"
+          @remove-post="removeFederatedPostFromList"
         />
         <p v-else class="border-b border-neutral-200 px-4 py-10 text-center text-sm text-neutral-500">
           まだ受信した投稿がありません。

@@ -117,6 +117,9 @@ func (s *Server) handleCreateFederatedIncomingPostReport(w http.ResponseWriter, 
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
 		return
 	}
+	if s.rejectIfFederatedIncomingHidden(w, r, uid, row) {
+		return
+	}
 	var req createReportReq
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<15)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_json"})

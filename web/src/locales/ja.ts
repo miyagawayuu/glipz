@@ -220,6 +220,21 @@ export const jaMessages = {
         deleteOwnConfirm: "この投稿を削除しますか？この操作は取り消せません。",
         deleteAdminConfirm: "管理者としてこの投稿を削除しますか？この操作は取り消せません。",
       },
+      federationPrivacy: {
+        mute: "ミュート（連合）",
+        block: "ブロック（連合）",
+        unmute: "ミュート解除",
+        unblock: "ブロック解除",
+        muteConfirm:
+          "この連合アカウントをミュートしますか？あなたのタイムラインなどから表示されなくなります。相手インスタンスへの通知は行いません。",
+        blockConfirm:
+          "この連合アカウントをブロックしますか？あなたの公開投稿の配送先から外れますが、フォロー受理は通常どおり返し、相手にブロックされたことは伝わりません。",
+        doneMute: "ミュートしました",
+        doneBlock: "ブロックしました",
+        doneUnmute: "ミュートを解除しました",
+        doneUnblock: "ブロックを解除しました",
+        failed: "処理に失敗しました",
+      },
       unlock: {
         passwordRequired: "パスワードを入力してください",
         unlockFailed: "解除に失敗しました",
@@ -454,6 +469,23 @@ export const jaMessages = {
       shareFailed: "共有に失敗しました",
       shareFallbackTitle: "Glipz",
       shareFallbackText: "投稿",
+    },
+    remoteFederationProfile: {
+      actionsMenuSr: "その他の操作（DM・ミュート・ブロック）",
+      dmInvite: "DM招待",
+      mute: "ミュート",
+      block: "ブロック",
+      unmute: "ミュート解除",
+      unblock: "ブロック解除",
+      muteConfirm:
+        "この連合アカウントをミュートしますか？表示されなくなります（相手に通知は行きません）。",
+      blockConfirm:
+        "この連合アカウントをブロックしますか？配送は止まりますが、相手にブロックされたことは伝わりません。",
+      doneMute: "ミュートしました",
+      doneBlock: "ブロックしました",
+      doneUnmute: "ミュートを解除しました",
+      doneUnblock: "ブロックを解除しました",
+      failed: "処理に失敗しました",
     },
     compose: {
       title: "投稿",

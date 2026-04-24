@@ -880,9 +880,16 @@ func (s *Server) handleFederationFollowInbound(w http.ResponseWriter, r *http.Re
 		writeServerError(w, "PublicProfileByHandle inbound follow", err)
 		return
 	}
-	if err := s.db.UpsertFederationSubscriber(r.Context(), pfl.ID, strings.TrimSpace(req.FollowerAcct), canonicalInbox); err != nil {
-		writeServerError(w, "UpsertFederationSubscriber", err)
+	blocked, errB := s.db.HasFederationUserBlock(r.Context(), pfl.ID, strings.TrimSpace(req.FollowerAcct))
+	if errB != nil {
+		writeServerError(w, "HasFederationUserBlock follow", errB)
 		return
+	}
+	if !blocked {
+		if err := s.db.UpsertFederationSubscriber(r.Context(), pfl.ID, strings.TrimSpace(req.FollowerAcct), canonicalInbox); err != nil {
+			writeServerError(w, "UpsertFederationSubscriber", err)
+			return
+		}
 	}
 	_ = s.rememberFederationEventID(r.Context(), verified, eventID)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "state": "accepted"})
@@ -1122,6 +1129,16 @@ func (s *Server) handleFederationEventInbound(w http.ResponseWriter, r *http.Req
 	case "post_liked", "post_unliked":
 		liked := kind == "post_liked"
 		if hasLocalPost {
+			blocked, errBl := s.db.PostAuthorHasFederationBlock(r.Context(), localPostID, ev.Author.Acct)
+			if errBl != nil && !errors.Is(errBl, repo.ErrNotFound) {
+				writeServerError(w, "PostAuthorHasFederationBlock like", errBl)
+				return
+			}
+			if blocked {
+				_ = s.rememberFederationEventID(r.Context(), verified, eventID)
+				writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+				return
+			}
 			changed, count, err := s.db.ApplyRemoteLikeToLocalPost(r.Context(), localPostID, ev.Author.Acct, ev.Author.Acct, liked)
 			if err != nil && !errors.Is(err, repo.ErrNotFound) {
 				writeServerError(w, "ApplyRemoteLikeToLocalPost", err)
@@ -1160,6 +1177,16 @@ func (s *Server) handleFederationEventInbound(w http.ResponseWriter, r *http.Req
 		}
 		added := kind == "post_reaction_added"
 		if hasLocalPost {
+			blocked, errBl := s.db.PostAuthorHasFederationBlock(r.Context(), localPostID, ev.Author.Acct)
+			if errBl != nil && !errors.Is(errBl, repo.ErrNotFound) {
+				writeServerError(w, "PostAuthorHasFederationBlock reaction", errBl)
+				return
+			}
+			if blocked {
+				_ = s.rememberFederationEventID(r.Context(), verified, eventID)
+				writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+				return
+			}
 			changed, err := s.db.ApplyRemoteReactionToLocalPost(r.Context(), localPostID, ev.Author.Acct, ev.Author.Acct, emoji, added)
 			if err != nil && !errors.Is(err, repo.ErrNotFound) {
 				writeServerError(w, "ApplyRemoteReactionToLocalPost", err)
@@ -1190,6 +1217,16 @@ func (s *Server) handleFederationEventInbound(w http.ResponseWriter, r *http.Req
 		}
 		if !hasLocalPost || selectedPosition <= 0 {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_event"})
+			return
+		}
+		blocked, errBl := s.db.PostAuthorHasFederationBlock(r.Context(), localPostID, ev.Author.Acct)
+		if errBl != nil && !errors.Is(errBl, repo.ErrNotFound) {
+			writeServerError(w, "PostAuthorHasFederationBlock poll", errBl)
+			return
+		}
+		if blocked {
+			_ = s.rememberFederationEventID(r.Context(), verified, eventID)
+			writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 			return
 		}
 		changed, err := s.db.ApplyRemotePollVoteToLocalPost(r.Context(), localPostID, ev.Author.Acct, ev.Author.Acct, selectedPosition)

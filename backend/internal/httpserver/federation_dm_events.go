@@ -34,6 +34,11 @@ func (s *Server) handleFederationDMEventInbound(ctx context.Context, verified ve
 	if err != nil {
 		return err
 	}
+	if bl, errB := s.db.HasFederationUserBlock(ctx, pfl.ID, strings.TrimSpace(dm.FromAcct)); errB != nil {
+		return errB
+	} else if bl {
+		return nil
+	}
 
 	// Mutual follow enforcement (minimum viable):
 	// - local -> remote must be accepted

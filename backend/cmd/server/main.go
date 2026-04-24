@@ -84,6 +84,9 @@ func main() {
 	if err := migrate.RunFederationDomainBlock(ctx, pool); err != nil {
 		log.Fatalf("migrate federation domain block: %v", err)
 	}
+	if err := migrate.RunFederationUserPrivacy(ctx, pool); err != nil {
+		log.Fatalf("migrate federation user privacy: %v", err)
+	}
 	if err := migrate.RunFederationKnownInstances(ctx, pool); err != nil {
 		log.Fatalf("migrate federation known instances: %v", err)
 	}

@@ -11,6 +11,7 @@ import { buildReplyTree, depthIndentPxByPostId, flatRepliesDFS } from "../lib/th
 import { getAccessToken } from "../auth";
 import { api } from "../lib/api";
 import { customEmojiMap, ensureCustomEmojiCatalog, pickerCustomEmojisForHandle, unicodeReactionPickerCategories } from "../lib/customEmojis";
+import { blockFederationUser, muteFederationUser } from "../lib/federationPrivacy";
 import { unlockTimelinePost, voteTimelinePoll } from "../lib/federationActions";
 import type { TimelinePoll, TimelinePost } from "../types/timeline";
 import {
@@ -152,6 +153,7 @@ function isOwnPost(it: TimelinePost) {
 }
 
 const openMenuId = ref<string | null>(null);
+const federationPrivacyBusyId = ref<string | null>(null);
 const openReactionPickerId = ref<string | null>(null);
 const emojiCatalog = customEmojiMap();
 const standardReactionCategories = unicodeReactionPickerCategories();
@@ -407,6 +409,17 @@ function canReportPost(it: TimelinePost): boolean {
   return Boolean(effectiveViewerEmail.value) && !isOwnPost(it);
 }
 
+function federatedPrivacyTargetAcct(it: TimelinePost): string | null {
+  if (!it.is_federated) return null;
+  const a = it.user_handle?.trim().toLowerCase() ?? "";
+  if (!a.includes("@")) return null;
+  return a;
+}
+
+function canFederationPrivacyMenu(it: TimelinePost): boolean {
+  return Boolean(effectiveViewerEmail.value) && Boolean(federatedPrivacyTargetAcct(it)) && !isOwnPost(it);
+}
+
 function canAdminDeletePost(it: TimelinePost): boolean {
   return effectiveViewerIsAdmin.value && !it.is_federated && !isOwnPost(it);
 }
@@ -416,7 +429,13 @@ function canAdminSuspendAuthor(it: TimelinePost): boolean {
 }
 
 function canShowPostMenu(it: TimelinePost): boolean {
-  return isOwnPost(it) || canReportPost(it) || canAdminDeletePost(it) || canAdminSuspendAuthor(it);
+  return (
+    isOwnPost(it) ||
+    canReportPost(it) ||
+    canAdminDeletePost(it) ||
+    canAdminSuspendAuthor(it) ||
+    canFederationPrivacyMenu(it)
+  );
 }
 
 function moderationErrorMessage(e: unknown, fallback: string): string {
@@ -545,6 +564,44 @@ async function requestDeletePost(it: TimelinePost) {
     emit("removePost", it.id);
   } catch (e: unknown) {
     window.alert(moderationErrorMessage(e, t("components.postTimeline.moderation.deleteFailed")));
+  }
+}
+
+async function requestFederationMute(it: TimelinePost) {
+  openMenuId.value = null;
+  const acct = federatedPrivacyTargetAcct(it);
+  if (!acct) return;
+  const token = getAccessToken();
+  if (!token) return;
+  if (!window.confirm(t("components.postTimeline.federationPrivacy.muteConfirm"))) return;
+  federationPrivacyBusyId.value = it.id;
+  try {
+    await muteFederationUser(token, acct);
+    window.alert(t("components.postTimeline.federationPrivacy.doneMute"));
+    emit("removePost", it.id);
+  } catch (e: unknown) {
+    window.alert(e instanceof Error ? e.message : t("components.postTimeline.federationPrivacy.failed"));
+  } finally {
+    federationPrivacyBusyId.value = null;
+  }
+}
+
+async function requestFederationBlock(it: TimelinePost) {
+  openMenuId.value = null;
+  const acct = federatedPrivacyTargetAcct(it);
+  if (!acct) return;
+  const token = getAccessToken();
+  if (!token) return;
+  if (!window.confirm(t("components.postTimeline.federationPrivacy.blockConfirm"))) return;
+  federationPrivacyBusyId.value = it.id;
+  try {
+    await blockFederationUser(token, acct);
+    window.alert(t("components.postTimeline.federationPrivacy.doneBlock"));
+    emit("removePost", it.id);
+  } catch (e: unknown) {
+    window.alert(e instanceof Error ? e.message : t("components.postTimeline.federationPrivacy.failed"));
+  } finally {
+    federationPrivacyBusyId.value = null;
   }
 }
 
@@ -927,6 +984,26 @@ async function submitUnlock(it: TimelinePost) {
                 @click.stop="requestReportPost(it)"
               >
                 {{ $t("components.postTimeline.reportPost") }}
+              </button>
+              <button
+                v-if="canFederationPrivacyMenu(it)"
+                type="button"
+                role="menuitem"
+                class="block w-full px-4 py-2.5 text-left text-sm text-neutral-800 hover:bg-neutral-50 disabled:opacity-50"
+                :disabled="federationPrivacyBusyId === it.id"
+                @click.stop="requestFederationMute(it)"
+              >
+                {{ $t("components.postTimeline.federationPrivacy.mute") }}
+              </button>
+              <button
+                v-if="canFederationPrivacyMenu(it)"
+                type="button"
+                role="menuitem"
+                class="block w-full px-4 py-2.5 text-left text-sm text-red-700 hover:bg-red-50 disabled:opacity-50"
+                :disabled="federationPrivacyBusyId === it.id"
+                @click.stop="requestFederationBlock(it)"
+              >
+                {{ $t("components.postTimeline.federationPrivacy.block") }}
               </button>
               <button
                 v-if="isOwnPost(it) || canAdminDeletePost(it)"

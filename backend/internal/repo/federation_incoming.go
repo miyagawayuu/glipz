@@ -187,34 +187,35 @@ func (p *Pool) ListFederatedIncomingForViewer(ctx context.Context, viewerID uuid
 	var err error
 	if beforePublished != nil && beforeID != nil {
 		rows, err = p.db.Query(ctx, `
-			SELECT id, object_iri, COALESCE(create_activity_iri, ''), actor_iri, actor_acct, actor_name,
-				COALESCE(actor_icon_url, ''), COALESCE(actor_profile_url, ''),
-				caption_text, media_type, media_urls, is_nsfw, published_at, received_at, like_count,
-				COALESCE(reply_to_object_iri, ''), COALESCE(repost_of_object_iri, ''), COALESCE(repost_comment, ''),
-				has_view_password, COALESCE(view_password_scope, 0), COALESCE(view_password_text_ranges, '[]'::jsonb)::text, COALESCE(unlock_url, '')
-			FROM federation_incoming_posts
-			WHERE deleted_at IS NULL
-				AND (recipient_user_id IS NULL OR recipient_user_id = $1)
-				AND COALESCE(btrim(reply_to_object_iri), '') = ''
+			SELECT f.id, f.object_iri, COALESCE(f.create_activity_iri, ''), f.actor_iri, f.actor_acct, f.actor_name,
+				COALESCE(f.actor_icon_url, ''), COALESCE(f.actor_profile_url, ''),
+				f.caption_text, f.media_type, f.media_urls, f.is_nsfw, f.published_at, f.received_at, f.like_count,
+				COALESCE(f.reply_to_object_iri, ''), COALESCE(f.repost_of_object_iri, ''), COALESCE(f.repost_comment, ''),
+				f.has_view_password, COALESCE(f.view_password_scope, 0), COALESCE(f.view_password_text_ranges, '[]'::jsonb)::text, COALESCE(f.unlock_url, '')
+			FROM federation_incoming_posts f
+			WHERE f.deleted_at IS NULL
+				AND (f.recipient_user_id IS NULL OR f.recipient_user_id = $1)
+				AND COALESCE(btrim(f.reply_to_object_iri), '') = ''
 				AND (
-					published_at < $2::timestamptz
-					OR (published_at = $2::timestamptz AND id < $3::uuid)
-				)
-			ORDER BY published_at DESC, id DESC
+					f.published_at < $2::timestamptz
+					OR (f.published_at = $2::timestamptz AND f.id < $3::uuid)
+				)`+FedIncomingActorVisibleSQL("f", "$1")+`
+			ORDER BY f.published_at DESC, f.id DESC
 			LIMIT $4
 		`, viewerID, *beforePublished, *beforeID, limit)
 	} else {
 		rows, err = p.db.Query(ctx, `
-			SELECT id, object_iri, COALESCE(create_activity_iri, ''), actor_iri, actor_acct, actor_name,
-				COALESCE(actor_icon_url, ''), COALESCE(actor_profile_url, ''),
-				caption_text, media_type, media_urls, is_nsfw, published_at, received_at, like_count,
-				COALESCE(reply_to_object_iri, ''), COALESCE(repost_of_object_iri, ''), COALESCE(repost_comment, ''),
-				has_view_password, COALESCE(view_password_scope, 0), COALESCE(view_password_text_ranges, '[]'::jsonb)::text, COALESCE(unlock_url, '')
-			FROM federation_incoming_posts
-			WHERE deleted_at IS NULL
-				AND (recipient_user_id IS NULL OR recipient_user_id = $1)
-				AND COALESCE(btrim(reply_to_object_iri), '') = ''
-			ORDER BY published_at DESC, id DESC
+			SELECT f.id, f.object_iri, COALESCE(f.create_activity_iri, ''), f.actor_iri, f.actor_acct, f.actor_name,
+				COALESCE(f.actor_icon_url, ''), COALESCE(f.actor_profile_url, ''),
+				f.caption_text, f.media_type, f.media_urls, f.is_nsfw, f.published_at, f.received_at, f.like_count,
+				COALESCE(f.reply_to_object_iri, ''), COALESCE(f.repost_of_object_iri, ''), COALESCE(f.repost_comment, ''),
+				f.has_view_password, COALESCE(f.view_password_scope, 0), COALESCE(f.view_password_text_ranges, '[]'::jsonb)::text, COALESCE(f.unlock_url, '')
+			FROM federation_incoming_posts f
+			WHERE f.deleted_at IS NULL
+				AND (f.recipient_user_id IS NULL OR f.recipient_user_id = $1)
+				AND COALESCE(btrim(f.reply_to_object_iri), '') = ''
+			`+FedIncomingActorVisibleSQL("f", "$1")+`
+			ORDER BY f.published_at DESC, f.id DESC
 			LIMIT $2
 		`, viewerID, limit)
 	}
@@ -326,7 +327,7 @@ func (p *Pool) ListBookmarkedFederatedIncoming(ctx context.Context, viewerID uui
 		JOIN federation_incoming_posts f ON f.id = fb.federation_incoming_post_id
 		WHERE fb.user_id = $1
 			AND f.deleted_at IS NULL
-			AND (f.recipient_user_id IS NULL OR f.recipient_user_id = $1)
+			AND (f.recipient_user_id IS NULL OR f.recipient_user_id = $1)`+FedIncomingActorVisibleSQL("f", "$1")+`
 		ORDER BY fb.created_at DESC, f.id DESC
 		LIMIT $2
 	`, viewerID, limit)
@@ -379,16 +380,16 @@ func (p *Pool) ListFederatedIncomingRepliesByObjectIRI(ctx context.Context, view
 		limit = 50
 	}
 	rows, err := p.db.Query(ctx, `
-		SELECT id, object_iri, COALESCE(create_activity_iri, ''), actor_iri, actor_acct, actor_name,
-			COALESCE(actor_icon_url, ''), COALESCE(actor_profile_url, ''),
-			caption_text, media_type, media_urls, is_nsfw, published_at, received_at, like_count,
-			COALESCE(reply_to_object_iri, ''), COALESCE(repost_of_object_iri, ''), COALESCE(repost_comment, ''),
-			has_view_password, COALESCE(view_password_scope, 0), COALESCE(view_password_text_ranges, '[]'::jsonb)::text, COALESCE(unlock_url, '')
-		FROM federation_incoming_posts
-		WHERE deleted_at IS NULL
-			AND (recipient_user_id IS NULL OR recipient_user_id = $1)
-			AND COALESCE(btrim(reply_to_object_iri), '') = $2
-		ORDER BY published_at ASC, id ASC
+		SELECT f.id, f.object_iri, COALESCE(f.create_activity_iri, ''), f.actor_iri, f.actor_acct, f.actor_name,
+			COALESCE(f.actor_icon_url, ''), COALESCE(f.actor_profile_url, ''),
+			f.caption_text, f.media_type, f.media_urls, f.is_nsfw, f.published_at, f.received_at, f.like_count,
+			COALESCE(f.reply_to_object_iri, ''), COALESCE(f.repost_of_object_iri, ''), COALESCE(f.repost_comment, ''),
+			f.has_view_password, COALESCE(f.view_password_scope, 0), COALESCE(f.view_password_text_ranges, '[]'::jsonb)::text, COALESCE(f.unlock_url, '')
+		FROM federation_incoming_posts f
+		WHERE f.deleted_at IS NULL
+			AND (f.recipient_user_id IS NULL OR f.recipient_user_id = $1)
+			AND COALESCE(btrim(f.reply_to_object_iri), '') = $2`+FedIncomingActorVisibleSQL("f", "$1")+`
+		ORDER BY f.published_at ASC, f.id ASC
 		LIMIT $3
 	`, viewerID, objectIRI, limit)
 	if err != nil {
@@ -431,16 +432,16 @@ func (p *Pool) ListFederatedIncomingRepliesByLocalPostIDSuffix(ctx context.Conte
 	}
 	suffix := "/posts/" + postID.String()
 	rows, err := p.db.Query(ctx, `
-		SELECT id, object_iri, COALESCE(create_activity_iri, ''), actor_iri, actor_acct, actor_name,
-			COALESCE(actor_icon_url, ''), COALESCE(actor_profile_url, ''),
-			caption_text, media_type, media_urls, is_nsfw, published_at, received_at, like_count,
-			COALESCE(reply_to_object_iri, ''), COALESCE(repost_of_object_iri, ''), COALESCE(repost_comment, ''),
-			has_view_password, COALESCE(view_password_scope, 0), COALESCE(view_password_text_ranges, '[]'::jsonb)::text, COALESCE(unlock_url, '')
-		FROM federation_incoming_posts
-		WHERE deleted_at IS NULL
-			AND (recipient_user_id IS NULL OR recipient_user_id = $1)
-			AND COALESCE(btrim(reply_to_object_iri), '') LIKE '%' || $2
-		ORDER BY published_at ASC, id ASC
+		SELECT f.id, f.object_iri, COALESCE(f.create_activity_iri, ''), f.actor_iri, f.actor_acct, f.actor_name,
+			COALESCE(f.actor_icon_url, ''), COALESCE(f.actor_profile_url, ''),
+			f.caption_text, f.media_type, f.media_urls, f.is_nsfw, f.published_at, f.received_at, f.like_count,
+			COALESCE(f.reply_to_object_iri, ''), COALESCE(f.repost_of_object_iri, ''), COALESCE(f.repost_comment, ''),
+			f.has_view_password, COALESCE(f.view_password_scope, 0), COALESCE(f.view_password_text_ranges, '[]'::jsonb)::text, COALESCE(f.unlock_url, '')
+		FROM federation_incoming_posts f
+		WHERE f.deleted_at IS NULL
+			AND (f.recipient_user_id IS NULL OR f.recipient_user_id = $1)
+			AND COALESCE(btrim(f.reply_to_object_iri), '') LIKE '%' || $2`+FedIncomingActorVisibleSQL("f", "$1")+`
+		ORDER BY f.published_at ASC, f.id ASC
 		LIMIT $3
 	`, viewerID, suffix, limit)
 	if err != nil {
@@ -620,6 +621,64 @@ func (p *Pool) ListFederatedIncomingPublicByActorIRI(ctx context.Context, actorI
 	return out, nil
 }
 
+// ListFederatedIncomingPublicByActorIRIForViewer is like ListFederatedIncomingPublicByActorIRI but hides actors blocked/muted by viewerID.
+func (p *Pool) ListFederatedIncomingPublicByActorIRIForViewer(ctx context.Context, viewerID uuid.UUID, actorIRI string, limit int) ([]FederatedIncomingPost, error) {
+	if viewerID == uuid.Nil {
+		return p.ListFederatedIncomingPublicByActorIRI(ctx, actorIRI, limit)
+	}
+	actorIRI = strings.TrimSpace(actorIRI)
+	if actorIRI == "" {
+		return nil, nil
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	rows, err := p.db.Query(ctx, `
+		SELECT f.id, f.object_iri, COALESCE(f.create_activity_iri, ''), f.actor_iri, f.actor_acct, f.actor_name,
+			COALESCE(f.actor_icon_url, ''), COALESCE(f.actor_profile_url, ''),
+			f.caption_text, f.media_type, f.media_urls, f.is_nsfw, f.published_at, f.received_at, f.like_count,
+			COALESCE(f.reply_to_object_iri, ''), COALESCE(f.repost_of_object_iri, ''), COALESCE(f.repost_comment, ''),
+			f.has_view_password, COALESCE(f.view_password_scope, 0), COALESCE(f.view_password_text_ranges, '[]'::jsonb)::text, COALESCE(f.unlock_url, '')
+		FROM federation_incoming_posts f
+		WHERE f.deleted_at IS NULL
+			AND f.recipient_user_id IS NULL
+			AND COALESCE(btrim(f.reply_to_object_iri), '') = ''
+			AND f.actor_iri = $1`+FedIncomingActorVisibleSQL("f", "$2")+`
+		ORDER BY f.published_at DESC, f.id DESC
+		LIMIT $3
+	`, actorIRI, viewerID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []FederatedIncomingPost
+	for rows.Next() {
+		var r FederatedIncomingPost
+		var scope int
+		var textRanges string
+		if err := rows.Scan(&r.ID, &r.ObjectIRI, &r.CreateActivityIRI, &r.ActorIRI, &r.ActorAcct, &r.ActorName,
+			&r.ActorIconURL, &r.ActorProfileURL, &r.CaptionText, &r.MediaType, &r.MediaURLs,
+			&r.IsNSFW, &r.PublishedAt, &r.ReceivedAt, &r.LikeCount,
+			&r.ReplyToObjectIRI, &r.RepostOfObjectIRI, &r.RepostComment,
+			&r.HasViewPassword, &scope, &textRanges, &r.UnlockURL); err != nil {
+			return nil, err
+		}
+		var err error
+		r.ViewPasswordScope, r.ViewPasswordTextRanges, err = decodeFederatedIncomingViewPasswordProtection(r.HasViewPassword, scope, textRanges)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := p.AttachPollsToFederatedIncoming(ctx, viewerID, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ListFederatedIncomingForRemoteFollows returns posts only from actors the viewer follows through accepted remote follows.
 func (p *Pool) ListFederatedIncomingForRemoteFollows(ctx context.Context, viewerID uuid.UUID, limit int) ([]FederatedIncomingPost, error) {
 	if limit <= 0 || limit > 100 {
@@ -640,7 +699,7 @@ func (p *Pool) ListFederatedIncomingForRemoteFollows(ctx context.Context, viewer
 				WHERE r.local_user_id = $1
 					AND r.state = 'accepted'
 					AND r.remote_actor_id = f.actor_iri
-			)
+			)`+FedIncomingActorVisibleSQL("f", "$1")+`
 		ORDER BY f.published_at DESC, f.id DESC
 		LIMIT $2
 	`, viewerID, limit)

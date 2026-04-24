@@ -250,9 +250,14 @@ func (p *Pool) UserHandleByID(ctx context.Context, userID uuid.UUID) (string, er
 // ListGlipzProtocolRemoteFollowerInboxes returns unique destination inbox URLs for delivery.
 func (p *Pool) ListGlipzProtocolRemoteFollowerInboxes(ctx context.Context, localUserID uuid.UUID) ([]string, error) {
 	rows, err := p.db.Query(ctx, `
-		SELECT DISTINCT remote_inbox FROM glipz_protocol_remote_followers
-		WHERE local_user_id = $1 AND COALESCE(btrim(remote_inbox), '') <> ''
-		ORDER BY remote_inbox
+		SELECT DISTINCT r.remote_inbox FROM glipz_protocol_remote_followers r
+		WHERE r.local_user_id = $1 AND COALESCE(btrim(r.remote_inbox), '') <> ''
+			AND NOT EXISTS (
+				SELECT 1 FROM federation_user_blocks b
+				WHERE b.user_id = r.local_user_id
+					AND b.target_acct = lower(trim(both from r.remote_actor_id))
+			)
+		ORDER BY 1
 	`, localUserID)
 	if err != nil {
 		return nil, err

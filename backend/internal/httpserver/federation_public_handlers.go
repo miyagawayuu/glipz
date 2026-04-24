@@ -36,7 +36,12 @@ func (s *Server) handlePublicFederatedIncomingByActor(w http.ResponseWriter, r *
 		writeJSON(w, st, map[string]string{"error": ResolveFailureAPIError(err)})
 		return
 	}
-	rows, err := s.db.ListFederatedIncomingPublicByActorIRI(r.Context(), resolved.ActorID, 50)
+	var rows []repo.FederatedIncomingPost
+	if uid, ok := userIDFrom(r.Context()); ok {
+		rows, err = s.db.ListFederatedIncomingPublicByActorIRIForViewer(r.Context(), uid, resolved.ActorID, 50)
+	} else {
+		rows, err = s.db.ListFederatedIncomingPublicByActorIRI(r.Context(), resolved.ActorID, 50)
+	}
 	if err != nil {
 		writeServerError(w, "ListFederatedIncomingPublicByActorIRI", err)
 		return
@@ -231,8 +236,21 @@ func (s *Server) handlePublicFederatedIncomingPost(w http.ResponseWriter, r *htt
 		writeServerError(w, "GetFederatedIncomingByID", err)
 		return
 	}
+	pollViewer := uuid.Nil
+	if uid, ok := userIDFrom(r.Context()); ok {
+		pollViewer = uid
+		hidden, errH := s.federatedIncomingHiddenFromViewer(r.Context(), uid, row)
+		if errH != nil {
+			writeServerError(w, "federatedIncomingHiddenFromViewer", errH)
+			return
+		}
+		if hidden {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+			return
+		}
+	}
 	rows := []repo.FederatedIncomingPost{row}
-	if err := s.db.AttachPollsToFederatedIncoming(r.Context(), uuid.Nil, rows); err != nil {
+	if err := s.db.AttachPollsToFederatedIncoming(r.Context(), pollViewer, rows); err != nil {
 		writeServerError(w, "AttachPollsToFederatedIncoming", err)
 		return
 	}
@@ -266,6 +284,15 @@ func (s *Server) handleFederatedIncomingFeedItemGET(w http.ResponseWriter, r *ht
 		return
 	}
 	if row.RecipientUserID != nil && *row.RecipientUserID != uid {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+		return
+	}
+	hidden, errH := s.federatedIncomingHiddenFromViewer(r.Context(), uid, row)
+	if errH != nil {
+		writeServerError(w, "federatedIncomingHiddenFromViewer", errH)
+		return
+	}
+	if hidden {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
 		return
 	}
@@ -341,6 +368,17 @@ func (s *Server) handlePublicFederatedIncomingThread(w http.ResponseWriter, r *h
 		writeServerError(w, "GetFederatedIncomingByID", err)
 		return
 	}
+	if uid, ok := userIDFrom(r.Context()); ok {
+		hidden, errH := s.federatedIncomingHiddenFromViewer(r.Context(), uid, row)
+		if errH != nil {
+			writeServerError(w, "federatedIncomingHiddenFromViewer", errH)
+			return
+		}
+		if hidden {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+			return
+		}
+	}
 	items, err := s.federatedIncomingThreadItems(r.Context(), uuid.Nil, row)
 	if err != nil {
 		writeServerError(w, "federatedIncomingThreadItems", err)
@@ -375,6 +413,15 @@ func (s *Server) handleFederatedIncomingThreadGET(w http.ResponseWriter, r *http
 		return
 	}
 	if row.RecipientUserID != nil && *row.RecipientUserID != uid {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+		return
+	}
+	hidden, errH := s.federatedIncomingHiddenFromViewer(r.Context(), uid, row)
+	if errH != nil {
+		writeServerError(w, "federatedIncomingHiddenFromViewer", errH)
+		return
+	}
+	if hidden {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
 		return
 	}
