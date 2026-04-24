@@ -1,4 +1,4 @@
-// Package patreon provides a minimal Patreon OAuth and membership integration.
+// Package patreon implements Patreon OAuth and API calls for the fanclub integration.
 package patreon
 
 import (

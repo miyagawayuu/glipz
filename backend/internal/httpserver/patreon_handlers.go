@@ -2,9 +2,8 @@ package httpserver
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strings"
@@ -13,7 +12,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 
-	"glipz.io/backend/internal/patreon"
+	"glipz.io/backend/internal/fanclub/kernel"
+	"glipz.io/backend/internal/fanclub/patreon"
 	"glipz.io/backend/internal/repo"
 )
 
@@ -47,13 +47,13 @@ func (s *Server) handlePatreonMemberAuthorizeURL(w http.ResponseWriter, r *http.
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		return
 	}
-	state, err := randomOAuthState()
+	state, err := kernel.RandomOAuthState()
 	if err != nil {
 		writeServerError(w, "patreon state", err)
 		return
 	}
 	payload, _ := json.Marshal(patreonOAuthState{UserID: uid, Kind: "member"})
-	if err := s.rdb.Set(r.Context(), "patreon_oauth:"+state, string(payload), 15*time.Minute).Err(); err != nil {
+	if err := kernel.SaveOAuthState(r.Context(), s.rdb, kernel.Patreon, state, string(payload), 15*time.Minute); err != nil {
 		writeServerError(w, "patreon redis set", err)
 		return
 	}
@@ -70,13 +70,13 @@ func (s *Server) handlePatreonCreatorAuthorizeURL(w http.ResponseWriter, r *http
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		return
 	}
-	state, err := randomOAuthState()
+	state, err := kernel.RandomOAuthState()
 	if err != nil {
 		writeServerError(w, "patreon state", err)
 		return
 	}
 	payload, _ := json.Marshal(patreonOAuthState{UserID: uid, Kind: "creator"})
-	if err := s.rdb.Set(r.Context(), "patreon_oauth:"+state, string(payload), 15*time.Minute).Err(); err != nil {
+	if err := kernel.SaveOAuthState(r.Context(), s.rdb, kernel.Patreon, state, string(payload), 15*time.Minute); err != nil {
 		writeServerError(w, "patreon redis set", err)
 		return
 	}
@@ -95,12 +95,17 @@ func (s *Server) handlePatreonOAuthCallback(w http.ResponseWriter, r *http.Reque
 		http.Redirect(w, r, s.cfg.FrontendOrigin+"/settings?patreon=missing_code", http.StatusFound)
 		return
 	}
-	raw, err := s.rdb.GetDel(r.Context(), "patreon_oauth:"+state).Result()
-	if err == redis.Nil || raw == "" {
-		http.Redirect(w, r, s.cfg.FrontendOrigin+"/settings?patreon=bad_state", http.StatusFound)
-		return
-	} else if err != nil {
+	raw, err := kernel.GetDelOAuthState(r.Context(), s.rdb, kernel.Patreon, state)
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			http.Redirect(w, r, s.cfg.FrontendOrigin+"/settings?patreon=bad_state", http.StatusFound)
+			return
+		}
 		writeServerError(w, "patreon redis getdel", err)
+		return
+	}
+	if raw == "" {
+		http.Redirect(w, r, s.cfg.FrontendOrigin+"/settings?patreon=bad_state", http.StatusFound)
 		return
 	}
 	var st patreonOAuthState
@@ -208,7 +213,7 @@ func (s *Server) handlePatchMePatreonNotePaywall(w http.ResponseWriter, r *http.
 func mePatreonJSON(u repo.User) map[string]any {
 	out := map[string]any{
 		"member_linked":              u.PatreonMemberAccessToken != nil && strings.TrimSpace(*u.PatreonMemberAccessToken) != "",
-		"creator_linked":           u.PatreonCreatorAccessToken != nil && strings.TrimSpace(*u.PatreonCreatorAccessToken) != "",
+		"creator_linked":             u.PatreonCreatorAccessToken != nil && strings.TrimSpace(*u.PatreonCreatorAccessToken) != "",
 		"note_paywall_configured":  false,
 		"patreon_campaign_id":      nil,
 		"patreon_required_tier_id": nil,
@@ -228,14 +233,6 @@ func mePatreonJSON(u repo.User) map[string]any {
 	}
 	out["note_paywall_configured"] = camp != "" && tier != ""
 	return out
-}
-
-func randomOAuthState() (string, error) {
-	var b [16]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b[:]), nil
 }
 
 // patreonMemberAccessToken returns the viewer's Patreon member token and refreshes it when close to expiry.
@@ -376,13 +373,15 @@ func (s *Server) handlePatreonCreatorTiers(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, map[string]any{"tiers": tiers})
 }
 
+// viewerEntitledToAuthorPatreonTier returns whether the viewer may read Patreon-gated content for the author
+// (campaign + required tier on the note or user defaults), using Patreon’s API. Redis caches positive/negative results.
 func (s *Server) viewerEntitledToAuthorPatreonTier(ctx context.Context, viewerID, authorID uuid.UUID, campaignID, requiredTierID string) (bool, error) {
 	campaignID = strings.TrimSpace(campaignID)
 	requiredTierID = strings.TrimSpace(requiredTierID)
 	if campaignID == "" || requiredTierID == "" {
 		return false, nil
 	}
-	cacheKey := "patreon_entitled:" + viewerID.String() + ":" + authorID.String() + ":" + campaignID + ":" + requiredTierID
+	cacheKey := kernel.EntitledCacheKey(kernel.Patreon, viewerID.String(), authorID.String(), campaignID, requiredTierID)
 	if v, err := s.rdb.Get(ctx, cacheKey).Result(); err == nil {
 		return v == "1", nil
 	}

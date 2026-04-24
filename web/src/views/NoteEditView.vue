@@ -6,6 +6,7 @@ import { getAccessToken } from "../auth";
 import { api } from "../lib/api";
 import Icon from "../components/Icon.vue";
 import NoteRichEditor from "../components/NoteRichEditor.vue";
+import NotePaywallPatreonFields from "../components/notes/NotePaywallPatreonFields.vue";
 import { uploadNoteMedia } from "../lib/noteMediaUpload";
 
 type NotePayload = {
@@ -41,6 +42,7 @@ const bodyMd = ref("");
 const bodyPremiumMd = ref("");
 const status = ref<"draft" | "published">("draft");
 const visibility = ref<"public" | "followers" | "private">("public");
+const paywallProvider = ref<"none" | "patreon">("none");
 /** Empty string means "use the default campaign from the security settings page". */
 const patreonCampaignId = ref("");
 const patreonCampaigns = ref<PatreonCampaign[]>([]);
@@ -67,15 +69,16 @@ function editorModeStr() {
 }
 
 function payloadJson(st: "draft" | "published") {
+  const provider = paywallProvider.value;
   return {
     title: title.value,
     body_md: bodyMd.value,
-    body_premium_md: bodyPremiumMd.value,
+    body_premium_md: provider === "patreon" ? bodyPremiumMd.value : "",
     editor_mode: editorModeStr(),
     status: st,
     visibility: visibility.value,
-    patreon_campaign_id: patreonCampaignId.value.trim(),
-    patreon_required_reward_tier_id: patreonRequiredRewardTierId.value.trim(),
+    patreon_campaign_id: provider === "patreon" ? patreonCampaignId.value.trim() : "",
+    patreon_required_reward_tier_id: provider === "patreon" ? patreonRequiredRewardTierId.value.trim() : "",
   };
 }
 
@@ -130,6 +133,7 @@ async function loadNote() {
     loading.value = false;
     patreonCampaignId.value = "";
     patreonRequiredRewardTierId.value = "";
+    paywallProvider.value = bodyPremiumMd.value.trim() ? "patreon" : "none";
     await loadPatreonCampaigns();
     await loadPatreonTiers();
     return;
@@ -162,6 +166,8 @@ async function loadNote() {
     patreonCampaignId.value = typeof cid === "string" && cid.trim() ? cid.trim() : "";
     const tid = res.note.patreon_required_reward_tier_id;
     patreonRequiredRewardTierId.value = typeof tid === "string" && tid.trim() ? tid.trim() : "";
+    paywallProvider.value =
+      bodyPremiumMd.value.trim() || patreonCampaignId.value || patreonRequiredRewardTierId.value ? "patreon" : "none";
     await loadPatreonCampaigns();
     await loadPatreonTiers();
   } catch (e: unknown) {
@@ -309,6 +315,7 @@ watch(
       status.value = "draft";
       visibility.value = "public";
       surfaceEditor.value = "markdown";
+      paywallProvider.value = "none";
       patreonCampaignId.value = "";
       patreonRequiredRewardTierId.value = "";
       err.value = "";
@@ -322,6 +329,30 @@ watch(
     }
   },
   { immediate: true },
+);
+
+watch(
+  () => paywallProvider.value,
+  (v, prev) => {
+    if (v === prev) return;
+    if (v === "none" && bodyPremiumMd.value.trim()) {
+      const ok = window.confirm(
+        t(
+          "views.noteEdit.paywallDisableConfirm",
+          "有料部分を無効にしますか？（有料部分の内容はクリアされます）",
+        ),
+      );
+      if (!ok) {
+        paywallProvider.value = prev;
+        return;
+      }
+      bodyPremiumMd.value = "";
+    }
+    if (v === "none") {
+      patreonCampaignId.value = "";
+      patreonRequiredRewardTierId.value = "";
+    }
+  },
 );
 </script>
 
@@ -509,51 +540,32 @@ watch(
         <p class="mb-4 text-xs text-lime-700/90 dark:text-lime-200/90">
           {{ $t("views.noteEdit.premiumDescription") }}
         </p>
-        <div class="mb-3">
-          <label class="mb-1 block text-xs font-medium text-lime-800 dark:text-lime-300" for="note-patreon-campaign">{{ $t("views.noteEdit.patreonCampaignLabel") }}</label>
+        <div class="mb-3 w-full max-w-md">
+          <label class="mb-1 block text-xs font-medium text-lime-800 dark:text-lime-300" for="note-paywall-provider">
+            {{ $t("views.noteEdit.paywallProviderLabel") }}
+          </label>
           <select
-            id="note-patreon-campaign"
-            v-model="patreonCampaignId"
-            class="mb-2 w-full max-w-md rounded-xl border border-lime-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none ring-lime-400 focus:ring-2 dark:border-lime-700/50 dark:bg-neutral-950 dark:text-neutral-100"
-            @change="onPatreonCampaignChange"
+            id="note-paywall-provider"
+            v-model="paywallProvider"
+            class="w-full rounded-xl border border-lime-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none ring-lime-400 focus:ring-2 dark:border-lime-700/50 dark:bg-neutral-950 dark:text-neutral-100"
           >
-            <option value="">{{ $t("views.noteEdit.patreonCampaignDefault") }}</option>
-            <option
-              v-if="
-                patreonCampaignId &&
-                !patreonCampaigns.some((x) => x.id === patreonCampaignId)
-              "
-              :value="patreonCampaignId"
-            >
-              {{ $t("views.noteEdit.patreonCurrentId", { id: patreonCampaignId }) }}
-            </option>
-            <option v-for="c in patreonCampaigns" :key="c.id" :value="c.id">
-              {{ c.name || c.id }}
-            </option>
+            <option value="none">{{ $t("views.noteEdit.paywallProviderNone") }}</option>
+            <option value="patreon">Patreon</option>
           </select>
-          <p v-if="patreonCampaignsErr" class="mb-2 text-xs text-lime-700/90 dark:text-lime-200/90">{{ patreonCampaignsErr }}</p>
-          <label class="mb-1 block text-xs font-medium text-lime-800 dark:text-lime-300" for="note-patreon-tier">{{ $t("views.noteEdit.patreonTierLabel") }}</label>
-          <select
-            id="note-patreon-tier"
-            v-model="patreonRequiredRewardTierId"
-            class="w-full max-w-md rounded-xl border border-lime-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none ring-lime-400 focus:ring-2 dark:border-lime-700/50 dark:bg-neutral-950 dark:text-neutral-100"
-          >
-            <option value="">{{ $t("views.noteEdit.patreonTierDefault") }}</option>
-            <option
-              v-if="
-                patreonRequiredRewardTierId &&
-                !patreonTiers.some((x) => x.id === patreonRequiredRewardTierId)
-              "
-              :value="patreonRequiredRewardTierId"
-            >
-              {{ $t("views.noteEdit.patreonCurrentId", { id: patreonRequiredRewardTierId }) }}
-            </option>
-            <option v-for="t in patreonTiers" :key="t.id" :value="t.id">
-              {{ t.title || $t("views.noteEdit.untitledTier") }}{{ t.amount_cents > 0 ? ` - ${(t.amount_cents / 100).toFixed(0)}` : "" }}
-            </option>
-          </select>
-          <p v-if="patreonTiersErr" class="mt-1 text-xs text-lime-700/90 dark:text-lime-200/90">{{ patreonTiersErr }}</p>
         </div>
+
+        <NotePaywallPatreonFields
+          v-if="paywallProvider === 'patreon'"
+          :campaign-id="patreonCampaignId"
+          :required-tier-id="patreonRequiredRewardTierId"
+          :campaigns="patreonCampaigns"
+          :tiers="patreonTiers"
+          :campaigns-err="patreonCampaignsErr"
+          :tiers-err="patreonTiersErr"
+          :on-campaign-change="onPatreonCampaignChange"
+          @update:campaign-id="(v) => (patreonCampaignId = v)"
+          @update:required-tier-id="(v) => (patreonRequiredRewardTierId = v)"
+        />
         <div v-if="surfaceEditor === 'markdown'">
           <div class="mb-2 flex flex-wrap gap-2">
             <button

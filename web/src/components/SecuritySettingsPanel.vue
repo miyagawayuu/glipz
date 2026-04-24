@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useSecuritySettingsContext } from "../composables/useSecuritySettings";
+import { enabledFanclubProviders } from "../fanclub/registry";
+import FanclubLinkPatreon from "./fanclub/FanclubLinkPatreon.vue";
 
 const { t } = useI18n();
 const {
@@ -27,6 +29,9 @@ const {
   enableWebPushNotifications,
   disableWebPushNotifications,
 } = useSecuritySettingsContext();
+
+const providers = enabledFanclubProviders();
+const selectedProviderId = ref(providers[0]?.id ?? "patreon");
 
 const webPushPermissionDisplay = computed(() =>
   webPushPermission.value === "unsupported"
@@ -181,58 +186,34 @@ const webPushSubscribedLabel = computed(() =>
 
     <section>
       <h2 class="text-xs font-semibold uppercase tracking-wide text-neutral-500">
-        {{ $t("views.settings.sections.patreon") }}
+        {{ $t("views.settings.sections.fanclubLinks", $t("views.settings.sections.patreon")) }}
       </h2>
-      <div class="mt-3 space-y-3 rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
-        <p class="text-xs leading-relaxed text-neutral-600">
-          {{ $t("views.settings.security.patreon.introBefore") }}
-          <code class="rounded bg-neutral-100 px-1 font-mono text-[11px]">{{ $t("views.settings.security.patreon.introCode") }}</code>
-          {{ $t("views.settings.security.patreon.introAfter") }}
-        </p>
-        <div v-if="me?.patreon" class="space-y-2 text-xs text-neutral-700">
-          <p>
-            {{ $t("views.settings.security.patreon.memberStatus") }}
-            <span class="font-medium">{{ me.patreon.member_linked ? $t("views.settings.security.patreon.linked") : $t("views.settings.security.patreon.notLinked") }}</span>
-            · {{ $t("views.settings.security.patreon.creatorStatus") }}
-            <span class="font-medium">{{ me.patreon.creator_linked ? $t("views.settings.security.patreon.linked") : $t("views.settings.security.patreon.notLinked") }}</span>
-          </p>
+
+      <div class="mt-3 space-y-3">
+        <div v-if="providers.length > 1" class="w-full max-w-sm">
+          <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-neutral-500">
+            {{ $t("views.settings.security.fanclubs.providerLabel") }}
+          </label>
+          <select
+            v-model="selectedProviderId"
+            class="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none ring-lime-500 focus:ring-2"
+          >
+            <option v-for="p in providers" :key="p.id" :value="p.id">
+              {{ p.labelKey ? $t(p.labelKey) : p.label ?? p.id }}
+            </option>
+          </select>
         </div>
-        <div class="flex flex-wrap gap-2">
-          <button
-            type="button"
-            class="rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
-            :disabled="loading"
-            @click="connectPatreonMember"
-          >
-            {{ $t("views.settings.security.patreon.connectMember") }}
-          </button>
-          <button
-            type="button"
-            class="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-800 hover:bg-neutral-50 disabled:opacity-50"
-            :disabled="loading"
-            @click="disconnectMember"
-          >
-            {{ $t("views.settings.security.patreon.disconnectMember") }}
-          </button>
-        </div>
-        <div class="flex flex-wrap gap-2 border-t border-neutral-200 pt-3">
-          <button
-            type="button"
-            class="rounded-md bg-lime-600 px-3 py-2 text-sm font-medium text-white hover:bg-lime-700 disabled:opacity-50"
-            :disabled="loading"
-            @click="connectPatreonCreator"
-          >
-            {{ $t("views.settings.security.patreon.connectCreator") }}
-          </button>
-          <button
-            type="button"
-            class="rounded-md border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
-            :disabled="loading"
-            @click="disconnectCreator"
-          >
-            {{ $t("views.settings.security.patreon.disconnectCreator") }}
-          </button>
-        </div>
+
+        <FanclubLinkPatreon
+          v-if="selectedProviderId === 'patreon'"
+          :me="me"
+          :loading="loading"
+          :on-connect-member="connectPatreonMember ?? (() => {})"
+          :on-connect-creator="connectPatreonCreator ?? (() => {})"
+          :on-disconnect-member="disconnectMember ?? (() => {})"
+          :on-disconnect-creator="disconnectCreator ?? (() => {})"
+        />
+
       </div>
     </section>
 

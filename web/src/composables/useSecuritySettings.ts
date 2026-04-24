@@ -5,6 +5,7 @@ import { useRoute, useRouter } from "vue-router";
 import { api } from "../lib/api";
 import { getAccessToken } from "../auth";
 import { bumpMeHub } from "../meHub";
+import { useFanclubLinks } from "./useFanclubLinks";
 import {
   currentNotificationPermission,
   disableWebPush,
@@ -96,11 +97,20 @@ export function useSecuritySettings() {
     },
   );
 
-  function patreonQueryMessage(q: unknown): string | null {
-    if (typeof q !== "string") return null;
-    const key = `views.settings.security.patreonReturn.${q}`;
-    if (!te(key)) return null;
-    return t(key);
+  function resolveFanclubReturnQuery(q: Record<string, unknown>): string | null {
+    // Future shape (planned): ?fanclub=patreon&result=member_ok
+    if (typeof q.fanclub === "string" && typeof q.result === "string") {
+      const provider = q.fanclub;
+      const result = q.result;
+      const key = `views.settings.security.${provider}Return.${result}`;
+      if (te(key)) return t(key);
+    }
+    // Back-compat: current Patreon-only shape: ?patreon=member_ok
+    if (typeof q.patreon === "string") {
+      const key = `views.settings.security.patreonReturn.${q.patreon}`;
+      if (te(key)) return t(key);
+    }
+    return null;
   }
 
   async function refresh() {
@@ -127,7 +137,7 @@ export function useSecuritySettings() {
   }
 
   onMounted(async () => {
-    const qm = patreonQueryMessage(route.query.patreon);
+    const qm = resolveFanclubReturnQuery(route.query as Record<string, unknown>);
     if (qm) {
       msg.value = qm;
       await router.replace({ path: "/settings", query: {} });
@@ -180,77 +190,15 @@ export function useSecuritySettings() {
     }
   }
 
-  async function connectPatreonMember() {
-    err.value = "";
-    msg.value = "";
-    const token = getAccessToken();
-    if (!token) return;
-    loading.value = true;
-    try {
-      const res = await api<{ authorize_url: string }>("/api/v1/patreon/member/authorize-url", {
-        method: "GET",
-        token,
-      });
-      window.location.href = res.authorize_url;
-    } catch (e: unknown) {
-      err.value = e instanceof Error ? e.message : t("views.settings.security.patreon.startFailed");
-    } finally {
-      loading.value = false;
-    }
-  }
-
-  async function connectPatreonCreator() {
-    err.value = "";
-    msg.value = "";
-    const token = getAccessToken();
-    if (!token) return;
-    loading.value = true;
-    try {
-      const res = await api<{ authorize_url: string }>("/api/v1/patreon/creator/authorize-url", {
-        method: "GET",
-        token,
-      });
-      window.location.href = res.authorize_url;
-    } catch (e: unknown) {
-      err.value = e instanceof Error ? e.message : t("views.settings.security.patreon.startFailed");
-    } finally {
-      loading.value = false;
-    }
-  }
-
-  async function disconnectMember() {
-    if (!window.confirm(t("views.settings.security.patreon.confirmDisconnectMember"))) return;
-    const token = getAccessToken();
-    if (!token) return;
-    loading.value = true;
-    err.value = "";
-    try {
-      await api("/api/v1/patreon/member/disconnect", { method: "POST", token });
-      msg.value = t("views.settings.security.patreon.disconnectedMember");
-      await refresh();
-    } catch (e: unknown) {
-      err.value = e instanceof Error ? e.message : t("views.settings.security.patreon.disconnectFailed");
-    } finally {
-      loading.value = false;
-    }
-  }
-
-  async function disconnectCreator() {
-    if (!window.confirm(t("views.settings.security.patreon.confirmDisconnectCreator"))) return;
-    const token = getAccessToken();
-    if (!token) return;
-    loading.value = true;
-    err.value = "";
-    try {
-      await api("/api/v1/patreon/creator/disconnect", { method: "POST", token });
-      msg.value = t("views.settings.security.patreon.disconnectedCreator");
-      await refresh();
-    } catch (e: unknown) {
-      err.value = e instanceof Error ? e.message : t("views.settings.security.patreon.disconnectFailed");
-    } finally {
-      loading.value = false;
-    }
-  }
+  const patreonLinks = useFanclubLinks({
+    providerId: "patreon",
+    setErr: (v) => (err.value = v),
+    setMsg: (v) => (msg.value = v),
+    setLoading: (v) => (loading.value = v),
+    confirm: (text) => window.confirm(text),
+    t: (key) => t(key),
+    refreshMe: refresh,
+  });
 
   async function saveDMCallSettings() {
     err.value = "";
@@ -389,10 +337,10 @@ export function useSecuritySettings() {
     refresh,
     setup,
     enable,
-    connectPatreonMember,
-    connectPatreonCreator,
-    disconnectMember,
-    disconnectCreator,
+    connectPatreonMember: patreonLinks.connectMember,
+    connectPatreonCreator: patreonLinks.connectCreator,
+    disconnectMember: patreonLinks.disconnectMember,
+    disconnectCreator: patreonLinks.disconnectCreator,
     saveDMCallSettings,
     enableWebPushNotifications,
     disableWebPushNotifications,

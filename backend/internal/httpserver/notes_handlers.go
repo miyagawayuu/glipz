@@ -183,6 +183,7 @@ func (s *Server) notePremiumProjection(ctx context.Context, row repo.NoteWithAut
 	if camp == "" || tier == "" {
 		return "", true
 	}
+	// Note paywall: Patreon (fanclub). Additional providers can branch here using row/author paywall fields.
 	ok, err := s.viewerEntitledToAuthorPatreonTier(ctx, viewer, row.UserID, camp, tier)
 	if err != nil || !ok {
 		return "", true
