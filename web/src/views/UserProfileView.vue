@@ -55,18 +55,12 @@ const handleParam = computed(() =>
 const profile = ref<Profile | null>(null);
 const posts = ref<TimelinePost[]>([]);
 const threadRepliesByRoot = ref<Record<string, TimelinePost[]>>({});
-type ProfilePostTab = "posts" | "replies" | "notes" | "media";
+type ProfilePostTab = "posts" | "replies" | "media";
 const profilePostTab = ref<ProfilePostTab>("posts");
 const replyPosts = ref<TimelinePost[]>([]);
 const replyPostsLoaded = ref(false);
 const replyPostsBusy = ref(false);
 const replyPostsErr = ref("");
-
-type ProfileNoteRow = { id: string; title: string; status?: string; updated_at: string };
-const profileNotes = ref<ProfileNoteRow[]>([]);
-const profileNotesLoaded = ref(false);
-const profileNotesBusy = ref(false);
-const profileNotesErr = ref("");
 
 type MediaTileRow = { post_id: string; media_type: string; preview_url: string; locked: boolean };
 const mediaTiles = ref<MediaTileRow[]>([]);
@@ -370,9 +364,6 @@ async function loadAll() {
     replyPosts.value = [];
     replyPostsLoaded.value = false;
     replyPostsErr.value = "";
-    profileNotes.value = [];
-    profileNotesLoaded.value = false;
-    profileNotesErr.value = "";
     mediaTiles.value = [];
     mediaTilesLoaded.value = false;
     mediaTilesErr.value = "";
@@ -403,29 +394,6 @@ async function loadReplyPosts() {
   }
 }
 
-async function loadProfileNotes() {
-  if (profileNotesLoaded.value) return;
-  const h = handleParam.value;
-  if (!h) return;
-  const token = getAccessToken();
-  const authOpt = token ? { token } : {};
-  profileNotesBusy.value = true;
-  profileNotesErr.value = "";
-  try {
-    const enc = encodeURIComponent(h);
-    const res = await api<{ items: ProfileNoteRow[] }>(`/api/v1/users/by-handle/${enc}/notes`, {
-      method: "GET",
-      ...authOpt,
-    });
-    profileNotes.value = res.items ?? [];
-    profileNotesLoaded.value = true;
-  } catch (e: unknown) {
-    profileNotesErr.value = e instanceof Error ? e.message : t("views.userProfile.errors.loadFailed");
-  } finally {
-    profileNotesBusy.value = false;
-  }
-}
-
 async function loadMediaTiles() {
   if (mediaTilesLoaded.value) return;
   const h = handleParam.value;
@@ -451,7 +419,6 @@ async function loadMediaTiles() {
 
 watch(profilePostTab, (t) => {
   if (t === "replies") void loadReplyPosts();
-  if (t === "notes") void loadProfileNotes();
   if (t === "media") void loadMediaTiles();
 });
 
@@ -1163,18 +1130,6 @@ watch(handleParam, () => void loadAll());
             type="button"
             class="relative shrink-0 -mb-px border-b-2 px-3 py-2.5 text-sm font-semibold transition-colors"
             :class="
-              profilePostTab === 'notes'
-                ? 'border-lime-600 text-neutral-900'
-                : 'border-transparent text-neutral-500 hover:text-neutral-800'
-            "
-            @click="profilePostTab = 'notes'"
-          >
-            {{ $t("views.userProfile.tabNotes") }}
-          </button>
-          <button
-            type="button"
-            class="relative shrink-0 -mb-px border-b-2 px-3 py-2.5 text-sm font-semibold transition-colors"
-            :class="
               profilePostTab === 'media'
                 ? 'border-lime-600 text-neutral-900'
                 : 'border-transparent text-neutral-500 hover:text-neutral-800'
@@ -1234,38 +1189,6 @@ watch(handleParam, () => void loadAll());
           @patch-item="({ id, patch }) => patchPost(id, patch)"
           @remove-post="removePost"
         />
-      </template>
-      <template v-else-if="profilePostTab === 'notes'">
-        <p v-if="profileNotesBusy" class="border-b border-neutral-200 px-4 py-10 text-center text-sm text-neutral-500">
-          {{ $t("app.loading") }}
-        </p>
-        <p v-else-if="profileNotesErr" class="border-b border-neutral-200 px-4 py-8 text-center text-sm text-red-600">
-          {{ profileNotesErr }}
-        </p>
-        <p v-else-if="!profileNotes.length" class="border-b border-neutral-200 px-4 py-10 text-center text-sm text-neutral-500">
-          {{ $t("views.userProfile.emptyNotes") }}
-        </p>
-        <ul v-else class="divide-y divide-neutral-200 border-b border-neutral-200">
-          <li v-for="n in profileNotes" :key="n.id">
-            <RouterLink
-              :to="`/notes/${encodeURIComponent(n.id)}`"
-              class="flex flex-col gap-0.5 px-4 py-3 transition-colors hover:bg-neutral-50"
-            >
-              <span class="flex flex-wrap items-center gap-2 font-medium text-neutral-900">
-                {{ n.title?.trim() ? n.title : $t("views.userProfile.untitledNote") }}
-                <span
-                  v-if="n.status === 'draft'"
-                  class="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900"
-                >
-                  {{ $t("views.userProfile.draftBadge") }}
-                </span>
-              </span>
-              <span class="text-xs text-neutral-500">
-                {{ formatUpdatedAt(n.updated_at) }}
-              </span>
-            </RouterLink>
-          </li>
-        </ul>
       </template>
       <template v-else-if="profilePostTab === 'media'">
         <p v-if="mediaTilesBusy" class="border-b border-neutral-200 px-4 py-10 text-center text-sm text-neutral-500">

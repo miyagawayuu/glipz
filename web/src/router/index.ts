@@ -54,33 +54,7 @@ export const router = createRouter({
     },
     {
       path: "/notes",
-      name: "notes-list",
-      component: () => import("../views/NotesListView.vue"),
-      meta: { requiresAuth: true, titleKey: "routes.notes" },
-    },
-    {
-      path: "/notes/new",
-      name: "note-new",
-      component: () => import("../views/NoteEditView.vue"),
-      meta: { requiresAuth: true, titleKey: "routes.noteNew" },
-    },
-    {
-      path: "/notes/:noteId/edit",
-      name: "note-edit",
-      component: () => import("../views/NoteEditView.vue"),
-      meta: { requiresAuth: true, titleKey: "routes.noteEdit" },
-    },
-    {
-      path: "/notes/:noteId",
-      name: "note-detail",
-      component: () => import("../views/NoteDetailView.vue"),
-      meta: { requiresAuth: true, titleKey: "routes.noteDetail" },
-    },
-    {
-      path: "/notes/federated/:incomingId",
-      name: "federated-note-detail",
-      component: () => import("../views/FederatedNoteDetailView.vue"),
-      meta: { requiresAuth: false, titleKey: "routes.noteDetail" },
+      redirect: "/feed",
     },
     {
       path: "/posts/federated/:incomingId",

@@ -122,8 +122,6 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c *s3client
 		r.Post("/auth/login", s.handleLogin)
 		r.Post("/auth/mfa/verify", s.handleMFAVerify)
 		r.Post("/oauth/token", s.handleOAuthToken)
-		// Fanclub providers (OAuth callbacks are public)
-		r.Get("/fanclub/patreon/oauth/callback", s.handleFanclubPatreonOAuthCallback)
 		r.Get("/custom-emojis", s.handleListEnabledCustomEmojis)
 		r.Get("/public/posts/feed", s.handlePublicFeed)
 		r.Get("/public/posts/feed/stream", s.handlePublicFeedStream)
@@ -139,15 +137,12 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c *s3client
 			r.Get("/public/federation/incoming", s.handlePublicFederatedIncomingByActor)
 			r.Get("/public/federation/incoming/{id}", s.handlePublicFederatedIncomingPost)
 			r.Get("/public/federation/incoming/{id}/thread", s.handlePublicFederatedIncomingThread)
-			r.Get("/public/federation/notes", s.handlePublicFederatedIncomingNotesByActor)
-			r.Get("/public/federation/notes/{id}", s.handlePublicFederatedIncomingNote)
 			r.Get("/link-preview", s.handleGetLinkPreview)
 			r.Get("/users/by-handle/{handle}", s.handlePublicProfileByHandle)
 			r.Get("/users/by-handle/{handle}/followers", s.handleUserFollowersByHandle)
 			r.Get("/users/by-handle/{handle}/following", s.handleUserFollowingByHandle)
 			r.Get("/users/by-handle/{handle}/posts", s.handleUserPostsByHandle)
 			r.Get("/users/by-handle/{handle}/replies", s.handleUserRepliesByHandle)
-			r.Get("/users/by-handle/{handle}/notes", s.handleUserNotesListByHandle)
 			r.Get("/users/by-handle/{handle}/post-media-tiles", s.handleUserPostMediaTilesByHandle)
 			r.Get("/posts/{postID}/feed-item", s.handlePostFeedItemGET)
 			r.Get("/posts/{postID}/thread", s.handlePostThreadGET)
@@ -247,7 +242,6 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c *s3client
 			r.Get("/posts/feed/stream", s.handleFeedStream)
 			r.Post("/posts/{postID}/unlock", s.handlePostUnlock)
 			r.Post("/federation/posts/{incomingID}/unlock", s.handleFederatedPostUnlock)
-			r.Post("/federation/notes/{incomingID}/unlock", s.handleFederatedNoteUnlock)
 			r.Post("/posts/{postID}/reactions", s.handleAddPostReaction)
 			r.Delete("/posts/{postID}/reactions/{emoji}", s.handleDeletePostReaction)
 			r.Post("/posts/{postID}/poll/vote", s.handlePollVote)
@@ -267,18 +261,6 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c *s3client
 			r.Post("/posts", s.handleCreatePost)
 			r.Post("/users/by-handle/{handle}/follow", s.handleToggleFollow)
 			r.Patch("/me/profile", s.handlePatchMeProfile)
-			// Fanclub: Patreon (provider-specific endpoints)
-			r.Get("/fanclub/patreon/member/authorize-url", s.handleFanclubPatreonMemberAuthorizeURL)
-			r.Get("/fanclub/patreon/creator/authorize-url", s.handleFanclubPatreonCreatorAuthorizeURL)
-			r.Get("/fanclub/patreon/creator/campaigns", s.handleFanclubPatreonCreatorCampaigns)
-			r.Get("/fanclub/patreon/creator/tiers", s.handleFanclubPatreonCreatorTiers)
-			r.Post("/fanclub/patreon/member/disconnect", s.handleFanclubPatreonMemberDisconnect)
-			r.Post("/fanclub/patreon/creator/disconnect", s.handleFanclubPatreonCreatorDisconnect)
-			r.Post("/notes", s.handleNoteCreate)
-			r.Get("/notes/{noteID}", s.handleNoteGet)
-			r.Post("/notes/{noteID}/unlock", s.handleNoteUnlock)
-			r.Patch("/notes/{noteID}", s.handleNotePatch)
-			r.Delete("/notes/{noteID}", s.handleNoteDelete)
 		})
 	})
 	s.mountStaticSPAFallback(r)
@@ -648,13 +630,6 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		"dm_call_scope":            u.DMCallScope,
 		"dm_call_allowed_user_ids": u.DMCallAllowedUserIDs,
 		"dm_invite_auto_accept":    u.DMInviteAutoAccept,
-	}
-	// Fanclub links (future-compatible map shape used by the web client).
-	out["fanclubs"] = map[string]any{
-		"patreon": map[string]any{
-			"member_linked":  u.PatreonMemberAccessToken != nil && strings.TrimSpace(*u.PatreonMemberAccessToken) != "",
-			"creator_linked": u.PatreonCreatorAccessToken != nil && strings.TrimSpace(*u.PatreonCreatorAccessToken) != "",
-		},
 	}
 	if u.AvatarObjectKey != nil && *u.AvatarObjectKey != "" {
 		out["avatar_url"] = s.glipzProtocolPublicMediaURL(*u.AvatarObjectKey)

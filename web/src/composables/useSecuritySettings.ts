@@ -69,7 +69,6 @@ export function useSecuritySettings() {
       || JSON.stringify([...dmCallAllowedUserIDs.value].sort()) !== JSON.stringify([...(me.value?.dm_call_allowed_user_ids ?? [])].sort()),
   );
   const dmInviteAutoDirty = computed(() => dmInviteAutoAccept.value !== !!me.value?.dm_invite_auto_accept);
-  const fanclubLinking = ref(false);
 
   watch(
     () => uri.value,
@@ -91,17 +90,6 @@ export function useSecuritySettings() {
       }
     },
   );
-
-  function resolveFanclubReturnQuery(q: Record<string, unknown>): string | null {
-    // Future shape (planned): ?fanclub=<provider>&result=<code>
-    if (typeof q.fanclub === "string" && typeof q.result === "string") {
-      const provider = q.fanclub;
-      const result = q.result;
-      const key = `views.settings.security.${provider}Return.${result}`;
-      if (te(key)) return t(key);
-    }
-    return null;
-  }
 
   async function refresh() {
     const token = getAccessToken();
@@ -125,89 +113,8 @@ export function useSecuritySettings() {
   }
 
   onMounted(async () => {
-    const qm = resolveFanclubReturnQuery(route.query as Record<string, unknown>);
-    if (qm) {
-      msg.value = qm;
-      await router.replace({ path: "/settings", query: {} });
-    }
     await refresh();
   });
-
-  async function connectPatreonMember() {
-    err.value = "";
-    msg.value = "";
-    const token = getAccessToken();
-    if (!token) return;
-    fanclubLinking.value = true;
-    try {
-      const res = await api<{ authorize_url: string }>("/api/v1/fanclub/patreon/member/authorize-url", {
-        method: "GET",
-        token,
-      });
-      if (res.authorize_url) window.location.href = res.authorize_url;
-      else err.value = t("views.settings.security.fanclubLinkFailed");
-    } catch (e: unknown) {
-      err.value = e instanceof Error ? e.message : t("views.settings.security.fanclubLinkFailed");
-    } finally {
-      fanclubLinking.value = false;
-    }
-  }
-
-  async function connectPatreonCreator() {
-    err.value = "";
-    msg.value = "";
-    const token = getAccessToken();
-    if (!token) return;
-    fanclubLinking.value = true;
-    try {
-      const res = await api<{ authorize_url: string }>("/api/v1/fanclub/patreon/creator/authorize-url", {
-        method: "GET",
-        token,
-      });
-      if (res.authorize_url) window.location.href = res.authorize_url;
-      else err.value = t("views.settings.security.fanclubLinkFailed");
-    } catch (e: unknown) {
-      err.value = e instanceof Error ? e.message : t("views.settings.security.fanclubLinkFailed");
-    } finally {
-      fanclubLinking.value = false;
-    }
-  }
-
-  async function disconnectMember() {
-    err.value = "";
-    msg.value = "";
-    const token = getAccessToken();
-    if (!token) return;
-    fanclubLinking.value = true;
-    try {
-      await api("/api/v1/fanclub/patreon/member/disconnect", { method: "POST", token });
-      msg.value = t("views.settings.security.fanclubDisconnected");
-      await refresh();
-      bumpMeHub();
-    } catch (e: unknown) {
-      err.value = e instanceof Error ? e.message : t("views.settings.security.fanclubDisconnectFailed");
-    } finally {
-      fanclubLinking.value = false;
-    }
-  }
-
-  async function disconnectCreator() {
-    err.value = "";
-    msg.value = "";
-    const token = getAccessToken();
-    if (!token) return;
-    fanclubLinking.value = true;
-    try {
-      await api("/api/v1/fanclub/patreon/creator/disconnect", { method: "POST", token });
-      msg.value = t("views.settings.security.fanclubDisconnected");
-      await refresh();
-      bumpMeHub();
-    } catch (e: unknown) {
-      err.value = e instanceof Error ? e.message : t("views.settings.security.fanclubDisconnectFailed");
-    } finally {
-      fanclubLinking.value = false;
-    }
-  }
 
   async function setup() {
     err.value = "";
@@ -392,11 +299,6 @@ export function useSecuritySettings() {
     setup,
     enable,
     saveDMCallSettings,
-    connectPatreonMember,
-    connectPatreonCreator,
-    disconnectMember,
-    disconnectCreator,
-    fanclubLinking,
     enableWebPushNotifications,
     disableWebPushNotifications,
   };

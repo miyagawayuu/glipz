@@ -54,20 +54,11 @@ func main() {
 	if err := migrate.RunPostsExtras(ctx, pool); err != nil {
 		log.Fatalf("migrate posts extras: %v", err)
 	}
-	if err := migrate.RunNotes(ctx, pool); err != nil {
-		log.Fatalf("migrate notes: %v", err)
-	}
 	if err := migrate.RunFederationSubscribers(ctx, pool); err != nil {
 		log.Fatalf("migrate federation subscribers: %v", err)
 	}
 	if err := migrate.RunFederationIncoming(ctx, pool); err != nil {
 		log.Fatalf("migrate federation incoming: %v", err)
-	}
-	if err := migrate.RunFederationIncomingNotes(ctx, pool); err != nil {
-		log.Fatalf("migrate federation incoming notes: %v", err)
-	}
-	if err := migrate.RunFederationIncomingNoteUnlocks(ctx, pool); err != nil {
-		log.Fatalf("migrate federation incoming note unlocks: %v", err)
 	}
 	if err := migrate.RunBookmarks(ctx, pool); err != nil {
 		log.Fatalf("migrate bookmarks: %v", err)

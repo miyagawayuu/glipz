@@ -836,18 +836,6 @@ function avatarInitials(email: string): string {
             </span>
           </RouterLink>
           <RouterLink
-            to="/notes"
-            class="flex items-center gap-3 rounded-full px-3 py-2.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-lime-500 hover:text-white"
-            :class="
-              route.path === '/notes' || route.path.startsWith('/notes/')
-                ? '!rounded-full !bg-lime-600 !text-white'
-                : ''
-            "
-          >
-            <Icon name="note" class="h-5 w-5 shrink-0" />
-            <span>{{ $t("app.nav.notes") }}</span>
-          </RouterLink>
-          <RouterLink
             to="/bookmarks"
             class="flex items-center gap-3 rounded-full px-3 py-2.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-lime-500 hover:text-white"
             active-class="!rounded-full !bg-lime-600 !text-white"

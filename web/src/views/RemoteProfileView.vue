@@ -34,16 +34,6 @@ const { t } = useI18n();
 
 const profile = ref<RemoteProfile | null>(null);
 const posts = ref<TimelinePost[]>([]);
-type RemoteNote = {
-  id: string;
-  title: string;
-  body_md: string;
-  premium_locked: boolean;
-  has_premium: boolean;
-  published_at: string;
-  updated_at: string;
-};
-const notes = ref<RemoteNote[]>([]);
 const err = ref("");
 const busy = ref(true);
 const followModalOpen = ref(false);
@@ -97,7 +87,7 @@ const actorForQuery = computed(() => {
 
 const profileTitle = computed(() => profile.value?.name || profile.value?.acct || t("views.remoteFederationProfile.fallbackName"));
 const viewerAuthed = computed(() => !!getAccessToken());
-const activeTab = ref<"posts" | "notes">("posts");
+const activeTab = ref<"posts">("posts");
 const profileSummaryHtml = computed(() => {
   const raw = String(profile.value?.summary ?? "").trim();
   if (!raw) return "";
@@ -150,7 +140,6 @@ async function loadProfile() {
     profile.value = await apiPublicGet<RemoteProfile>(path);
     await loadRelationship();
     await loadPosts();
-    await loadNotes();
     await refreshRemoteFollowState();
     startIncomingStream();
   } catch (e: unknown) {
@@ -183,28 +172,6 @@ async function loadPosts() {
     posts.value = (res.items ?? []).map((x) => mapFeedItem(x as never));
   } catch {
     posts.value = [];
-  }
-}
-
-async function loadNotes() {
-  if (!profile.value?.actor_id) return;
-  const path = `/api/v1/public/federation/notes?actor=${encodeURIComponent(profile.value.actor_id)}`;
-  const token = getAccessToken();
-  try {
-    const res = token
-      ? await api<{ items: RemoteNote[] }>(path, { method: "GET", token })
-      : await apiPublicGet<{ items: RemoteNote[] }>(path);
-    notes.value = (res.items ?? []).map((x) => ({
-      id: String((x as any).id ?? ""),
-      title: String((x as any).title ?? ""),
-      body_md: String((x as any).body_md ?? ""),
-      premium_locked: Boolean((x as any).premium_locked),
-      has_premium: Boolean((x as any).has_premium),
-      published_at: String((x as any).published_at ?? ""),
-      updated_at: String((x as any).updated_at ?? ""),
-    }));
-  } catch {
-    notes.value = [];
   }
 }
 
@@ -697,14 +664,6 @@ watch(
           >
             {{ t("views.remoteFederationProfile.tabPosts") }}
           </button>
-          <button
-            type="button"
-            class="relative shrink-0 -mb-px px-3 py-2.5 text-sm font-semibold"
-            :class="activeTab === 'notes' ? 'border-b-2 border-lime-600 text-neutral-900' : 'border-b-2 border-transparent text-neutral-500 hover:text-neutral-800'"
-            @click="activeTab = 'notes'"
-          >
-            {{ t("views.remoteFederationProfile.tabNotes") }}
-          </button>
         </div>
       </div>
 
@@ -732,29 +691,6 @@ watch(
           {{ t("views.remoteFederationProfile.emptyPosts") }}
         </p>
 
-        <div v-else class="border-b border-neutral-200">
-          <RouterLink
-            v-for="n in notes"
-            :key="n.id"
-            :to="`/notes/federated/${encodeURIComponent(n.id)}`"
-            class="block border-t border-neutral-100 px-4 py-4 hover:bg-neutral-50"
-          >
-            <div class="flex items-center justify-between gap-3">
-              <p class="truncate text-sm font-semibold text-neutral-900">{{ n.title || t("views.remoteFederationProfile.untitledNote") }}</p>
-              <span v-if="n.has_premium" class="shrink-0 rounded-full border border-neutral-200 px-2 py-0.5 text-xs text-neutral-600">
-                {{
-                  n.premium_locked
-                    ? t("views.remoteFederationProfile.premiumBadgeLocked")
-                    : t("views.remoteFederationProfile.premiumBadge")
-                }}
-              </span>
-            </div>
-            <p class="mt-1 line-clamp-2 text-sm text-neutral-600">{{ n.body_md }}</p>
-          </RouterLink>
-          <p v-if="!notes.length" class="px-4 py-10 text-center text-sm text-neutral-500">
-            {{ t("views.remoteFederationProfile.emptyNotes") }}
-          </p>
-        </div>
       </section>
     </template>
 

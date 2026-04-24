@@ -241,9 +241,7 @@ Set `STATIC_WEB_ROOT=../web/dist` in your environment and restart the backend.
 - Open an issue for bugs or feature requests
 - Check SETUP.md for troubleshooting
 - Review DEPLOY.md for production guidance
-- Fan club integration (dev docs):
-  - Backend: [backend/internal/fanclub/kernel/IMPLEMENTATION_GUIDELINES.md](backend/internal/fanclub/kernel/IMPLEMENTATION_GUIDELINES.md)
-  - Frontend entry points: `web/src/fanclub/registry.ts`, `web/src/fanclub/me.ts`
+ 
 
 ---
 
