@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 import { getAccessToken } from "../auth";
 import { api } from "../lib/api";
@@ -70,6 +71,7 @@ function onLightboxKeydown(e: KeyboardEvent) {
 
 const router = useRouter();
 const route = useRoute();
+const { t } = useI18n();
 
 const item = ref<TimelinePost | null>(null);
 const threadRepliesByRoot = ref<Record<string, TimelinePost[]>>({});
@@ -152,13 +154,13 @@ async function loadPost() {
       const row = await fetchPublicFederatedIncoming(incomingId);
       item.value = row;
       if (!row) {
-        err.value = "投稿が見つかりません（削除済みの可能性があります）";
+        err.value = t("views.postDetail.notFoundFederated");
         threadRepliesByRoot.value = {};
       } else {
         await loadThread();
       }
     } catch (e: unknown) {
-      err.value = e instanceof Error ? e.message : "読み込みに失敗しました";
+      err.value = e instanceof Error ? e.message : t("views.postDetail.loadFailed");
       item.value = null;
       threadRepliesByRoot.value = {};
     } finally {
@@ -169,7 +171,7 @@ async function loadPost() {
 
   const id = typeof route.params.postId === "string" ? route.params.postId : Array.isArray(route.params.postId) ? route.params.postId[0] : "";
   if (!id) {
-    err.value = "投稿 ID が不正です";
+    err.value = t("views.postDetail.invalidId");
     item.value = null;
     loading.value = false;
     return;
@@ -181,13 +183,13 @@ async function loadPost() {
     const row = await fetchFeedItem(id, token);
     item.value = row;
     if (!row) {
-      err.value = "投稿が見つかりません（非公開・削除済みの可能性があります）";
+      err.value = t("views.postDetail.notFound");
       threadRepliesByRoot.value = {};
     } else {
       await loadThread();
     }
   } catch (e: unknown) {
-    err.value = e instanceof Error ? e.message : "読み込みに失敗しました";
+    err.value = e instanceof Error ? e.message : t("views.postDetail.loadFailed");
     item.value = null;
     threadRepliesByRoot.value = {};
   } finally {
@@ -233,7 +235,7 @@ async function toggleReaction(it: TimelinePost, emoji: string) {
       : await addTimelineReaction(token, it, emoji);
     applyReactionPost(updated);
   } catch {
-    showToast("リアクションの更新に失敗しました");
+    showToast(t("views.feed.toasts.reactionUpdateFailed"));
   } finally {
     actionBusy.value = null;
   }
@@ -247,7 +249,7 @@ async function toggleBookmark(it: TimelinePost) {
     const res = await toggleTimelineBookmark(token, it);
     patchItem(it.id, { bookmarked_by_me: res.bookmarked });
   } catch {
-    showToast("ブックマークの更新に失敗しました");
+    showToast(t("views.feed.toasts.bookmarkUpdateFailed"));
   } finally {
     actionBusy.value = null;
   }
@@ -262,7 +264,7 @@ async function onToggleRepost(it: TimelinePost) {
       const res = await toggleTimelineRepost(token, it);
       patchItem(it.id, { reposted_by_me: res.reposted, repost_count: res.repost_count });
     } catch {
-      showToast("リポストの更新に失敗しました");
+      showToast(t("views.feed.toasts.repostUpdateFailed"));
     } finally {
       actionBusy.value = null;
     }
@@ -288,7 +290,7 @@ async function confirmRepostPlain() {
     repostTarget.value = null;
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : "";
-    showToast(msg === "repost_comment_too_long" ? "コメントが長すぎます" : "リポストに失敗しました");
+    showToast(msg === "repost_comment_too_long" ? t("views.feed.toasts.repostCommentTooLong") : t("views.feed.toasts.repostFailed"));
   } finally {
     actionBusy.value = null;
   }
@@ -310,7 +312,7 @@ async function confirmRepostWithComment(text: string) {
     repostTarget.value = null;
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : "";
-    showToast(msg === "repost_comment_too_long" ? "コメントが長すぎます" : "リポストに失敗しました");
+    showToast(msg === "repost_comment_too_long" ? t("views.feed.toasts.repostCommentTooLong") : t("views.feed.toasts.repostFailed"));
   } finally {
     actionBusy.value = null;
   }
@@ -321,7 +323,7 @@ async function sharePost(it: TimelinePost) {
   const url = new URL(resolved.href, window.location.origin).href;
   if (navigator.share) {
     try {
-      await navigator.share({ title: "Glipz", text: it.caption?.slice(0, 80) ?? "投稿", url });
+      await navigator.share({ title: t("views.search.shareFallbackTitle"), text: it.caption?.slice(0, 80) ?? t("views.search.shareFallbackText"), url });
       return;
     } catch (e: unknown) {
       if (e instanceof DOMException && e.name === "AbortError") return;
@@ -329,9 +331,9 @@ async function sharePost(it: TimelinePost) {
   }
   try {
     await navigator.clipboard.writeText(url);
-    showToast("リンクをコピーしました");
+    showToast(t("views.feed.toasts.linkCopied"));
   } catch {
-    showToast("共有に失敗しました");
+    showToast(t("views.feed.toasts.shareFailed"));
   }
 }
 
@@ -387,12 +389,12 @@ onMounted(() => {
       <button
         type="button"
         class="rounded-full p-2 text-neutral-600 hover:bg-neutral-100"
-        aria-label="戻る"
+        :aria-label="$t('common.back.previous')"
         @click="router.back()"
       >
         <Icon name="back" class="h-5 w-5" />
       </button>
-      <h1 class="text-lg font-bold tracking-tight">投稿</h1>
+      <h1 class="text-lg font-bold tracking-tight">{{ t("views.postDetail.title") }}</h1>
     </header>
 
     <p v-if="actionToast" class="border-b border-lime-100 bg-lime-50 px-4 py-2 text-center text-sm text-lime-900">
@@ -409,11 +411,11 @@ onMounted(() => {
         rel="noopener noreferrer"
         class="font-medium text-lime-800 underline decoration-lime-600/60 underline-offset-2 hover:text-lime-900"
       >
-        元の投稿を開く（外部）
+        {{ t("views.postDetail.openOriginalExternal") }}
       </a>
     </div>
 
-    <p v-if="loading" class="border-b border-neutral-200 px-4 py-12 text-center text-sm text-neutral-500">読み込み中…</p>
+    <p v-if="loading" class="border-b border-neutral-200 px-4 py-12 text-center text-sm text-neutral-500">{{ t("app.loading") }}</p>
     <p v-else-if="err" class="border-b border-neutral-200 px-4 py-8 text-center text-sm text-red-600">{{ err }}</p>
 
     <PostTimeline
@@ -443,7 +445,7 @@ onMounted(() => {
       class="fixed inset-0 z-[100] flex flex-col"
       role="dialog"
       aria-modal="true"
-      aria-label="画像ビューア"
+      :aria-label="t('views.feed.lightboxTitle')"
     >
       <div class="absolute inset-0 bg-black/90" aria-hidden="true" @click="closeLightbox" />
       <div class="relative z-10 flex min-h-0 flex-1 flex-col">
@@ -457,7 +459,7 @@ onMounted(() => {
           <button
             type="button"
             class="rounded-full p-2 text-white hover:bg-white/10 focus-visible:outline focus-visible:ring-2 focus-visible:ring-lime-400"
-            aria-label="閉じる"
+            :aria-label="t('views.feed.lightboxClose')"
             @click="closeLightbox"
           >
             <Icon name="close" class="h-6 w-6" stroke-width="2" />
@@ -468,7 +470,7 @@ onMounted(() => {
             v-if="lightbox.urls.length > 1"
             type="button"
             class="z-20 hidden w-10 shrink-0 items-center justify-center self-center rounded-r-md text-3xl font-light text-white/90 hover:bg-white/10 sm:flex"
-            aria-label="前の画像"
+            :aria-label="t('views.feed.lightboxPrev')"
             @click="lightboxPrev"
           >
             ‹
@@ -489,7 +491,7 @@ onMounted(() => {
               >
                 <img
                   :src="url"
-                  :alt="`画像 ${li + 1}`"
+                  :alt="t('views.feed.lightboxImageAlt', { n: li + 1 })"
                   class="max-h-[min(88vh,100%)] max-w-full object-contain select-none"
                   draggable="false"
                 />
@@ -500,14 +502,14 @@ onMounted(() => {
             v-if="lightbox.urls.length > 1"
             type="button"
             class="z-20 hidden w-10 shrink-0 items-center justify-center self-center rounded-l-md text-3xl font-light text-white/90 hover:bg-white/10 sm:flex"
-            aria-label="次の画像"
+            :aria-label="t('views.feed.lightboxNext')"
             @click="lightboxNext"
           >
             ›
           </button>
         </div>
         <p v-if="lightbox.urls.length > 1" class="pb-3 text-center text-xs text-white/60 sm:hidden">
-          左右にスワイプで切り替え
+          {{ t("views.feed.lightboxSwipeHint") }}
         </p>
       </div>
     </div>

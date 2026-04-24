@@ -6,8 +6,10 @@ import { getAccessToken } from "../auth";
 import { api } from "../lib/api";
 import Icon from "../components/Icon.vue";
 import NoteRichEditor from "../components/NoteRichEditor.vue";
-import NotePaywallPatreonFields from "../components/notes/NotePaywallPatreonFields.vue";
 import { uploadNoteMedia } from "../lib/noteMediaUpload";
+
+type PatreonCampaign = { id: string; name: string };
+type PatreonTier = { id: string; title: string; amount_cents: number };
 
 type NotePayload = {
   id: string;
@@ -18,12 +20,12 @@ type NotePayload = {
   status: string;
   visibility: string;
   is_owner: boolean;
-  patreon_campaign_id?: string | null;
-  patreon_required_reward_tier_id?: string | null;
+  has_view_password?: boolean;
+  view_password_hint?: string | null;
+  paywall_provider?: string;
+  patreon_campaign_id?: string;
+  patreon_required_reward_tier_id?: string;
 };
-
-type PatreonTier = { id: string; title: string; amount_cents: number };
-type PatreonCampaign = { id: string; name: string };
 
 const route = useRoute();
 const router = useRouter();
@@ -42,17 +44,19 @@ const bodyMd = ref("");
 const bodyPremiumMd = ref("");
 const status = ref<"draft" | "published">("draft");
 const visibility = ref<"public" | "followers" | "private">("public");
-const paywallProvider = ref<"none" | "patreon">("none");
-/** Empty string means "use the default campaign from the security settings page". */
-const patreonCampaignId = ref("");
-const patreonCampaigns = ref<PatreonCampaign[]>([]);
-const patreonCampaignsErr = ref("");
-/** Empty string means "use the default required tier from the security settings page". */
-const patreonRequiredRewardTierId = ref("");
-const patreonTiers = ref<PatreonTier[]>([]);
-const patreonTiersErr = ref("");
 /** Selected editing surface: raw Markdown source or rich-text mode. */
 const surfaceEditor = ref<"markdown" | "richtext">("markdown");
+const viewPassword = ref("");
+const viewPasswordHint = ref("");
+const clearViewPassword = ref(false);
+const hadPassword = ref(false);
+const paywallProvider = ref<"" | "patreon">("");
+const patreonCampaignID = ref("");
+const patreonRequiredRewardTierID = ref("");
+const patreonCampaigns = ref<PatreonCampaign[]>([]);
+const patreonTiers = ref<PatreonTier[]>([]);
+const patreonListsBusy = ref(false);
+const patreonListsErr = ref("");
 
 const err = ref("");
 const busy = ref(false);
@@ -69,73 +73,43 @@ function editorModeStr() {
 }
 
 function payloadJson(st: "draft" | "published") {
-  const provider = paywallProvider.value;
-  return {
+  const base = {
     title: title.value,
     body_md: bodyMd.value,
-    body_premium_md: provider === "patreon" ? bodyPremiumMd.value : "",
+    body_premium_md: bodyPremiumMd.value,
     editor_mode: editorModeStr(),
     status: st,
     visibility: visibility.value,
-    patreon_campaign_id: provider === "patreon" ? patreonCampaignId.value.trim() : "",
-    patreon_required_reward_tier_id: provider === "patreon" ? patreonRequiredRewardTierId.value.trim() : "",
   };
-}
-
-async function loadPatreonCampaigns() {
-  patreonCampaignsErr.value = "";
-  const t = getAccessToken();
-  if (!t) {
-    patreonCampaigns.value = [];
-    return;
+  const pp = paywallProvider.value;
+  const pc = patreonCampaignID.value.trim();
+  const pt = patreonRequiredRewardTierID.value.trim();
+  if (isNew.value) {
+    return {
+      ...base,
+      paywall_provider: pp,
+      patreon_campaign_id: pp === "patreon" ? pc : "",
+      patreon_required_reward_tier_id: pp === "patreon" ? pt : "",
+      view_password: viewPassword.value.trim(),
+      view_password_hint: viewPasswordHint.value.trim(),
+    };
   }
-  try {
-    const res = await api<{ campaigns: PatreonCampaign[] }>("/api/v1/patreon/creator/campaigns", {
-      method: "GET",
-      token: t,
-    });
-    patreonCampaigns.value = res.campaigns ?? [];
-  } catch (e: unknown) {
-    patreonCampaigns.value = [];
-    patreonCampaignsErr.value =
-      e instanceof Error ? e.message : t("views.noteEdit.errors.patreonCampaignsLoadFailed");
-  }
-}
-
-async function loadPatreonTiers() {
-  patreonTiersErr.value = "";
-  const t = getAccessToken();
-  if (!t) {
-    patreonTiers.value = [];
-    return;
-  }
-  const cid = patreonCampaignId.value.trim();
-  const qs = cid ? `?campaign_id=${encodeURIComponent(cid)}` : "";
-  try {
-    const res = await api<{ tiers: PatreonTier[] }>(`/api/v1/patreon/creator/tiers${qs}`, {
-      method: "GET",
-      token: t,
-    });
-    patreonTiers.value = res.tiers ?? [];
-  } catch (e: unknown) {
-    patreonTiers.value = [];
-    patreonTiersErr.value =
-      e instanceof Error ? e.message : t("views.noteEdit.errors.patreonTiersLoadFailed");
-  }
-}
-
-function onPatreonCampaignChange() {
-  void loadPatreonTiers();
+  // PATCH semantics: omit password unless changing/clearing.
+  const out: Record<string, unknown> = {
+    ...base,
+    view_password_hint: viewPasswordHint.value.trim(),
+  };
+  if (clearViewPassword.value) out.clear_view_password = true;
+  if (viewPassword.value.trim()) out.view_password = viewPassword.value.trim();
+  out.paywall_provider = pp;
+  out.patreon_campaign_id = pp === "patreon" ? pc : "";
+  out.patreon_required_reward_tier_id = pp === "patreon" ? pt : "";
+  return out;
 }
 
 async function loadNote() {
   if (isNew.value) {
     loading.value = false;
-    patreonCampaignId.value = "";
-    patreonRequiredRewardTierId.value = "";
-    paywallProvider.value = bodyPremiumMd.value.trim() ? "patreon" : "none";
-    await loadPatreonCampaigns();
-    await loadPatreonTiers();
     return;
   }
   const t = getAccessToken();
@@ -162,20 +136,82 @@ async function loadNote() {
     visibility.value = v === "followers" || v === "private" ? v : "public";
     const em = res.note.editor_mode === "richtext" ? "richtext" : "markdown";
     surfaceEditor.value = em;
-    const cid = res.note.patreon_campaign_id;
-    patreonCampaignId.value = typeof cid === "string" && cid.trim() ? cid.trim() : "";
-    const tid = res.note.patreon_required_reward_tier_id;
-    patreonRequiredRewardTierId.value = typeof tid === "string" && tid.trim() ? tid.trim() : "";
-    paywallProvider.value =
-      bodyPremiumMd.value.trim() || patreonCampaignId.value || patreonRequiredRewardTierId.value ? "patreon" : "none";
-    await loadPatreonCampaigns();
-    await loadPatreonTiers();
+    hadPassword.value = !!res.note.has_view_password;
+    viewPassword.value = "";
+    clearViewPassword.value = false;
+    viewPasswordHint.value = typeof res.note.view_password_hint === "string" ? res.note.view_password_hint : "";
+    paywallProvider.value = res.note.paywall_provider === "patreon" ? "patreon" : "";
+    patreonCampaignID.value = typeof res.note.patreon_campaign_id === "string" ? res.note.patreon_campaign_id : "";
+    patreonRequiredRewardTierID.value =
+      typeof res.note.patreon_required_reward_tier_id === "string" ? res.note.patreon_required_reward_tier_id : "";
   } catch (e: unknown) {
     err.value = e instanceof Error ? e.message : t("views.noteEdit.errors.loadFailed");
   } finally {
     loading.value = false;
   }
 }
+
+async function loadPatreonCampaigns() {
+  patreonListsErr.value = "";
+  const t = getAccessToken();
+  if (!t) return;
+  patreonListsBusy.value = true;
+  try {
+    const res = await api<{ campaigns: PatreonCampaign[] }>("/api/v1/fanclub/patreon/creator/campaigns", {
+      method: "GET",
+      token: t,
+    });
+    patreonCampaigns.value = Array.isArray(res.campaigns) ? res.campaigns : [];
+  } catch (e: unknown) {
+    patreonCampaigns.value = [];
+    patreonListsErr.value = e instanceof Error ? e.message : "failed";
+  } finally {
+    patreonListsBusy.value = false;
+  }
+}
+
+async function loadPatreonTiers() {
+  patreonListsErr.value = "";
+  const t = getAccessToken();
+  if (!t) return;
+  patreonListsBusy.value = true;
+  try {
+    const q = patreonCampaignID.value.trim();
+    const path = q
+      ? `/api/v1/fanclub/patreon/creator/tiers?campaign_id=${encodeURIComponent(q)}`
+      : "/api/v1/fanclub/patreon/creator/tiers";
+    const res = await api<{ tiers: PatreonTier[] }>(path, { method: "GET", token: t });
+    patreonTiers.value = Array.isArray(res.tiers) ? res.tiers : [];
+  } catch (e: unknown) {
+    patreonTiers.value = [];
+    patreonListsErr.value = e instanceof Error ? e.message : "failed";
+  } finally {
+    patreonListsBusy.value = false;
+  }
+}
+
+watch(
+  () => paywallProvider.value,
+  async (v) => {
+    if (v !== "patreon") {
+      patreonCampaigns.value = [];
+      patreonTiers.value = [];
+      patreonListsErr.value = "";
+      return;
+    }
+    await loadPatreonCampaigns();
+    await loadPatreonTiers();
+  },
+);
+
+watch(
+  () => patreonCampaignID.value,
+  async () => {
+    if (paywallProvider.value !== "patreon") return;
+    patreonRequiredRewardTierID.value = "";
+    await loadPatreonTiers();
+  },
+);
 
 async function saveDraft() {
   const t = getAccessToken();
@@ -315,13 +351,15 @@ watch(
       status.value = "draft";
       visibility.value = "public";
       surfaceEditor.value = "markdown";
-      paywallProvider.value = "none";
-      patreonCampaignId.value = "";
-      patreonRequiredRewardTierId.value = "";
+      viewPassword.value = "";
+      viewPasswordHint.value = "";
+      clearViewPassword.value = false;
+      hadPassword.value = false;
+      paywallProvider.value = "";
+      patreonCampaignID.value = "";
+      patreonRequiredRewardTierID.value = "";
       err.value = "";
       loading.value = false;
-      void loadPatreonCampaigns();
-      void loadPatreonTiers();
       return;
     }
     if (route.name === "note-edit") {
@@ -329,30 +367,6 @@ watch(
     }
   },
   { immediate: true },
-);
-
-watch(
-  () => paywallProvider.value,
-  (v, prev) => {
-    if (v === prev) return;
-    if (v === "none" && bodyPremiumMd.value.trim()) {
-      const ok = window.confirm(
-        t(
-          "views.noteEdit.paywallDisableConfirm",
-          "有料部分を無効にしますか？（有料部分の内容はクリアされます）",
-        ),
-      );
-      if (!ok) {
-        paywallProvider.value = prev;
-        return;
-      }
-      bodyPremiumMd.value = "";
-    }
-    if (v === "none") {
-      patreonCampaignId.value = "";
-      patreonRequiredRewardTierId.value = "";
-    }
-  },
 );
 </script>
 
@@ -540,32 +554,6 @@ watch(
         <p class="mb-4 text-xs text-lime-700/90 dark:text-lime-200/90">
           {{ $t("views.noteEdit.premiumDescription") }}
         </p>
-        <div class="mb-3 w-full max-w-md">
-          <label class="mb-1 block text-xs font-medium text-lime-800 dark:text-lime-300" for="note-paywall-provider">
-            {{ $t("views.noteEdit.paywallProviderLabel") }}
-          </label>
-          <select
-            id="note-paywall-provider"
-            v-model="paywallProvider"
-            class="w-full rounded-xl border border-lime-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none ring-lime-400 focus:ring-2 dark:border-lime-700/50 dark:bg-neutral-950 dark:text-neutral-100"
-          >
-            <option value="none">{{ $t("views.noteEdit.paywallProviderNone") }}</option>
-            <option value="patreon">Patreon</option>
-          </select>
-        </div>
-
-        <NotePaywallPatreonFields
-          v-if="paywallProvider === 'patreon'"
-          :campaign-id="patreonCampaignId"
-          :required-tier-id="patreonRequiredRewardTierId"
-          :campaigns="patreonCampaigns"
-          :tiers="patreonTiers"
-          :campaigns-err="patreonCampaignsErr"
-          :tiers-err="patreonTiersErr"
-          :on-campaign-change="onPatreonCampaignChange"
-          @update:campaign-id="(v) => (patreonCampaignId = v)"
-          @update:required-tier-id="(v) => (patreonRequiredRewardTierId = v)"
-        />
         <div v-if="surfaceEditor === 'markdown'">
           <div class="mb-2 flex flex-wrap gap-2">
             <button
@@ -597,6 +585,102 @@ watch(
         <div v-else>
           <p v-if="!token" class="mb-2 text-sm text-red-600">{{ $t("views.noteEdit.loginRequired") }}</p>
           <NoteRichEditor v-else :markdown="bodyPremiumMd" :upload-token="token" @update:markdown="(v) => (bodyPremiumMd = v)" />
+        </div>
+
+        <div class="mt-5 space-y-4 rounded-xl border border-lime-200 bg-lime-50/40 p-4 dark:border-lime-700/50 dark:bg-lime-950/20">
+          <div>
+            <p class="text-sm font-semibold text-lime-900 dark:text-lime-200">{{ $t("views.noteEdit.paywallProviderLabel") }}</p>
+            <div class="mt-2 w-full max-w-md">
+              <select
+                v-model="paywallProvider"
+                class="w-full rounded-xl border border-lime-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none ring-lime-400 focus:ring-2 dark:border-lime-700/50 dark:bg-neutral-950 dark:text-neutral-100"
+              >
+                <option value="">{{ $t("views.noteEdit.paywallProviderNone") }}</option>
+                <option value="patreon">Patreon</option>
+              </select>
+            </div>
+
+            <div v-if="paywallProvider === 'patreon'" class="mt-4 space-y-3">
+              <div>
+                <label class="mb-1 block text-xs font-medium text-lime-900 dark:text-lime-200">
+                  {{ $t("views.noteEdit.patreonCampaignLabel") }}
+                </label>
+                <select
+                  v-model="patreonCampaignID"
+                  class="w-full max-w-md rounded-xl border border-lime-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none ring-lime-400 focus:ring-2 dark:border-lime-700/50 dark:bg-neutral-950 dark:text-neutral-100"
+                >
+                  <option value="">{{ $t("views.noteEdit.patreonCampaignDefault") }}</option>
+                  <option v-for="c in patreonCampaigns" :key="c.id" :value="c.id">
+                    {{ c.name || c.id }}
+                  </option>
+                </select>
+              </div>
+              <div>
+                <label class="mb-1 block text-xs font-medium text-lime-900 dark:text-lime-200">
+                  {{ $t("views.noteEdit.patreonTierLabel") }}
+                </label>
+                <select
+                  v-model="patreonRequiredRewardTierID"
+                  class="w-full max-w-md rounded-xl border border-lime-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none ring-lime-400 focus:ring-2 dark:border-lime-700/50 dark:bg-neutral-950 dark:text-neutral-100"
+                >
+                  <option value="">{{ $t("views.noteEdit.patreonTierDefault") }}</option>
+                  <option v-for="tr in patreonTiers" :key="tr.id" :value="tr.id">
+                    {{ tr.title || tr.id }}
+                  </option>
+                </select>
+
+                <p v-if="patreonListsBusy" class="mt-2 text-xs text-lime-800/90 dark:text-lime-200/90">
+                  {{ $t("common.loading") }}
+                </p>
+                <p v-else-if="patreonListsErr" class="mt-2 text-xs text-amber-700 dark:text-amber-300">
+                  {{ $t("views.noteEdit.patreonListLoadFailed") }}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <p class="text-sm font-semibold text-lime-900 dark:text-lime-200">{{ $t("views.noteEdit.passwordTitle") }}</p>
+          <p class="mt-2 text-xs leading-relaxed text-lime-800/90 dark:text-lime-200/90">
+            {{ $t("views.noteEdit.passwordHelp") }}
+          </p>
+
+          <div v-if="hadPassword" class="mt-3 text-xs text-lime-800/90 dark:text-lime-200/90">
+            <span class="rounded bg-lime-100 px-2 py-0.5 font-medium text-lime-900 dark:bg-lime-900/40 dark:text-lime-100">
+              {{ $t("views.noteEdit.passwordAlreadySet") }}
+            </span>
+          </div>
+
+          <div class="mt-4 space-y-3">
+            <div>
+              <label class="mb-1 block text-xs font-medium text-lime-900 dark:text-lime-200">
+                {{ $t("views.noteEdit.passwordLabel") }}
+              </label>
+              <input
+                v-model="viewPassword"
+                type="password"
+                class="w-full max-w-md rounded-xl border border-lime-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none ring-lime-400 focus:ring-2 dark:border-lime-700/50 dark:bg-neutral-950 dark:text-neutral-100"
+                :placeholder="$t('views.noteEdit.passwordPlaceholder')"
+              />
+            </div>
+
+            <div>
+              <label class="mb-1 block text-xs font-medium text-lime-900 dark:text-lime-200">
+                {{ $t("views.noteEdit.passwordHintLabel") }}
+              </label>
+              <input
+                v-model="viewPasswordHint"
+                type="text"
+                maxlength="200"
+                class="w-full max-w-md rounded-xl border border-lime-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none ring-lime-400 focus:ring-2 dark:border-lime-700/50 dark:bg-neutral-950 dark:text-neutral-100"
+                :placeholder="$t('views.noteEdit.passwordHintPlaceholder')"
+              />
+            </div>
+
+            <label v-if="hadPassword" class="flex items-center gap-2 text-xs text-lime-900 dark:text-lime-200">
+              <input v-model="clearViewPassword" type="checkbox" class="h-4 w-4 rounded border-lime-300 text-lime-600" />
+              {{ $t("views.noteEdit.passwordClear") }}
+            </label>
+          </div>
         </div>
       </div>
     </div>

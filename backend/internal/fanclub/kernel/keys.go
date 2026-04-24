@@ -3,11 +3,6 @@ package kernel
 
 import "strings"
 
-// Stable provider ids used in Redis keys and (later) paywall_spec.
-const (
-	Patreon = "patreon"
-)
-
 // OAuthStateKey is the Redis key for a single OAuth state parameter (GETDEL after use).
 func OAuthStateKey(provider, state string) string {
 	return "fanclub:oauth:" + strings.TrimSpace(provider) + ":" + strings.TrimSpace(state)

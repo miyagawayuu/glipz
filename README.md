@@ -129,9 +129,12 @@ Edit `.env` with your settings. At minimum:
 ```env
 JWT_SECRET=your-secure-random-secret
 S3_ENDPOINT=https://s3.your-region.wasabisys.com
+S3_PUBLIC_ENDPOINT=https://s3.your-region.wasabisys.com
+S3_REGION=your-region
 S3_ACCESS_KEY=your-access-key
 S3_SECRET_KEY=your-secret-key
 S3_BUCKET=your-bucket
+S3_USE_PATH_STYLE=false
 ```
 
 ### 2. Start the stack
@@ -240,7 +243,7 @@ Set `STATIC_WEB_ROOT=../web/dist` in your environment and restart the backend.
 - Review DEPLOY.md for production guidance
 - Fan club integration (dev docs):
   - Backend: [backend/internal/fanclub/kernel/IMPLEMENTATION_GUIDELINES.md](backend/internal/fanclub/kernel/IMPLEMENTATION_GUIDELINES.md)
-  - Frontend: [web/src/fanclub/FRONTEND_IMPLEMENTATION_GUIDELINES.md](web/src/fanclub/FRONTEND_IMPLEMENTATION_GUIDELINES.md)
+  - Frontend entry points: `web/src/fanclub/registry.ts`, `web/src/fanclub/me.ts`
 
 ---
 

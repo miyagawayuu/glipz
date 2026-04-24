@@ -306,6 +306,120 @@ func (p *Pool) ToggleFederatedIncomingBookmark(ctx context.Context, userID, inco
 	return false, nil
 }
 
+func (p *Pool) AddFederatedIncomingReaction(ctx context.Context, userID, incomingID uuid.UUID, emoji string) (bool, error) {
+	normalized, valid := NormalizePostReactionEmoji(emoji)
+	if !valid {
+		return false, ErrInvalidReactionEmoji
+	}
+	if ref, ok := ParseEmojiReference(normalized); ok && ref.IsShortcode {
+		// Custom emoji shortcodes are instance-specific; reject for federated incoming reactions for now.
+		return false, ErrInvalidReactionEmoji
+	}
+	var exists bool
+	if err := p.db.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM federation_incoming_posts
+			WHERE id = $1 AND deleted_at IS NULL
+		)
+	`, incomingID).Scan(&exists); err != nil {
+		return false, err
+	}
+	if !exists {
+		return false, ErrNotFound
+	}
+	tag, err := p.db.Exec(ctx, `
+		INSERT INTO federation_incoming_post_reactions (federation_incoming_post_id, user_id, emoji)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (federation_incoming_post_id, user_id, emoji) DO NOTHING
+	`, incomingID, userID, normalized)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+func (p *Pool) RemoveFederatedIncomingReaction(ctx context.Context, userID, incomingID uuid.UUID, emoji string) (bool, error) {
+	normalized, valid := NormalizePostReactionEmoji(emoji)
+	if !valid {
+		return false, ErrInvalidReactionEmoji
+	}
+	if ref, ok := ParseEmojiReference(normalized); ok && ref.IsShortcode {
+		return false, ErrInvalidReactionEmoji
+	}
+	var exists bool
+	if err := p.db.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM federation_incoming_posts
+			WHERE id = $1 AND deleted_at IS NULL
+		)
+	`, incomingID).Scan(&exists); err != nil {
+		return false, err
+	}
+	if !exists {
+		return false, ErrNotFound
+	}
+	tag, err := p.db.Exec(ctx, `
+		DELETE FROM federation_incoming_post_reactions
+		WHERE federation_incoming_post_id = $1 AND user_id = $2 AND emoji = $3
+	`, incomingID, userID, normalized)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+func (p *Pool) AttachReactionsToFederatedIncoming(ctx context.Context, viewerID uuid.UUID, rows []FederatedIncomingPost) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	ids := make([]uuid.UUID, 0, len(rows))
+	seen := make(map[uuid.UUID]struct{}, len(rows))
+	for i := range rows {
+		if _, ok := seen[rows[i].ID]; ok {
+			continue
+		}
+		seen[rows[i].ID] = struct{}{}
+		ids = append(ids, rows[i].ID)
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	reactionsByPost := make(map[uuid.UUID][]PostReaction, len(ids))
+	rowsDB, err := p.db.Query(ctx, `
+		SELECT
+			federation_incoming_post_id,
+			emoji,
+			COUNT(*)::bigint AS reaction_count,
+			BOOL_OR(CASE WHEN $2::uuid = '00000000-0000-0000-0000-000000000000'::uuid THEN false ELSE user_id = $2 END) AS reacted_by_me
+		FROM federation_incoming_post_reactions
+		WHERE federation_incoming_post_id = ANY($1::uuid[])
+		GROUP BY federation_incoming_post_id, emoji
+		ORDER BY federation_incoming_post_id, reaction_count DESC, emoji ASC
+	`, ids, viewerID)
+	if err != nil {
+		return err
+	}
+	defer rowsDB.Close()
+	for rowsDB.Next() {
+		var postID uuid.UUID
+		var reaction PostReaction
+		if err := rowsDB.Scan(&postID, &reaction.Emoji, &reaction.Count, &reaction.ReactedByMe); err != nil {
+			return err
+		}
+		reactionsByPost[postID] = append(reactionsByPost[postID], reaction)
+	}
+	if err := rowsDB.Err(); err != nil {
+		return err
+	}
+	for i := range rows {
+		rows[i].Reactions = reactionsByPost[rows[i].ID]
+		if rows[i].Reactions == nil {
+			rows[i].Reactions = []PostReaction{}
+		}
+	}
+	return nil
+}
+
 func (p *Pool) SetFederatedIncomingLikeCountByObjectIRI(ctx context.Context, objectIRI string, likeCount int64) error {
 	objectIRI = strings.TrimSpace(objectIRI)
 	if objectIRI == "" {

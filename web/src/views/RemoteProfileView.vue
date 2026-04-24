@@ -34,6 +34,16 @@ const { t } = useI18n();
 
 const profile = ref<RemoteProfile | null>(null);
 const posts = ref<TimelinePost[]>([]);
+type RemoteNote = {
+  id: string;
+  title: string;
+  body_md: string;
+  premium_locked: boolean;
+  has_premium: boolean;
+  published_at: string;
+  updated_at: string;
+};
+const notes = ref<RemoteNote[]>([]);
 const err = ref("");
 const busy = ref(true);
 const followModalOpen = ref(false);
@@ -85,8 +95,9 @@ const actorForQuery = computed(() => {
   return typeof a === "string" && a.trim() ? a.trim() : "";
 });
 
-const profileTitle = computed(() => profile.value?.name || profile.value?.acct || "連合ユーザー");
+const profileTitle = computed(() => profile.value?.name || profile.value?.acct || t("views.remoteFederationProfile.fallbackName"));
 const viewerAuthed = computed(() => !!getAccessToken());
+const activeTab = ref<"posts" | "notes">("posts");
 const profileSummaryHtml = computed(() => {
   const raw = String(profile.value?.summary ?? "").trim();
   if (!raw) return "";
@@ -96,9 +107,9 @@ const profileSummaryHtml = computed(() => {
   });
 });
 const followButtonLabel = computed(() => {
-  if (remoteFollowState.value === "accepted") return "フォロー中";
-  if (remoteFollowState.value === "pending") return "承認待ち";
-  return "フォロー";
+  if (remoteFollowState.value === "accepted") return t("views.remoteFederationProfile.following");
+  if (remoteFollowState.value === "pending") return t("views.remoteFederationProfile.followPending");
+  return t("views.remoteFederationProfile.follow");
 });
 const followButtonClass = computed(() => {
   if (!viewerAuthed.value) {
@@ -132,17 +143,18 @@ async function loadProfile() {
     } else if (acctForQuery.value) {
       path = `/api/v1/public/federation/profile?acct=${encodeURIComponent(acctForQuery.value)}`;
     } else {
-      err.value = "acct または actor を指定してください。";
+      err.value = t("views.remoteFederationProfile.errors.missingAcctOrActor");
       busy.value = false;
       return;
     }
     profile.value = await apiPublicGet<RemoteProfile>(path);
     await loadRelationship();
     await loadPosts();
+    await loadNotes();
     await refreshRemoteFollowState();
     startIncomingStream();
   } catch (e: unknown) {
-    err.value = e instanceof Error ? e.message : "読み込みに失敗しました";
+    err.value = e instanceof Error ? e.message : t("views.remoteFederationProfile.errors.loadFailed");
   } finally {
     busy.value = false;
   }
@@ -171,6 +183,28 @@ async function loadPosts() {
     posts.value = (res.items ?? []).map((x) => mapFeedItem(x as never));
   } catch {
     posts.value = [];
+  }
+}
+
+async function loadNotes() {
+  if (!profile.value?.actor_id) return;
+  const path = `/api/v1/public/federation/notes?actor=${encodeURIComponent(profile.value.actor_id)}`;
+  const token = getAccessToken();
+  try {
+    const res = token
+      ? await api<{ items: RemoteNote[] }>(path, { method: "GET", token })
+      : await apiPublicGet<{ items: RemoteNote[] }>(path);
+    notes.value = (res.items ?? []).map((x) => ({
+      id: String((x as any).id ?? ""),
+      title: String((x as any).title ?? ""),
+      body_md: String((x as any).body_md ?? ""),
+      premium_locked: Boolean((x as any).premium_locked),
+      has_premium: Boolean((x as any).has_premium),
+      published_at: String((x as any).published_at ?? ""),
+      updated_at: String((x as any).updated_at ?? ""),
+    }));
+  } catch {
+    notes.value = [];
   }
 }
 
@@ -250,7 +284,7 @@ async function toggleRepost(it: TimelinePost) {
     const res = await toggleTimelineRepost(token, it);
     patchPost(it.id, { reposted_by_me: res.reposted, repost_count: res.repost_count });
   } catch (e: unknown) {
-    showToast(e instanceof Error ? e.message : "リポストに失敗しました");
+    showToast(e instanceof Error ? e.message : t("views.remoteFederationProfile.errors.repostFailed"));
   } finally {
     actionBusy.value = null;
   }
@@ -267,7 +301,7 @@ async function toggleReaction(it: TimelinePost, emoji: string) {
       : await addTimelineReaction(token, it, emoji);
     applyReactionPost(updated);
   } catch (e: unknown) {
-    showToast(e instanceof Error ? e.message : "リアクションに失敗しました");
+    showToast(e instanceof Error ? e.message : t("views.remoteFederationProfile.errors.reactionFailed"));
   } finally {
     actionBusy.value = null;
   }
@@ -281,7 +315,7 @@ async function toggleBookmark(it: TimelinePost) {
     const res = await toggleTimelineBookmark(token, it);
     patchPost(it.id, { bookmarked_by_me: res.bookmarked });
   } catch (e: unknown) {
-    showToast(e instanceof Error ? e.message : "ブックマークに失敗しました");
+    showToast(e instanceof Error ? e.message : t("views.remoteFederationProfile.errors.bookmarkFailed"));
   } finally {
     actionBusy.value = null;
   }
@@ -399,10 +433,10 @@ async function doRemoteFollow() {
       : { acct: profile.value.acct || acctForQuery.value };
     await api("/api/v1/federation/remote-follow", { method: "POST", token, json: body });
     followModalOpen.value = false;
-    showToast("フォローを送信しました");
+    showToast(t("views.remoteFederationProfile.toasts.followSent"));
     await refreshRemoteFollowState();
   } catch (e: unknown) {
-    showToast(e instanceof Error ? e.message : "フォローに失敗しました");
+    showToast(e instanceof Error ? e.message : t("views.remoteFederationProfile.errors.followFailed"));
   } finally {
     followBusy.value = false;
   }
@@ -419,10 +453,10 @@ async function doRemoteUnfollow() {
       json: { actor: profile.value.actor_id },
     });
     followModalOpen.value = false;
-    showToast("フォローを解除しました");
+    showToast(t("views.remoteFederationProfile.toasts.unfollowed"));
     await refreshRemoteFollowState();
   } catch (e: unknown) {
-    showToast(e instanceof Error ? e.message : "解除に失敗しました");
+    showToast(e instanceof Error ? e.message : t("views.remoteFederationProfile.errors.unfollowFailed"));
   } finally {
     followBusy.value = false;
   }
@@ -433,9 +467,9 @@ async function copyActorURL() {
   try {
     await navigator.clipboard.writeText(profile.value.profile_url);
     followModalOpen.value = false;
-    showToast("プロフィール URL をコピーしました");
+    showToast(t("views.remoteFederationProfile.toasts.copiedProfileUrl"));
   } catch {
-    showToast("コピーできませんでした");
+    showToast(t("views.remoteFederationProfile.errors.copyFailed"));
   }
 }
 
@@ -450,12 +484,12 @@ async function inviteFederationDM() {
       token,
       json: { to_acct: profile.value.acct },
     });
-    showToast("DM招待を送信しました");
+    showToast(t("views.remoteFederationProfile.toasts.dmInviteSent"));
     if (res.thread_id) {
       void router.push({ path: "/messages", query: { fed_thread: res.thread_id } });
     }
   } catch (e: unknown) {
-    showToast(e instanceof Error ? e.message : "DM招待に失敗しました");
+    showToast(e instanceof Error ? e.message : t("views.remoteFederationProfile.errors.dmInviteFailed"));
   } finally {
     dmBusy.value = false;
   }
@@ -498,21 +532,23 @@ watch(
       <button
         type="button"
         class="rounded-full p-2 text-neutral-600 hover:bg-neutral-100"
-        aria-label="戻る"
+        :aria-label="t('views.remoteFederationProfile.backAria')"
         @click="router.back()"
       >
         <Icon name="back" class="h-5 w-5" />
       </button>
       <div class="min-w-0">
         <h1 class="truncate text-lg font-bold leading-tight text-neutral-900">
-          {{ profile ? profileTitle : "連合ユーザー" }}
+          {{ profile ? profileTitle : t("views.remoteFederationProfile.fallbackName") }}
         </h1>
         <p class="truncate text-sm text-neutral-500">{{ profile ? `@${profile.acct}` : "" }}</p>
       </div>
     </header>
 
     <p v-if="err" class="border-b border-neutral-200 px-4 py-3 text-sm text-red-600">{{ err }}</p>
-    <div v-if="busy && !profile" class="border-b border-neutral-200 px-4 py-12 text-center text-sm text-neutral-500">読み込み中…</div>
+    <div v-if="busy && !profile" class="border-b border-neutral-200 px-4 py-12 text-center text-sm text-neutral-500">
+      {{ t("views.remoteFederationProfile.loading") }}
+    </div>
     <template v-else-if="profile">
       <div class="relative">
         <div
@@ -553,7 +589,7 @@ watch(
                 rel="noopener noreferrer"
                 class="shrink-0 rounded-full border border-lime-600 bg-white px-4 py-1.5 text-sm font-semibold text-lime-700 hover:bg-lime-50"
               >
-                元のプロフィール
+                {{ t("views.remoteFederationProfile.originalProfile") }}
               </a>
               <RouterLink
                 v-else-if="!viewerAuthed"
@@ -641,13 +677,13 @@ watch(
             <p class="text-xl font-bold text-neutral-900">{{ profileTitle }}</p>
             <p class="text-sm text-neutral-500">@{{ profile.acct }}</p>
             <p class="mt-1 text-sm text-neutral-600">
-              連合アカウント
+              {{ t("views.remoteFederationProfile.badgeFederatedAccount") }}
               <span class="mx-1.5 text-neutral-300">·</span>
-              このサーバーで受信した投稿を表示
+              {{ t("views.remoteFederationProfile.badgeReceivedPosts") }}
             </p>
           </div>
           <div v-if="profileSummaryHtml" class="prose prose-sm max-w-none text-neutral-800" v-html="profileSummaryHtml" />
-          <p v-else class="text-sm text-neutral-400">自己紹介はまだありません。</p>
+          <p v-else class="text-sm text-neutral-400">{{ t("views.remoteFederationProfile.bioEmpty") }}</p>
         </div>
       </div>
 
@@ -655,16 +691,26 @@ watch(
         <div class="flex flex-nowrap gap-1 overflow-x-auto">
           <button
             type="button"
-            class="relative shrink-0 -mb-px border-b-2 border-lime-600 px-3 py-2.5 text-sm font-semibold text-neutral-900"
+            class="relative shrink-0 -mb-px px-3 py-2.5 text-sm font-semibold"
+            :class="activeTab === 'posts' ? 'border-b-2 border-lime-600 text-neutral-900' : 'border-b-2 border-transparent text-neutral-500 hover:text-neutral-800'"
+            @click="activeTab = 'posts'"
           >
-            投稿
+            {{ t("views.remoteFederationProfile.tabPosts") }}
+          </button>
+          <button
+            type="button"
+            class="relative shrink-0 -mb-px px-3 py-2.5 text-sm font-semibold"
+            :class="activeTab === 'notes' ? 'border-b-2 border-lime-600 text-neutral-900' : 'border-b-2 border-transparent text-neutral-500 hover:text-neutral-800'"
+            @click="activeTab = 'notes'"
+          >
+            {{ t("views.remoteFederationProfile.tabNotes") }}
           </button>
         </div>
       </div>
 
       <section>
         <PostTimeline
-          v-if="posts.length"
+          v-if="activeTab === 'posts' && posts.length"
           :items="posts"
           :action-busy="actionBusy"
           :hide-post-detail-link="false"
@@ -679,9 +725,36 @@ watch(
           @patch-item="({ id, patch }) => patchPost(id, patch)"
           @remove-post="removeFederatedPostFromList"
         />
-        <p v-else class="border-b border-neutral-200 px-4 py-10 text-center text-sm text-neutral-500">
-          まだ受信した投稿がありません。
+        <p
+          v-else-if="activeTab === 'posts'"
+          class="border-b border-neutral-200 px-4 py-10 text-center text-sm text-neutral-500"
+        >
+          {{ t("views.remoteFederationProfile.emptyPosts") }}
         </p>
+
+        <div v-else class="border-b border-neutral-200">
+          <RouterLink
+            v-for="n in notes"
+            :key="n.id"
+            :to="`/notes/federated/${encodeURIComponent(n.id)}`"
+            class="block border-t border-neutral-100 px-4 py-4 hover:bg-neutral-50"
+          >
+            <div class="flex items-center justify-between gap-3">
+              <p class="truncate text-sm font-semibold text-neutral-900">{{ n.title || t("views.remoteFederationProfile.untitledNote") }}</p>
+              <span v-if="n.has_premium" class="shrink-0 rounded-full border border-neutral-200 px-2 py-0.5 text-xs text-neutral-600">
+                {{
+                  n.premium_locked
+                    ? t("views.remoteFederationProfile.premiumBadgeLocked")
+                    : t("views.remoteFederationProfile.premiumBadge")
+                }}
+              </span>
+            </div>
+            <p class="mt-1 line-clamp-2 text-sm text-neutral-600">{{ n.body_md }}</p>
+          </RouterLink>
+          <p v-if="!notes.length" class="px-4 py-10 text-center text-sm text-neutral-500">
+            {{ t("views.remoteFederationProfile.emptyNotes") }}
+          </p>
+        </div>
       </section>
     </template>
 
@@ -698,9 +771,9 @@ watch(
         class="w-full max-w-md rounded-2xl border border-neutral-200 bg-white p-5 shadow-xl"
         @click.stop
       >
-        <h2 id="follow-modal-title" class="text-lg font-semibold text-neutral-900">フォロー</h2>
+        <h2 id="follow-modal-title" class="text-lg font-semibold text-neutral-900">{{ t("views.remoteFederationProfile.followModalTitle") }}</h2>
         <p class="mt-2 text-sm text-neutral-600">
-          Glipz の独自連合でフォローするか、プロフィール URL をコピーできます。
+          {{ t("views.remoteFederationProfile.followModalDescription") }}
         </p>
         <div class="mt-5 flex flex-col gap-2">
           <button
@@ -710,7 +783,7 @@ watch(
             :disabled="followBusy"
             @click="doRemoteFollow"
           >
-            Glipz からフォローする
+            {{ t("views.remoteFederationProfile.followViaGlipz") }}
           </button>
           <button
             v-if="remoteFollowState === 'pending'"
@@ -718,7 +791,7 @@ watch(
             disabled
             class="w-full rounded-lg border border-neutral-200 bg-neutral-50 py-2.5 text-sm text-neutral-600"
           >
-            承認待ち（相手の Accept を待っています）
+            {{ t("views.remoteFederationProfile.followPendingHint") }}
           </button>
           <button
             v-if="remoteFollowState === 'accepted'"
@@ -727,21 +800,21 @@ watch(
             :disabled="followBusy"
             @click="doRemoteUnfollow"
           >
-            フォロー解除
+            {{ t("views.remoteFederationProfile.unfollow") }}
           </button>
           <button
             type="button"
             class="w-full rounded-lg border border-neutral-200 bg-white py-2.5 text-sm font-medium text-neutral-800 hover:bg-neutral-50"
             @click="copyActorURL"
           >
-            プロフィール URL をコピー
+            {{ t("views.remoteFederationProfile.copyProfileUrl") }}
           </button>
           <button
             type="button"
             class="w-full rounded-lg py-2 text-sm text-neutral-600 hover:bg-neutral-50"
             @click="followModalOpen = false"
           >
-            閉じる
+            {{ t("views.remoteFederationProfile.close") }}
           </button>
         </div>
       </div>

@@ -63,6 +63,12 @@ func main() {
 	if err := migrate.RunFederationIncoming(ctx, pool); err != nil {
 		log.Fatalf("migrate federation incoming: %v", err)
 	}
+	if err := migrate.RunFederationIncomingNotes(ctx, pool); err != nil {
+		log.Fatalf("migrate federation incoming notes: %v", err)
+	}
+	if err := migrate.RunFederationIncomingNoteUnlocks(ctx, pool); err != nil {
+		log.Fatalf("migrate federation incoming note unlocks: %v", err)
+	}
 	if err := migrate.RunBookmarks(ctx, pool); err != nil {
 		log.Fatalf("migrate bookmarks: %v", err)
 	}

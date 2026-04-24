@@ -77,6 +77,12 @@ export const router = createRouter({
       meta: { requiresAuth: true, titleKey: "routes.noteDetail" },
     },
     {
+      path: "/notes/federated/:incomingId",
+      name: "federated-note-detail",
+      component: () => import("../views/FederatedNoteDetailView.vue"),
+      meta: { requiresAuth: false, titleKey: "routes.noteDetail" },
+    },
+    {
       path: "/posts/federated/:incomingId",
       component: () => import("../views/PostDetailView.vue"),
       meta: { requiresAuth: false, mobileEdgeToEdge: true, titleKey: "routes.postDetail" },

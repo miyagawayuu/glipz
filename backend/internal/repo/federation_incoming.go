@@ -31,6 +31,7 @@ type FederatedIncomingPost struct {
 	RecipientUserID        *uuid.UUID
 	LikeCount              int64
 	LikedByMe              bool
+	Reactions              []PostReaction
 	RepostCount            int64
 	RepostedByMe           bool
 	BookmarkedByMe         bool
@@ -247,6 +248,9 @@ func (p *Pool) ListFederatedIncomingForViewer(ctx context.Context, viewerID uuid
 	if err := p.AttachPollsToFederatedIncoming(ctx, viewerID, out); err != nil {
 		return nil, err
 	}
+	if err := p.AttachReactionsToFederatedIncoming(ctx, viewerID, out); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 
@@ -364,6 +368,9 @@ func (p *Pool) ListBookmarkedFederatedIncoming(ctx context.Context, viewerID uui
 	if err := p.AttachPollsToFederatedIncoming(ctx, viewerID, base); err != nil {
 		return nil, err
 	}
+	if err := p.AttachReactionsToFederatedIncoming(ctx, viewerID, base); err != nil {
+		return nil, err
+	}
 	for i := range out {
 		out[i].FederatedIncomingPost = base[i]
 		out[i].BookmarkedByMe = true
@@ -420,6 +427,9 @@ func (p *Pool) ListFederatedIncomingRepliesByObjectIRI(ctx context.Context, view
 	if err := p.AttachPollsToFederatedIncoming(ctx, viewerID, out); err != nil {
 		return nil, err
 	}
+	if err := p.AttachReactionsToFederatedIncoming(ctx, viewerID, out); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 
@@ -470,6 +480,9 @@ func (p *Pool) ListFederatedIncomingRepliesByLocalPostIDSuffix(ctx context.Conte
 		return nil, err
 	}
 	if err := p.AttachPollsToFederatedIncoming(ctx, viewerID, out); err != nil {
+		return nil, err
+	}
+	if err := p.AttachReactionsToFederatedIncoming(ctx, viewerID, out); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -618,6 +631,9 @@ func (p *Pool) ListFederatedIncomingPublicByActorIRI(ctx context.Context, actorI
 	if err := p.AttachPollsToFederatedIncoming(ctx, uuid.Nil, out); err != nil {
 		return nil, err
 	}
+	if err := p.AttachReactionsToFederatedIncoming(ctx, uuid.Nil, out); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 
@@ -676,6 +692,9 @@ func (p *Pool) ListFederatedIncomingPublicByActorIRIForViewer(ctx context.Contex
 	if err := p.AttachPollsToFederatedIncoming(ctx, viewerID, out); err != nil {
 		return nil, err
 	}
+	if err := p.AttachReactionsToFederatedIncoming(ctx, viewerID, out); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 
@@ -731,6 +750,9 @@ func (p *Pool) ListFederatedIncomingForRemoteFollows(ctx context.Context, viewer
 	if err := p.AttachPollsToFederatedIncoming(ctx, viewerID, out); err != nil {
 		return nil, err
 	}
+	if err := p.AttachReactionsToFederatedIncoming(ctx, viewerID, out); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 
@@ -782,6 +804,9 @@ func (p *Pool) ListFederatedIncomingByActorIRI(ctx context.Context, actorIRI str
 		return nil, err
 	}
 	if err := p.AttachPollsToFederatedIncoming(ctx, uuid.Nil, out); err != nil {
+		return nil, err
+	}
+	if err := p.AttachReactionsToFederatedIncoming(ctx, uuid.Nil, out); err != nil {
 		return nil, err
 	}
 	return out, nil

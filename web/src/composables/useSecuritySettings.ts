@@ -5,7 +5,6 @@ import { useRoute, useRouter } from "vue-router";
 import { api } from "../lib/api";
 import { getAccessToken } from "../auth";
 import { bumpMeHub } from "../meHub";
-import { useFanclubLinks } from "./useFanclubLinks";
 import {
   currentNotificationPermission,
   disableWebPush,
@@ -18,11 +17,6 @@ import {
 } from "../lib/webPush";
 import { listDMThreads, type DMThread } from "../lib/dm";
 
-export type PatreonMe = {
-  member_linked: boolean;
-  creator_linked: boolean;
-};
-
 export type MeResp = {
   id: string;
   email: string;
@@ -32,7 +26,7 @@ export type MeResp = {
   dm_call_scope?: "none" | "all" | "followers" | "specific_users";
   dm_call_allowed_user_ids?: string[];
   dm_invite_auto_accept?: boolean;
-  patreon?: PatreonMe;
+  fanclubs?: Record<string, { member_linked: boolean; creator_linked: boolean }>;
 };
 
 export function useSecuritySettings() {
@@ -75,6 +69,7 @@ export function useSecuritySettings() {
       || JSON.stringify([...dmCallAllowedUserIDs.value].sort()) !== JSON.stringify([...(me.value?.dm_call_allowed_user_ids ?? [])].sort()),
   );
   const dmInviteAutoDirty = computed(() => dmInviteAutoAccept.value !== !!me.value?.dm_invite_auto_accept);
+  const fanclubLinking = ref(false);
 
   watch(
     () => uri.value,
@@ -98,16 +93,11 @@ export function useSecuritySettings() {
   );
 
   function resolveFanclubReturnQuery(q: Record<string, unknown>): string | null {
-    // Future shape (planned): ?fanclub=patreon&result=member_ok
+    // Future shape (planned): ?fanclub=<provider>&result=<code>
     if (typeof q.fanclub === "string" && typeof q.result === "string") {
       const provider = q.fanclub;
       const result = q.result;
       const key = `views.settings.security.${provider}Return.${result}`;
-      if (te(key)) return t(key);
-    }
-    // Back-compat: current Patreon-only shape: ?patreon=member_ok
-    if (typeof q.patreon === "string") {
-      const key = `views.settings.security.patreonReturn.${q.patreon}`;
       if (te(key)) return t(key);
     }
     return null;
@@ -126,9 +116,7 @@ export function useSecuritySettings() {
     me.value = u;
     dmCallTimeoutSeconds.value = String(u.dm_call_timeout_seconds ?? 30);
     dmCallEnabled.value = !!u.dm_call_enabled;
-    let scope = (u.dm_call_scope ?? "none") as typeof dmCallScope.value;
-    if (scope === "specific_groups") scope = "none";
-    dmCallScope.value = scope;
+    dmCallScope.value = (u.dm_call_scope ?? "none") as typeof dmCallScope.value;
     dmCallAllowedUserIDs.value = [...(u.dm_call_allowed_user_ids ?? [])];
     dmInviteAutoAccept.value = !!u.dm_invite_auto_accept;
     dmSaveMsg.value = "";
@@ -144,6 +132,82 @@ export function useSecuritySettings() {
     }
     await refresh();
   });
+
+  async function connectPatreonMember() {
+    err.value = "";
+    msg.value = "";
+    const token = getAccessToken();
+    if (!token) return;
+    fanclubLinking.value = true;
+    try {
+      const res = await api<{ authorize_url: string }>("/api/v1/fanclub/patreon/member/authorize-url", {
+        method: "GET",
+        token,
+      });
+      if (res.authorize_url) window.location.href = res.authorize_url;
+      else err.value = t("views.settings.security.fanclubLinkFailed");
+    } catch (e: unknown) {
+      err.value = e instanceof Error ? e.message : t("views.settings.security.fanclubLinkFailed");
+    } finally {
+      fanclubLinking.value = false;
+    }
+  }
+
+  async function connectPatreonCreator() {
+    err.value = "";
+    msg.value = "";
+    const token = getAccessToken();
+    if (!token) return;
+    fanclubLinking.value = true;
+    try {
+      const res = await api<{ authorize_url: string }>("/api/v1/fanclub/patreon/creator/authorize-url", {
+        method: "GET",
+        token,
+      });
+      if (res.authorize_url) window.location.href = res.authorize_url;
+      else err.value = t("views.settings.security.fanclubLinkFailed");
+    } catch (e: unknown) {
+      err.value = e instanceof Error ? e.message : t("views.settings.security.fanclubLinkFailed");
+    } finally {
+      fanclubLinking.value = false;
+    }
+  }
+
+  async function disconnectMember() {
+    err.value = "";
+    msg.value = "";
+    const token = getAccessToken();
+    if (!token) return;
+    fanclubLinking.value = true;
+    try {
+      await api("/api/v1/fanclub/patreon/member/disconnect", { method: "POST", token });
+      msg.value = t("views.settings.security.fanclubDisconnected");
+      await refresh();
+      bumpMeHub();
+    } catch (e: unknown) {
+      err.value = e instanceof Error ? e.message : t("views.settings.security.fanclubDisconnectFailed");
+    } finally {
+      fanclubLinking.value = false;
+    }
+  }
+
+  async function disconnectCreator() {
+    err.value = "";
+    msg.value = "";
+    const token = getAccessToken();
+    if (!token) return;
+    fanclubLinking.value = true;
+    try {
+      await api("/api/v1/fanclub/patreon/creator/disconnect", { method: "POST", token });
+      msg.value = t("views.settings.security.fanclubDisconnected");
+      await refresh();
+      bumpMeHub();
+    } catch (e: unknown) {
+      err.value = e instanceof Error ? e.message : t("views.settings.security.fanclubDisconnectFailed");
+    } finally {
+      fanclubLinking.value = false;
+    }
+  }
 
   async function setup() {
     err.value = "";
@@ -189,16 +253,6 @@ export function useSecuritySettings() {
       loading.value = false;
     }
   }
-
-  const patreonLinks = useFanclubLinks({
-    providerId: "patreon",
-    setErr: (v) => (err.value = v),
-    setMsg: (v) => (msg.value = v),
-    setLoading: (v) => (loading.value = v),
-    confirm: (text) => window.confirm(text),
-    t: (key) => t(key),
-    refreshMe: refresh,
-  });
 
   async function saveDMCallSettings() {
     err.value = "";
@@ -337,11 +391,12 @@ export function useSecuritySettings() {
     refresh,
     setup,
     enable,
-    connectPatreonMember: patreonLinks.connectMember,
-    connectPatreonCreator: patreonLinks.connectCreator,
-    disconnectMember: patreonLinks.disconnectMember,
-    disconnectCreator: patreonLinks.disconnectCreator,
     saveDMCallSettings,
+    connectPatreonMember,
+    connectPatreonCreator,
+    disconnectMember,
+    disconnectCreator,
+    fanclubLinking,
     enableWebPushNotifications,
     disableWebPushNotifications,
   };

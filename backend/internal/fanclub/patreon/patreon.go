@@ -1,303 +1,195 @@
-// Package patreon implements Patreon OAuth and API calls for the fanclub integration.
 package patreon
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
 
-const tokenURL = "https://www.patreon.com/api/oauth2/token"
+// ProviderID is the stable fanclub provider id.
+const ProviderID = "patreon"
 
-// Config holds Patreon application settings.
 type Config struct {
 	ClientID     string
 	ClientSecret string
 	RedirectURI  string
 }
 
-// Enabled reports whether the required OAuth settings are present.
 func (c Config) Enabled() bool {
-	return strings.TrimSpace(c.ClientID) != "" &&
-		strings.TrimSpace(c.ClientSecret) != "" &&
-		strings.TrimSpace(c.RedirectURI) != ""
+	return strings.TrimSpace(c.ClientID) != "" && strings.TrimSpace(c.ClientSecret) != "" && strings.TrimSpace(c.RedirectURI) != ""
 }
 
-// AuthorizeURL builds the browser-facing authorization URL.
 func AuthorizeURL(cfg Config, scopes []string, state string) string {
 	v := url.Values{}
 	v.Set("response_type", "code")
 	v.Set("client_id", strings.TrimSpace(cfg.ClientID))
 	v.Set("redirect_uri", strings.TrimSpace(cfg.RedirectURI))
-	v.Set("scope", strings.Join(scopes, " "))
-	v.Set("state", state)
+	if len(scopes) > 0 {
+		v.Set("scope", strings.Join(scopes, " "))
+	}
+	if strings.TrimSpace(state) != "" {
+		v.Set("state", strings.TrimSpace(state))
+	}
 	return "https://www.patreon.com/oauth2/authorize?" + v.Encode()
 }
 
-type tokenResponse struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-	ExpiresIn    int    `json:"expires_in"`
-	TokenType    string `json:"token_type"`
+func Exchange(cfg Config, code string) (accessToken string, refreshToken string, expiresAt time.Time, err error) {
+	return tokenRequest(cfg, url.Values{
+		"grant_type":    {"authorization_code"},
+		"code":          {strings.TrimSpace(code)},
+		"client_id":     {strings.TrimSpace(cfg.ClientID)},
+		"client_secret": {strings.TrimSpace(cfg.ClientSecret)},
+		"redirect_uri":  {strings.TrimSpace(cfg.RedirectURI)},
+	})
 }
 
-// Exchange swaps an authorization code for access and refresh tokens.
-func Exchange(cfg Config, code string) (access, refresh string, expiresAt time.Time, err error) {
-	form := url.Values{}
-	form.Set("code", strings.TrimSpace(code))
-	form.Set("grant_type", "authorization_code")
-	form.Set("client_id", strings.TrimSpace(cfg.ClientID))
-	form.Set("client_secret", strings.TrimSpace(cfg.ClientSecret))
-	form.Set("redirect_uri", strings.TrimSpace(cfg.RedirectURI))
-	return postToken(form)
+func Refresh(cfg Config, refreshToken string) (accessToken string, newRefreshToken string, expiresAt time.Time, err error) {
+	return tokenRequest(cfg, url.Values{
+		"grant_type":    {"refresh_token"},
+		"refresh_token": {strings.TrimSpace(refreshToken)},
+		"client_id":     {strings.TrimSpace(cfg.ClientID)},
+		"client_secret": {strings.TrimSpace(cfg.ClientSecret)},
+	})
 }
 
-// Refresh issues a new access token from a refresh token.
-func Refresh(cfg Config, refreshToken string) (access, refresh string, expiresAt time.Time, err error) {
-	form := url.Values{}
-	form.Set("grant_type", "refresh_token")
-	form.Set("refresh_token", strings.TrimSpace(refreshToken))
-	form.Set("client_id", strings.TrimSpace(cfg.ClientID))
-	form.Set("client_secret", strings.TrimSpace(cfg.ClientSecret))
-	return postToken(form)
-}
-
-func postToken(form url.Values) (access, refresh string, expiresAt time.Time, err error) {
-	req, err := http.NewRequest(http.MethodPost, tokenURL, strings.NewReader(form.Encode()))
+func tokenRequest(cfg Config, form url.Values) (accessToken string, refreshToken string, expiresAt time.Time, err error) {
+	req, err := http.NewRequest("POST", "https://www.patreon.com/api/oauth2/token", strings.NewReader(form.Encode()))
 	if err != nil {
 		return "", "", time.Time{}, err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := http.DefaultClient.Do(req)
+	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return "", "", time.Time{}, err
 	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", "", time.Time{}, fmt.Errorf("patreon token: status %d: %s", resp.StatusCode, truncate(string(body), 500))
+	defer res.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		return "", "", time.Time{}, fmt.Errorf("patreon token http %d: %s", res.StatusCode, strings.TrimSpace(string(body)))
 	}
-	var tr tokenResponse
-	if err := json.Unmarshal(body, &tr); err != nil {
-		return "", "", time.Time{}, fmt.Errorf("patreon token json: %w", err)
+	var out struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		ExpiresIn    any    `json:"expires_in"`
 	}
-	if strings.TrimSpace(tr.AccessToken) == "" {
-		return "", "", time.Time{}, fmt.Errorf("patreon token: empty access_token")
+	if err := json.Unmarshal(body, &out); err != nil {
+		return "", "", time.Time{}, err
 	}
-	exp := time.Now().UTC().Add(time.Duration(tr.ExpiresIn) * time.Second)
-	return tr.AccessToken, tr.RefreshToken, exp, nil
+	sec := 0
+	switch v := out.ExpiresIn.(type) {
+	case float64:
+		sec = int(v)
+	case int:
+		sec = v
+	case string:
+		sec, _ = strconv.Atoi(v)
+	}
+	if sec <= 0 {
+		sec = 3600
+	}
+	return strings.TrimSpace(out.AccessToken), strings.TrimSpace(out.RefreshToken), time.Now().UTC().Add(time.Duration(sec) * time.Second), nil
 }
 
-// FetchFirstCampaignID returns the first campaign ID for the creator.
-func FetchFirstCampaignID(accessToken string) (string, error) {
-	u := "https://www.patreon.com/api/oauth2/v2/campaigns?fields%5Bcampaign%5D=created_at"
-	req, err := http.NewRequest(http.MethodGet, u, nil)
+func apiGet(accessToken, urlStr string) ([]byte, int, error) {
+	req, err := http.NewRequest("GET", urlStr, nil)
 	if err != nil {
-		return "", err
+		return nil, 0, err
 	}
 	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(accessToken))
-	resp, err := http.DefaultClient.Do(req)
+	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", err
+		return nil, 0, err
 	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("patreon campaigns: status %d: %s", resp.StatusCode, truncate(string(body), 500))
-	}
-	var root struct {
-		Data []struct {
-			ID string `json:"id"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(body, &root); err != nil {
-		return "", err
-	}
-	if len(root.Data) == 0 || strings.TrimSpace(root.Data[0].ID) == "" {
-		return "", fmt.Errorf("patreon campaigns: no campaign")
-	}
-	return root.Data[0].ID, nil
+	defer res.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(res.Body, 2<<20))
+	return body, res.StatusCode, nil
 }
 
-// CreatorCampaign represents a campaign managed by the creator.
-type CreatorCampaign struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-}
-
-// FetchCreatorCampaigns lists campaigns using a creator access token.
-func FetchCreatorCampaigns(accessToken string) ([]CreatorCampaign, error) {
-	u := "https://www.patreon.com/api/oauth2/v2/campaigns?fields%5Bcampaign%5D=creation_name,created_at"
-	req, err := http.NewRequest(http.MethodGet, u, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(accessToken))
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("patreon campaigns list: status %d: %s", resp.StatusCode, truncate(string(body), 500))
-	}
-	var root struct {
-		Data []struct {
-			ID         string `json:"id"`
-			Attributes struct {
-				CreationName string `json:"creation_name"`
-			} `json:"attributes"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(body, &root); err != nil {
-		return nil, err
-	}
-	var out []CreatorCampaign
-	for _, row := range root.Data {
-		id := strings.TrimSpace(row.ID)
-		if id == "" {
-			continue
-		}
-		name := strings.TrimSpace(row.Attributes.CreationName)
-		if name == "" {
-			name = id
-		}
-		out = append(out, CreatorCampaign{ID: id, Name: name})
-	}
-	return out, nil
-}
-
-// FetchIdentityUserID returns the Patreon user ID from the identity endpoint.
+// FetchIdentityUserID returns the Patreon user id for the access token.
 func FetchIdentityUserID(accessToken string) (string, error) {
-	u := "https://www.patreon.com/api/oauth2/v2/identity"
-	req, err := http.NewRequest(http.MethodGet, u, nil)
+	body, st, err := apiGet(accessToken, "https://www.patreon.com/api/oauth2/v2/identity")
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(accessToken))
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", err
+	if st < 200 || st >= 300 {
+		return "", fmt.Errorf("patreon identity http %d", st)
 	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("patreon identity: status %d: %s", resp.StatusCode, truncate(string(body), 500))
-	}
-	var root struct {
+	var out struct {
 		Data struct {
 			ID string `json:"id"`
 		} `json:"data"`
 	}
-	if err := json.Unmarshal(body, &root); err != nil {
+	if err := json.Unmarshal(body, &out); err != nil {
 		return "", err
 	}
-	if strings.TrimSpace(root.Data.ID) == "" {
-		return "", fmt.Errorf("patreon identity: empty id")
-	}
-	return root.Data.ID, nil
+	return strings.TrimSpace(out.Data.ID), nil
 }
 
-// MemberEntitledToReward reports whether the viewer has an active membership
-// in the given campaign that includes requiredRewardTierID.
-func MemberEntitledToReward(accessToken, campaignID, requiredRewardTierID string) (bool, error) {
-	campaignID = strings.TrimSpace(campaignID)
-	requiredRewardTierID = strings.TrimSpace(requiredRewardTierID)
-	if campaignID == "" || requiredRewardTierID == "" {
-		return false, nil
-	}
-	u := "https://www.patreon.com/api/oauth2/v2/identity?include=memberships,memberships.currently_entitled_tiers,memberships.campaign&fields%5Bmember%5D=patron_status"
-	req, err := http.NewRequest(http.MethodGet, u, nil)
-	if err != nil {
-		return false, err
-	}
-	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(accessToken))
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return false, err
-	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return false, fmt.Errorf("patreon identity memberships: status %d: %s", resp.StatusCode, truncate(string(body), 500))
-	}
-	var root map[string]any
-	if err := json.Unmarshal(body, &root); err != nil {
-		return false, err
-	}
-	included, _ := root["included"].([]any)
-	for _, raw := range included {
-		m, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		if strings.ToLower(fmt.Sprint(m["type"])) != "member" {
-			continue
-		}
-		attrs, _ := m["attributes"].(map[string]any)
-		status := strings.ToLower(fmt.Sprint(attrs["patron_status"]))
-		if status != "active_patron" {
-			continue
-		}
-		rel, _ := m["relationships"].(map[string]any)
-		campRel, _ := rel["campaign"].(map[string]any)
-		campData, _ := campRel["data"].(map[string]any)
-		if strings.TrimSpace(fmt.Sprint(campData["id"])) != campaignID {
-			continue
-		}
-		tiersRel, _ := rel["currently_entitled_tiers"].(map[string]any)
-		tierData, _ := tiersRel["data"].([]any)
-		for _, td := range tierData {
-			tm, ok := td.(map[string]any)
-			if !ok {
-				continue
-			}
-			if strings.TrimSpace(fmt.Sprint(tm["id"])) == requiredRewardTierID {
-				return true, nil
-			}
-		}
-	}
-	return false, nil
+type Campaign struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
-// CampaignTier represents a public tier attached to a campaign.
-type CampaignTier struct {
+type Tier struct {
 	ID          string `json:"id"`
 	Title       string `json:"title"`
 	AmountCents int    `json:"amount_cents"`
 }
 
-// FetchCampaignTiers lists campaign tiers using a creator access token.
-func FetchCampaignTiers(accessToken, campaignID string) ([]CampaignTier, error) {
+// FetchCreatorCampaigns lists campaigns available for a creator token.
+func FetchCreatorCampaigns(accessToken string) ([]Campaign, error) {
+	// Patreon's API surface varies; use identity include=campaign for a pragmatic list.
+	u := "https://www.patreon.com/api/oauth2/v2/identity?include=campaign&fields[campaign]=creation_name"
+	body, st, err := apiGet(accessToken, u)
+	if err != nil {
+		return nil, err
+	}
+	if st < 200 || st >= 300 {
+		return nil, fmt.Errorf("patreon campaigns http %d", st)
+	}
+	var out struct {
+		Included []struct {
+			Type       string `json:"type"`
+			ID         string `json:"id"`
+			Attributes struct {
+				CreationName string `json:"creation_name"`
+			} `json:"attributes"`
+		} `json:"included"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, err
+	}
+	var camps []Campaign
+	for _, inc := range out.Included {
+		if inc.Type != "campaign" {
+			continue
+		}
+		camps = append(camps, Campaign{ID: strings.TrimSpace(inc.ID), Name: strings.TrimSpace(inc.Attributes.CreationName)})
+	}
+	return camps, nil
+}
+
+// FetchCampaignTiers lists tiers for one campaign.
+func FetchCampaignTiers(accessToken, campaignID string) ([]Tier, error) {
 	campaignID = strings.TrimSpace(campaignID)
 	if campaignID == "" {
-		return nil, fmt.Errorf("patreon tiers: empty campaign id")
+		return nil, errors.New("missing campaign_id")
 	}
-	u := fmt.Sprintf(
-		"https://www.patreon.com/api/oauth2/v2/campaigns/%s?include=tiers&fields%%5Btier%%5D=title,amount_cents",
-		url.PathEscape(campaignID),
-	)
-	req, err := http.NewRequest(http.MethodGet, u, nil)
+	u := "https://www.patreon.com/api/oauth2/v2/campaigns/" + url.PathEscape(campaignID) + "?include=tiers&fields[tier]=title,amount_cents"
+	body, st, err := apiGet(accessToken, u)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(accessToken))
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
+	if st < 200 || st >= 300 {
+		return nil, fmt.Errorf("patreon tiers http %d", st)
 	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("patreon tiers: status %d: %s", resp.StatusCode, truncate(string(body), 500))
-	}
-	var root struct {
+	var out struct {
 		Included []struct {
 			Type       string `json:"type"`
 			ID         string `json:"id"`
@@ -307,36 +199,55 @@ func FetchCampaignTiers(accessToken, campaignID string) ([]CampaignTier, error) 
 			} `json:"attributes"`
 		} `json:"included"`
 	}
-	if err := json.Unmarshal(body, &root); err != nil {
+	if err := json.Unmarshal(body, &out); err != nil {
 		return nil, err
 	}
-	var out []CampaignTier
-	for _, it := range root.Included {
-		if strings.ToLower(strings.TrimSpace(it.Type)) != "tier" {
+	var tiers []Tier
+	for _, inc := range out.Included {
+		if inc.Type != "tier" {
 			continue
 		}
-		id := strings.TrimSpace(it.ID)
-		if id == "" {
-			continue
-		}
-		out = append(out, CampaignTier{
-			ID:          id,
-			Title:       strings.TrimSpace(it.Attributes.Title),
-			AmountCents: it.Attributes.AmountCents,
+		tiers = append(tiers, Tier{
+			ID:          strings.TrimSpace(inc.ID),
+			Title:       strings.TrimSpace(inc.Attributes.Title),
+			AmountCents: inc.Attributes.AmountCents,
 		})
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].AmountCents != out[j].AmountCents {
-			return out[i].AmountCents < out[j].AmountCents
-		}
-		return out[i].Title < out[j].Title
-	})
-	return out, nil
+	return tiers, nil
 }
 
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
+// MemberEntitledToReward checks whether the member token is currently entitled to the required tier.
+func MemberEntitledToReward(accessToken, campaignID, requiredTierID string) (bool, error) {
+	campaignID = strings.TrimSpace(campaignID)
+	requiredTierID = strings.TrimSpace(requiredTierID)
+	if campaignID == "" || requiredTierID == "" {
+		return false, nil
 	}
-	return s[:n] + "…"
+	u := "https://www.patreon.com/api/oauth2/v2/identity?include=memberships.currently_entitled_tiers&fields[tier]=title&fields[member]=patron_status&fields[membership]=patron_status"
+	body, st, err := apiGet(accessToken, u)
+	if err != nil {
+		return false, err
+	}
+	if st == 401 || st == 403 {
+		return false, nil
+	}
+	if st < 200 || st >= 300 {
+		return false, fmt.Errorf("patreon entitled http %d", st)
+	}
+	var out struct {
+		Included []struct {
+			Type string `json:"type"`
+			ID   string `json:"id"`
+		} `json:"included"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return false, err
+	}
+	for _, inc := range out.Included {
+		if inc.Type == "tier" && strings.EqualFold(strings.TrimSpace(inc.ID), requiredTierID) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
+

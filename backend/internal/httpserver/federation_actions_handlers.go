@@ -364,6 +364,96 @@ func (s *Server) handleFederatedPostUnlock(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, unlocked)
 }
 
+type unlockFederatedNoteReq struct{}
+
+func (s *Server) handleFederatedNoteUnlock(w http.ResponseWriter, r *http.Request) {
+	uid, ok := userIDFrom(r.Context())
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	incomingID, err := uuid.Parse(strings.TrimSpace(chi.URLParam(r, "incomingID")))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_note_id"})
+		return
+	}
+	var req unlockPostReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_json"})
+		return
+	}
+	req.Password = strings.TrimSpace(req.Password)
+	if req.Password == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_password"})
+		return
+	}
+	row, err := s.db.GetFederatedIncomingNoteByID(r.Context(), incomingID)
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+			return
+		}
+		writeServerError(w, "GetFederatedIncomingNoteByID", err)
+		return
+	}
+	if row.DeletedAt != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+		return
+	}
+	if !row.HasPremium {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no_premium"})
+		return
+	}
+	unlockURL := strings.TrimSpace(row.UnlockURL)
+	if unlockURL == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no_password"})
+		return
+	}
+	actor, err := s.federationAuthorPayload(r.Context(), uid)
+	if err != nil {
+		writeServerError(w, "federationAuthorPayload", err)
+		return
+	}
+	body, err := s.signedFederationPOSTJSON(r.Context(), unlockURL, federationNoteUnlockRequest{
+		EventID:    federationNewEventID(),
+		ViewerAcct: actor.Acct,
+		Password:   req.Password,
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "wrong_password") {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "wrong_password"})
+			return
+		}
+		if strings.Contains(err.Error(), "400") || strings.Contains(err.Error(), "no_password") {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no_password"})
+			return
+		}
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "remote_unavailable"})
+		return
+	}
+	var unlocked federationNoteUnlockResponse
+	if err := json.Unmarshal(body, &unlocked); err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "remote_invalid_response"})
+		return
+	}
+	if strings.TrimSpace(unlocked.BodyPremiumMd) == "" {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "remote_invalid_response"})
+		return
+	}
+	exp := time.Now().UTC().Add(postUnlockRedisTTL)
+	if err := s.db.UpsertFederatedIncomingNoteUnlockForUser(r.Context(), row.ID, uid, unlocked.BodyPremiumMd, &exp); err != nil {
+		writeServerError(w, "UpsertFederatedIncomingNoteUnlockForUser", err)
+		return
+	}
+	updated, err := s.db.GetFederatedIncomingNoteByID(r.Context(), row.ID)
+	if err != nil {
+		writeServerError(w, "GetFederatedIncomingNoteByID after unlock", err)
+		return
+	}
+	m, _ := s.db.ListFederatedIncomingNoteUnlockBodiesForUser(r.Context(), uid, []uuid.UUID{updated.ID})
+	writeJSON(w, http.StatusOK, map[string]any{"item": federatedIncomingNoteToJSON(updated, m[updated.ID])})
+}
+
 func (s *Server) handleFederatedToggleRepost(w http.ResponseWriter, r *http.Request) {
 	uid, ok := userIDFrom(r.Context())
 	if !ok {
@@ -477,6 +567,174 @@ func (s *Server) handleFederatedToggleRepost(w http.ResponseWriter, r *http.Requ
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"reposted": reposted, "repost_count": count})
+}
+
+type federatedReactionReq struct {
+	Emoji string `json:"emoji"`
+}
+
+func (s *Server) handleAddFederatedIncomingReaction(w http.ResponseWriter, r *http.Request) {
+	uid, ok := userIDFrom(r.Context())
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	incomingID, err := uuid.Parse(strings.TrimSpace(chi.URLParam(r, "incomingID")))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_post_id"})
+		return
+	}
+	var req federatedReactionReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_json"})
+		return
+	}
+	req.Emoji = strings.TrimSpace(req.Emoji)
+	row, err := s.loadFederatedIncomingForAction(r.Context(), incomingID, r.URL.Query().Get("object_url"))
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+			return
+		}
+		writeServerError(w, "loadFederatedIncomingForAction", err)
+		return
+	}
+	if s.rejectIfFederatedIncomingHidden(w, r, uid, row) {
+		return
+	}
+	inboxURL, err := s.resolveIncomingPostEventsInbox(r.Context(), row)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "remote_unavailable"})
+		return
+	}
+	added, err := s.db.AddFederatedIncomingReaction(r.Context(), uid, row.ID, req.Emoji)
+	if err != nil {
+		switch {
+		case errors.Is(err, repo.ErrInvalidReactionEmoji):
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_emoji"})
+		case errors.Is(err, repo.ErrNotFound):
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+		default:
+			writeServerError(w, "AddFederatedIncomingReaction", err)
+		}
+		return
+	}
+	if added {
+		actor, err := s.federationAuthorPayload(r.Context(), uid)
+		if err != nil {
+			writeServerError(w, "federationAuthorPayload", err)
+			return
+		}
+		emoji, _ := repo.NormalizePostReactionEmoji(req.Emoji)
+		if err := s.queueDirectedFederationEvent(r.Context(), uid, row.ID, inboxURL, federationEventEnvelope{
+			V:      1,
+			Kind:   "post_reaction_added",
+			Author: actor,
+			Post: &federationEventPost{
+				URL:         row.ObjectIRI,
+				PublishedAt: row.PublishedAt.UTC().Format(time.RFC3339),
+			},
+			Reaction: &federationEventReaction{Emoji: emoji},
+		}); err != nil {
+			writeServerError(w, "queueDirectedFederationEvent reaction add", err)
+			return
+		}
+	}
+	updated, err := s.db.GetFederatedIncomingByID(r.Context(), row.ID)
+	if err != nil {
+		writeServerError(w, "GetFederatedIncomingByID", err)
+		return
+	}
+	rows := []repo.FederatedIncomingPost{updated}
+	if err := s.db.AttachPollsToFederatedIncoming(r.Context(), uid, rows); err != nil {
+		writeServerError(w, "AttachPollsToFederatedIncoming", err)
+		return
+	}
+	if err := s.db.AttachReactionsToFederatedIncoming(r.Context(), uid, rows); err != nil {
+		writeServerError(w, "AttachReactionsToFederatedIncoming", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"item": s.federatedIncomingToFeedItem(rows[0])})
+}
+
+func (s *Server) handleDeleteFederatedIncomingReaction(w http.ResponseWriter, r *http.Request) {
+	uid, ok := userIDFrom(r.Context())
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	incomingID, err := uuid.Parse(strings.TrimSpace(chi.URLParam(r, "incomingID")))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_post_id"})
+		return
+	}
+	emojiRaw, _ := url.PathUnescape(strings.TrimSpace(chi.URLParam(r, "emoji")))
+	emojiRaw = strings.TrimSpace(emojiRaw)
+	row, err := s.loadFederatedIncomingForAction(r.Context(), incomingID, r.URL.Query().Get("object_url"))
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+			return
+		}
+		writeServerError(w, "loadFederatedIncomingForAction", err)
+		return
+	}
+	if s.rejectIfFederatedIncomingHidden(w, r, uid, row) {
+		return
+	}
+	inboxURL, err := s.resolveIncomingPostEventsInbox(r.Context(), row)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "remote_unavailable"})
+		return
+	}
+	removed, err := s.db.RemoveFederatedIncomingReaction(r.Context(), uid, row.ID, emojiRaw)
+	if err != nil {
+		switch {
+		case errors.Is(err, repo.ErrInvalidReactionEmoji):
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_emoji"})
+		case errors.Is(err, repo.ErrNotFound):
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+		default:
+			writeServerError(w, "RemoveFederatedIncomingReaction", err)
+		}
+		return
+	}
+	if removed {
+		actor, err := s.federationAuthorPayload(r.Context(), uid)
+		if err != nil {
+			writeServerError(w, "federationAuthorPayload", err)
+			return
+		}
+		emoji, _ := repo.NormalizePostReactionEmoji(emojiRaw)
+		if err := s.queueDirectedFederationEvent(r.Context(), uid, row.ID, inboxURL, federationEventEnvelope{
+			V:      1,
+			Kind:   "post_reaction_removed",
+			Author: actor,
+			Post: &federationEventPost{
+				URL:         row.ObjectIRI,
+				PublishedAt: row.PublishedAt.UTC().Format(time.RFC3339),
+			},
+			Reaction: &federationEventReaction{Emoji: emoji},
+		}); err != nil {
+			writeServerError(w, "queueDirectedFederationEvent reaction remove", err)
+			return
+		}
+	}
+	updated, err := s.db.GetFederatedIncomingByID(r.Context(), row.ID)
+	if err != nil {
+		writeServerError(w, "GetFederatedIncomingByID", err)
+		return
+	}
+	rows := []repo.FederatedIncomingPost{updated}
+	if err := s.db.AttachPollsToFederatedIncoming(r.Context(), uid, rows); err != nil {
+		writeServerError(w, "AttachPollsToFederatedIncoming", err)
+		return
+	}
+	if err := s.db.AttachReactionsToFederatedIncoming(r.Context(), uid, rows); err != nil {
+		writeServerError(w, "AttachReactionsToFederatedIncoming", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"item": s.federatedIncomingToFeedItem(rows[0])})
 }
 
 func (s *Server) resolveFederatedPollChoice(ctx context.Context, incomingID uuid.UUID, raw string) (uuid.UUID, int, error) {

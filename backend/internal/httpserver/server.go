@@ -122,7 +122,8 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c *s3client
 		r.Post("/auth/login", s.handleLogin)
 		r.Post("/auth/mfa/verify", s.handleMFAVerify)
 		r.Post("/oauth/token", s.handleOAuthToken)
-		r.Get("/patreon/oauth/callback", s.handlePatreonOAuthCallback)
+		// Fanclub providers (OAuth callbacks are public)
+		r.Get("/fanclub/patreon/oauth/callback", s.handleFanclubPatreonOAuthCallback)
 		r.Get("/custom-emojis", s.handleListEnabledCustomEmojis)
 		r.Get("/public/posts/feed", s.handlePublicFeed)
 		r.Get("/public/posts/feed/stream", s.handlePublicFeedStream)
@@ -138,6 +139,8 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c *s3client
 			r.Get("/public/federation/incoming", s.handlePublicFederatedIncomingByActor)
 			r.Get("/public/federation/incoming/{id}", s.handlePublicFederatedIncomingPost)
 			r.Get("/public/federation/incoming/{id}/thread", s.handlePublicFederatedIncomingThread)
+			r.Get("/public/federation/notes", s.handlePublicFederatedIncomingNotesByActor)
+			r.Get("/public/federation/notes/{id}", s.handlePublicFederatedIncomingNote)
 			r.Get("/link-preview", s.handleGetLinkPreview)
 			r.Get("/users/by-handle/{handle}", s.handlePublicProfileByHandle)
 			r.Get("/users/by-handle/{handle}/followers", s.handleUserFollowersByHandle)
@@ -244,6 +247,7 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c *s3client
 			r.Get("/posts/feed/stream", s.handleFeedStream)
 			r.Post("/posts/{postID}/unlock", s.handlePostUnlock)
 			r.Post("/federation/posts/{incomingID}/unlock", s.handleFederatedPostUnlock)
+			r.Post("/federation/notes/{incomingID}/unlock", s.handleFederatedNoteUnlock)
 			r.Post("/posts/{postID}/reactions", s.handleAddPostReaction)
 			r.Delete("/posts/{postID}/reactions/{emoji}", s.handleDeletePostReaction)
 			r.Post("/posts/{postID}/poll/vote", s.handlePollVote)
@@ -255,21 +259,24 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c *s3client
 			r.Post("/federation/posts/{incomingID}/bookmark", s.handleFederatedToggleBookmark)
 			r.Post("/federation/posts/{incomingID}/report", s.handleCreateFederatedIncomingPostReport)
 			r.Post("/federation/posts/{incomingID}/repost", s.handleFederatedToggleRepost)
+			r.Post("/federation/posts/{incomingID}/reactions", s.handleAddFederatedIncomingReaction)
+			r.Delete("/federation/posts/{incomingID}/reactions/{emoji}", s.handleDeleteFederatedIncomingReaction)
 			r.Post("/posts/{postID}/repost", s.handleToggleRepost)
 			r.Patch("/posts/{postID}", s.handlePatchPost)
 			r.Delete("/posts/{postID}", s.handleDeletePost)
 			r.Post("/posts", s.handleCreatePost)
 			r.Post("/users/by-handle/{handle}/follow", s.handleToggleFollow)
 			r.Patch("/me/profile", s.handlePatchMeProfile)
-			r.Patch("/me/patreon-note-paywall", s.handlePatchMePatreonNotePaywall)
-			r.Get("/patreon/member/authorize-url", s.handlePatreonMemberAuthorizeURL)
-			r.Get("/patreon/creator/authorize-url", s.handlePatreonCreatorAuthorizeURL)
-			r.Get("/patreon/creator/campaigns", s.handlePatreonCreatorCampaigns)
-			r.Get("/patreon/creator/tiers", s.handlePatreonCreatorTiers)
-			r.Post("/patreon/member/disconnect", s.handlePatreonMemberDisconnect)
-			r.Post("/patreon/creator/disconnect", s.handlePatreonCreatorDisconnect)
+			// Fanclub: Patreon (provider-specific endpoints)
+			r.Get("/fanclub/patreon/member/authorize-url", s.handleFanclubPatreonMemberAuthorizeURL)
+			r.Get("/fanclub/patreon/creator/authorize-url", s.handleFanclubPatreonCreatorAuthorizeURL)
+			r.Get("/fanclub/patreon/creator/campaigns", s.handleFanclubPatreonCreatorCampaigns)
+			r.Get("/fanclub/patreon/creator/tiers", s.handleFanclubPatreonCreatorTiers)
+			r.Post("/fanclub/patreon/member/disconnect", s.handleFanclubPatreonMemberDisconnect)
+			r.Post("/fanclub/patreon/creator/disconnect", s.handleFanclubPatreonCreatorDisconnect)
 			r.Post("/notes", s.handleNoteCreate)
 			r.Get("/notes/{noteID}", s.handleNoteGet)
+			r.Post("/notes/{noteID}/unlock", s.handleNoteUnlock)
 			r.Patch("/notes/{noteID}", s.handleNotePatch)
 			r.Delete("/notes/{noteID}", s.handleNoteDelete)
 		})
@@ -642,6 +649,13 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		"dm_call_allowed_user_ids": u.DMCallAllowedUserIDs,
 		"dm_invite_auto_accept":    u.DMInviteAutoAccept,
 	}
+	// Fanclub links (future-compatible map shape used by the web client).
+	out["fanclubs"] = map[string]any{
+		"patreon": map[string]any{
+			"member_linked":  u.PatreonMemberAccessToken != nil && strings.TrimSpace(*u.PatreonMemberAccessToken) != "",
+			"creator_linked": u.PatreonCreatorAccessToken != nil && strings.TrimSpace(*u.PatreonCreatorAccessToken) != "",
+		},
+	}
 	if u.AvatarObjectKey != nil && *u.AvatarObjectKey != "" {
 		out["avatar_url"] = s.glipzProtocolPublicMediaURL(*u.AvatarObjectKey)
 	} else {
@@ -652,7 +666,6 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	} else {
 		out["header_url"] = nil
 	}
-	out["patreon"] = mePatreonJSON(u)
 	out["is_site_admin"] = s.isSiteAdmin(uid)
 	writeJSON(w, http.StatusOK, out)
 }

@@ -531,6 +531,7 @@ func (s *Server) federatedIncomingToFeedItem(row repo.FederatedIncomingPost) fee
 		CreatedAt:              row.ReceivedAt.UTC().Format(time.RFC3339),
 		VisibleAt:              row.PublishedAt.UTC().Format(time.RFC3339),
 		Poll:                   buildFeedPoll(row.Poll),
+		Reactions:              feedReactionsJSON(row.Reactions),
 		ReplyCount:             0,
 		LikeCount:              row.LikeCount,
 		RepostCount:            row.RepostCount,

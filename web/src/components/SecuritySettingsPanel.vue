@@ -3,7 +3,7 @@ import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useSecuritySettingsContext } from "../composables/useSecuritySettings";
 import { enabledFanclubProviders } from "../fanclub/registry";
-import FanclubLinkPatreon from "./fanclub/FanclubLinkPatreon.vue";
+import { getFanclubLinkStatus } from "../fanclub/me";
 
 const { t } = useI18n();
 const {
@@ -28,10 +28,11 @@ const {
   disconnectCreator,
   enableWebPushNotifications,
   disableWebPushNotifications,
+  fanclubLinking,
 } = useSecuritySettingsContext();
 
 const providers = enabledFanclubProviders();
-const selectedProviderId = ref(providers[0]?.id ?? "patreon");
+const selectedProviderId = ref(providers[0]?.id ?? "");
 
 const webPushPermissionDisplay = computed(() =>
   webPushPermission.value === "unsupported"
@@ -43,6 +44,11 @@ const webPushSubscribedLabel = computed(() =>
   webPushBrowserSubscribed.value
     ? t("views.settings.security.webPush.subscribedOn")
     : t("views.settings.security.webPush.subscribedOff"),
+);
+
+const selectedProvider = computed(() => providers.find((p) => p.id === selectedProviderId.value) ?? null);
+const selectedLinkStatus = computed(() =>
+  selectedProvider.value ? getFanclubLinkStatus(me.value, selectedProvider.value.id) : null,
 );
 
 </script>
@@ -184,13 +190,13 @@ const webPushSubscribedLabel = computed(() =>
       </div>
     </section>
 
-    <section>
+    <section v-if="providers.length">
       <h2 class="text-xs font-semibold uppercase tracking-wide text-neutral-500">
-        {{ $t("views.settings.sections.fanclubLinks", $t("views.settings.sections.patreon")) }}
+        {{ $t("views.settings.sections.fanclubLinks") }}
       </h2>
 
       <div class="mt-3 space-y-3">
-        <div v-if="providers.length > 1" class="w-full max-w-sm">
+        <div class="w-full max-w-sm">
           <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-neutral-500">
             {{ $t("views.settings.security.fanclubs.providerLabel") }}
           </label>
@@ -204,16 +210,83 @@ const webPushSubscribedLabel = computed(() =>
           </select>
         </div>
 
-        <FanclubLinkPatreon
-          v-if="selectedProviderId === 'patreon'"
-          :me="me"
-          :loading="loading"
-          :on-connect-member="connectPatreonMember ?? (() => {})"
-          :on-connect-creator="connectPatreonCreator ?? (() => {})"
-          :on-disconnect-member="disconnectMember ?? (() => {})"
-          :on-disconnect-creator="disconnectCreator ?? (() => {})"
-        />
+        <div v-if="selectedProvider?.id === 'patreon'" class="space-y-3 rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
+          <p class="text-sm text-neutral-700">
+            {{ $t("views.settings.security.patreon.description") }}
+          </p>
 
+          <div class="grid gap-3 sm:grid-cols-2">
+            <div class="rounded-xl border border-neutral-200 bg-neutral-50 p-3">
+              <p class="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                {{ $t("views.settings.security.patreon.memberTitle") }}
+              </p>
+              <p class="mt-1 text-sm text-neutral-700">
+                {{
+                  selectedLinkStatus?.member_linked
+                    ? $t("views.settings.security.patreon.linked")
+                    : $t("views.settings.security.patreon.notLinked")
+                }}
+              </p>
+              <div class="mt-3 flex flex-wrap gap-2">
+                <button
+                  v-if="!selectedLinkStatus?.member_linked"
+                  type="button"
+                  class="rounded-md bg-lime-500 px-3 py-2 text-sm font-medium text-white hover:bg-lime-600 disabled:opacity-50"
+                  :disabled="fanclubLinking"
+                  @click="connectPatreonMember"
+                >
+                  {{ fanclubLinking ? $t("views.settings.security.patreon.connectBusy") : $t("views.settings.security.patreon.connect") }}
+                </button>
+                <button
+                  v-else
+                  type="button"
+                  class="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-800 hover:bg-neutral-50 disabled:opacity-50"
+                  :disabled="fanclubLinking"
+                  @click="disconnectMember"
+                >
+                  {{ fanclubLinking ? $t("views.settings.security.patreon.disconnectBusy") : $t("views.settings.security.patreon.disconnect") }}
+                </button>
+              </div>
+            </div>
+
+            <div class="rounded-xl border border-neutral-200 bg-neutral-50 p-3">
+              <p class="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                {{ $t("views.settings.security.patreon.creatorTitle") }}
+              </p>
+              <p class="mt-1 text-sm text-neutral-700">
+                {{
+                  selectedLinkStatus?.creator_linked
+                    ? $t("views.settings.security.patreon.linked")
+                    : $t("views.settings.security.patreon.notLinked")
+                }}
+              </p>
+              <div class="mt-3 flex flex-wrap gap-2">
+                <button
+                  v-if="!selectedLinkStatus?.creator_linked"
+                  type="button"
+                  class="rounded-md bg-lime-500 px-3 py-2 text-sm font-medium text-white hover:bg-lime-600 disabled:opacity-50"
+                  :disabled="fanclubLinking"
+                  @click="connectPatreonCreator"
+                >
+                  {{ fanclubLinking ? $t("views.settings.security.patreon.connectBusy") : $t("views.settings.security.patreon.connect") }}
+                </button>
+                <button
+                  v-else
+                  type="button"
+                  class="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-800 hover:bg-neutral-50 disabled:opacity-50"
+                  :disabled="fanclubLinking"
+                  @click="disconnectCreator"
+                >
+                  {{ fanclubLinking ? $t("views.settings.security.patreon.disconnectBusy") : $t("views.settings.security.patreon.disconnect") }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <p v-else class="text-sm text-neutral-600">
+          {{ $t("views.settings.security.fanclubs.noProviders") }}
+        </p>
       </div>
     </section>
 

@@ -29,7 +29,7 @@ func RunNotes(ctx context.Context, pool *pgxpool.Pool) error {
 	return runNotesExtras(ctx, pool)
 }
 
-// runNotesExtras adds visibility, draft, and paid-body columns plus Patreon-related user columns.
+// runNotesExtras adds visibility, draft, paid-body, and optional view-password fields.
 func runNotesExtras(ctx context.Context, pool *pgxpool.Pool) error {
 	var n int
 	err := pool.QueryRow(ctx, `
@@ -47,6 +47,8 @@ func runNotesExtras(ctx context.Context, pool *pgxpool.Pool) error {
 		`ALTER TABLE notes ADD COLUMN IF NOT EXISTS body_premium_md TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE notes ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'published'`,
 		`ALTER TABLE notes ADD COLUMN IF NOT EXISTS visibility TEXT NOT NULL DEFAULT 'public'`,
+		`ALTER TABLE notes ADD COLUMN IF NOT EXISTS view_password_hash TEXT`,
+		`ALTER TABLE notes ADD COLUMN IF NOT EXISTS view_password_hint TEXT`,
 		`ALTER TABLE notes ADD COLUMN IF NOT EXISTS patreon_required_reward_tier_id TEXT`,
 		`ALTER TABLE notes ADD COLUMN IF NOT EXISTS patreon_campaign_id TEXT`,
 		`DO $$ BEGIN

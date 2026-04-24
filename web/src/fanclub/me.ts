@@ -1,4 +1,4 @@
-import type { MeResp, PatreonMe } from "../composables/useSecuritySettings";
+import type { MeResp } from "../composables/useSecuritySettings";
 import type { FanclubLinkStatus, FanclubProviderID } from "./registry";
 
 type FanclubsMap = Record<string, FanclubLinkStatus>;
@@ -21,7 +21,7 @@ function asFanclubsMap(v: unknown): FanclubsMap | null {
 /**
  * Normalize fanclub link status from `/me`.
  *
- * Today: backend returns `me.patreon`.
+ * Future: backend may return `me.fanclubs[providerId]`.
  * Future: backend may return `me.fanclubs[providerId]`.
  */
 export function getFanclubLinkStatus(me: MeResp | null, providerId: FanclubProviderID): FanclubLinkStatus | null {
@@ -32,12 +32,6 @@ export function getFanclubLinkStatus(me: MeResp | null, providerId: FanclubProvi
   const fromFanclubs = maybeFanclubs?.[providerId];
   if (fromFanclubs) return fromFanclubs;
 
-  // Back-compat: Patreon-only field.
-  if (providerId === "patreon") {
-    const p = (me.patreon ?? null) as PatreonMe | null;
-    if (!p) return { member_linked: false, creator_linked: false };
-    return { member_linked: !!p.member_linked, creator_linked: !!p.creator_linked };
-  }
   return { member_linked: false, creator_linked: false };
 }
 

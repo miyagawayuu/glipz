@@ -181,7 +181,7 @@ function selectReaction(it: TimelinePost, emoji: string) {
 }
 
 function hasVisibleReactions(it: TimelinePost): boolean {
-  return !it.is_federated && Array.isArray(it.reactions) && it.reactions.length > 0;
+  return Array.isArray(it.reactions) && it.reactions.length > 0;
 }
 
 onMounted(() => {
@@ -1391,7 +1391,7 @@ async function submitUnlock(it: TimelinePost) {
               {{ formatActionCount(it.repost_count) }}
             </span>
           </button>
-          <div v-if="!it.is_federated" class="relative">
+          <div class="relative">
             <button
               type="button"
               class="group inline-flex min-w-0 items-center gap-1 rounded-full py-1.5 pl-1.5 pr-1 hover:bg-neutral-100 sm:pr-2"
@@ -1449,7 +1449,7 @@ async function submitUnlock(it: TimelinePost) {
                       </section>
                     </div>
                   </div>
-                  <div v-if="customReactionOptions.length || Object.keys(emojiCatalog).length">
+                  <div v-if="!it.is_federated && (customReactionOptions.length || Object.keys(emojiCatalog).length)">
                     <p class="px-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
                       {{ $t("components.postTimeline.reactionPickerCustom") }}
                     </p>

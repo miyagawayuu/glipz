@@ -22,7 +22,7 @@ type Config struct {
 	S3SecretKey      string
 	S3Bucket         string
 	S3UsePathStyle   bool
-	// Optional Patreon settings. OAuth and membership APIs stay disabled when unset.
+	// Optional Patreon settings (fanclub provider). OAuth and membership APIs stay disabled when unset.
 	PatreonClientID     string
 	PatreonClientSecret string
 	PatreonRedirectURI  string
@@ -43,6 +43,11 @@ type Config struct {
 	GlipzVersion string
 	// Optional short federation policy summary exposed in nodeinfo.metadata.
 	FederationPolicySummary string
+	// Comma-separated hosts allowed to request paid unlocks over federation (viewer_attests).
+	// When empty, paid unlock inbound rejects by default unless GlipzFederationPaidUnlockAllowAll is true.
+	GlipzFederationPaidUnlockTrustedInstances []string
+	// When true, paid unlock inbound accepts any instance (PoC only).
+	GlipzFederationPaidUnlockAllowAll bool
 	// Comma-separated site admin user IDs. Admin federation APIs stay unavailable when empty.
 	AdminUserIDs []uuid.UUID
 	// Time-to-live for email verification links.
@@ -144,6 +149,15 @@ func Load() (Config, error) {
 		c.GlipzVersion = "dev"
 	}
 	c.FederationPolicySummary = strings.TrimSpace(os.Getenv("FEDERATION_POLICY_SUMMARY"))
+	c.GlipzFederationPaidUnlockAllowAll = strings.EqualFold(strings.TrimSpace(os.Getenv("GLIPZ_FEDERATION_PAID_UNLOCK_ALLOW_ALL")), "true") ||
+		strings.TrimSpace(os.Getenv("GLIPZ_FEDERATION_PAID_UNLOCK_ALLOW_ALL")) == "1"
+	for _, part := range strings.Split(os.Getenv("GLIPZ_FEDERATION_PAID_UNLOCK_TRUSTED_INSTANCES"), ",") {
+		h := strings.TrimSpace(strings.ToLower(part))
+		if h == "" {
+			continue
+		}
+		c.GlipzFederationPaidUnlockTrustedInstances = append(c.GlipzFederationPaidUnlockTrustedInstances, h)
+	}
 	c.RegistrationVerifyTTL = 30 * time.Minute
 	if ttlRaw := strings.TrimSpace(os.Getenv("REGISTRATION_VERIFY_TTL")); ttlRaw != "" {
 		ttl, err := time.ParseDuration(ttlRaw)

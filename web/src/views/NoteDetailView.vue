@@ -24,6 +24,8 @@ type NotePayload = {
   user_avatar_url?: string;
   is_owner: boolean;
   premium_locked: boolean;
+  has_view_password?: boolean;
+  view_password_hint?: string | null;
 };
 
 const route = useRoute();
@@ -35,6 +37,8 @@ const err = ref("");
 const loading = ref(true);
 const htmlFree = ref("");
 const htmlPremium = ref("");
+const unlocking = ref(false);
+const password = ref("");
 
 const visibilityLabel = computed(() => {
   const n = note.value;
@@ -72,6 +76,37 @@ async function load() {
     note.value = null;
   } finally {
     loading.value = false;
+  }
+}
+
+async function unlockPremium() {
+  const token = getAccessToken();
+  if (!token) {
+    await router.replace("/login");
+    return;
+  }
+  const id = note.value?.id;
+  if (!id || unlocking.value) return;
+  const pw = password.value.trim();
+  if (!pw) {
+    err.value = t("views.noteDetail.passwordRequired");
+    return;
+  }
+  unlocking.value = true;
+  err.value = "";
+  try {
+    const res = await api<{ note: NotePayload }>(`/api/v1/notes/${encodeURIComponent(id)}/unlock`, {
+      method: "POST",
+      token,
+      json: { password: pw },
+    });
+    note.value = res.note;
+    htmlPremium.value = res.note.body_premium_md ? renderNoteMarkdown(res.note.body_premium_md) : "";
+    password.value = "";
+  } catch (e: unknown) {
+    err.value = e instanceof Error ? e.message : t("views.noteDetail.unlockFailed");
+  } finally {
+    unlocking.value = false;
   }
 }
 
@@ -158,13 +193,25 @@ watch(
         class="mt-8 rounded-xl border border-amber-200 bg-amber-50/80 px-4 py-5 text-sm text-amber-950"
       >
         <p class="font-semibold">{{ $t("views.noteDetail.premiumTitle") }}</p>
-        <p class="mt-2 text-xs leading-relaxed text-amber-900/95">
-          {{ $t("views.noteDetail.premiumHintBefore") }}
-          <RouterLink to="/settings" class="font-medium text-lime-800 underline hover:text-lime-900">{{
-            $t("views.noteDetail.premiumHintLink")
-          }}</RouterLink>
-          {{ $t("views.noteDetail.premiumHintAfter") }}
+        <p v-if="note.view_password_hint" class="mt-2 text-xs leading-relaxed text-amber-900/95">
+          {{ $t("views.noteDetail.passwordHint", { hint: note.view_password_hint }) }}
         </p>
+        <div class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+          <input
+            v-model="password"
+            type="password"
+            class="w-full flex-1 rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none ring-lime-400 focus:ring-2"
+            :placeholder="$t('views.noteDetail.passwordPlaceholder')"
+          />
+          <button
+            type="button"
+            class="w-full shrink-0 rounded-full bg-lime-600 px-4 py-2 text-sm font-semibold text-white hover:bg-lime-700 disabled:opacity-50 sm:w-auto"
+            :disabled="unlocking"
+            @click="unlockPremium"
+          >
+            {{ unlocking ? $t("views.noteDetail.unlockBusy") : $t("views.noteDetail.unlock") }}
+          </button>
+        </div>
       </div>
       <div
         v-else-if="htmlPremium"

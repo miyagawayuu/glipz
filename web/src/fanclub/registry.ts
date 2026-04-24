@@ -27,9 +27,9 @@ export type FanclubProvider = {
 export const fanclubProviderRegistry: FanclubProvider[] = [
   {
     id: "patreon",
-    labelKey: "views.settings.sections.patreon",
-    returnQueryKey: "patreon",
-    apiPrefix: "/api/v1/patreon",
+    labelKey: "fanclub.providers.patreon",
+    returnQueryKey: "fanclub",
+    apiPrefix: "/api/v1/fanclub/patreon",
     supportsMember: true,
     supportsCreator: true,
     enabled: true,

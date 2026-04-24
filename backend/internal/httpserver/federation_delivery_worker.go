@@ -159,6 +159,26 @@ func (s *Server) federationEventPostPayload(row repo.FederationPublicPostRow) fe
 	return out
 }
 
+func (s *Server) federationEventNotePayload(row repo.NoteWithAuthor) federationEventNote {
+	out := federationEventNote{
+		ID:          row.ID.String(),
+		URL:         s.localNoteURL(row.ID),
+		Title:       row.Title,
+		BodyMd:      row.BodyMd,
+		Visibility:  row.Visibility,
+		PublishedAt: row.CreatedAt.UTC().Format(time.RFC3339),
+		UpdatedAt:   row.UpdatedAt.UTC().Format(time.RFC3339),
+	}
+	if strings.TrimSpace(row.BodyPremiumMd) != "" {
+		out.HasPremium = true
+		// Fanclub provider implementations are currently removed. Keep the premium flag and unlock URL
+		// so the protocol shape remains stable for future providers.
+		out.PaywallProvider = ""
+		out.UnlockURL = s.localFederationNoteUnlockURL(row.ID)
+	}
+	return out
+}
+
 func (s *Server) enqueueFederationEvent(ctx context.Context, authorID uuid.UUID, kind string, row repo.FederationPublicPostRow) {
 	inboxes, err := s.db.ListFederationSubscriberInboxes(ctx, authorID)
 	if err != nil || len(inboxes) == 0 {
@@ -174,6 +194,24 @@ func (s *Server) enqueueFederationEvent(ctx context.Context, authorID uuid.UUID,
 		Kind:   kind,
 		Author: author,
 		Post:   &post,
+	})
+}
+
+func (s *Server) enqueueFederationNoteEvent(ctx context.Context, authorID uuid.UUID, kind string, row repo.NoteWithAuthor) {
+	inboxes, err := s.db.ListFederationSubscriberInboxes(ctx, authorID)
+	if err != nil || len(inboxes) == 0 {
+		return
+	}
+	author, err := s.federationAuthorPayload(ctx, authorID)
+	if err != nil {
+		return
+	}
+	note := s.federationEventNotePayload(row)
+	s.enqueueFederationPayload(ctx, authorID, row.ID, inboxes, federationEventEnvelope{
+		V:      federationEventSchemaVersion,
+		Kind:   kind,
+		Author: author,
+		Note:   &note,
 	})
 }
 
@@ -226,6 +264,39 @@ func (s *Server) deliverFederationDelete(ctx context.Context, authorID, postID u
 		},
 	}
 	s.enqueueFederationPayload(ctx, authorID, postID, inboxes, payload)
+}
+
+func (s *Server) deliverFederationNoteCreate(ctx context.Context, authorID, noteID uuid.UUID) {
+	row, err := s.db.NoteByID(ctx, noteID)
+	if err != nil {
+		return
+	}
+	s.enqueueFederationNoteEvent(ctx, authorID, "note_created", row)
+}
+
+func (s *Server) deliverFederationNoteUpdate(ctx context.Context, authorID uuid.UUID, row repo.NoteWithAuthor) {
+	s.enqueueFederationNoteEvent(ctx, authorID, "note_updated", row)
+}
+
+func (s *Server) deliverFederationNoteDelete(ctx context.Context, authorID, noteID uuid.UUID) {
+	inboxes, err := s.db.ListFederationSubscriberInboxes(ctx, authorID)
+	if err != nil || len(inboxes) == 0 {
+		return
+	}
+	author, err := s.federationAuthorPayload(ctx, authorID)
+	if err != nil {
+		return
+	}
+	payload := federationEventEnvelope{
+		V:      federationEventSchemaVersion,
+		Kind:   "note_deleted",
+		Author: author,
+		Note: &federationEventNote{
+			ID:  noteID.String(),
+			URL: s.localNoteURL(noteID),
+		},
+	}
+	s.enqueueFederationPayload(ctx, authorID, noteID, inboxes, payload)
 }
 
 func (s *Server) deliverFederationLikeEventToSubscribers(ctx context.Context, postAuthorID uuid.UUID, actor federationEventAuthor, postID uuid.UUID, likeCount int64, liked bool) {

@@ -134,12 +134,28 @@ type federationEventPoll struct {
 	SelectedPosition int                         `json:"selected_position,omitempty"`
 }
 
+type federationEventNote struct {
+	ID                          string `json:"id"`
+	URL                         string `json:"url"`
+	Title                       string `json:"title"`
+	BodyMd                      string `json:"body_md"`
+	Visibility                  string `json:"visibility"`
+	PublishedAt                 string `json:"published_at"`
+	UpdatedAt                   string `json:"updated_at,omitempty"`
+	HasPremium                  bool   `json:"has_premium,omitempty"`
+	PaywallProvider             string `json:"paywall_provider,omitempty"`
+	PatreonCampaignID           string `json:"patreon_campaign_id,omitempty"`
+	PatreonRequiredRewardTierID string `json:"patreon_required_reward_tier_id,omitempty"`
+	UnlockURL                   string `json:"unlock_url,omitempty"`
+}
+
 type federationEventEnvelope struct {
 	EventID string                `json:"event_id,omitempty"`
 	V       int                   `json:"v"`
 	Kind    string                `json:"kind"`
 	Author  federationEventAuthor `json:"author"`
 	Post    *federationEventPost  `json:"post,omitempty"`
+	Note    *federationEventNote  `json:"note,omitempty"`
 	Reaction *federationEventReaction `json:"reaction,omitempty"`
 	DM      *federationEventDM    `json:"dm,omitempty"`
 }
@@ -183,6 +199,16 @@ type federationUnlockRequest struct {
 	EventID    string `json:"event_id,omitempty"`
 	ViewerAcct string `json:"viewer_acct"`
 	Password   string `json:"password"`
+}
+
+type federationNoteUnlockRequest struct {
+	EventID    string `json:"event_id,omitempty"`
+	ViewerAcct string `json:"viewer_acct"`
+	Password   string `json:"password"`
+}
+
+type federationNoteUnlockResponse struct {
+	BodyPremiumMd string `json:"body_premium_md"`
 }
 
 func (s *Server) federationPublicOrigin() string {
@@ -272,9 +298,26 @@ func (s *Server) mountGlipzFederation(r chi.Router) {
 	r.Get("/federation/dm-keys/{handle}", s.handleFederationDMKeysByHandle)
 	r.Get("/federation/posts/{handle}", s.handleFederationPostsByHandle)
 	r.Post("/federation/posts/{postID}/unlock", s.handleFederationPostUnlockInbound)
+	r.Post("/federation/notes/{noteID}/unlock", s.handleFederationNoteUnlockInbound)
 	r.Post("/federation/follow", s.handleFederationFollowInbound)
 	r.Post("/federation/unfollow", s.handleFederationUnfollowInbound)
 	r.Post("/federation/events", s.handleFederationEventInbound)
+}
+
+func (s *Server) federationPaidUnlockTrusted(instanceHost string) bool {
+	if s.cfg.GlipzFederationPaidUnlockAllowAll {
+		return true
+	}
+	if len(s.cfg.GlipzFederationPaidUnlockTrustedInstances) == 0 {
+		return false
+	}
+	host := strings.TrimSpace(strings.ToLower(instanceHost))
+	for _, h := range s.cfg.GlipzFederationPaidUnlockTrustedInstances {
+		if strings.EqualFold(strings.TrimSpace(h), host) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) localFullAcct(handle string) string {
@@ -300,6 +343,18 @@ func (s *Server) localPostURL(postID uuid.UUID) string {
 		base = strings.TrimSuffix(s.federationPublicOrigin(), "/")
 	}
 	return base + "/posts/" + url.PathEscape(postID.String())
+}
+
+func (s *Server) localNoteURL(noteID uuid.UUID) string {
+	base := strings.TrimSuffix(s.cfg.FrontendOrigin, "/")
+	if base == "" {
+		base = strings.TrimSuffix(s.federationPublicOrigin(), "/")
+	}
+	return base + "/notes/" + url.PathEscape(noteID.String())
+}
+
+func (s *Server) localFederationNoteUnlockURL(noteID uuid.UUID) string {
+	return strings.TrimSuffix(s.federationPublicOrigin(), "/") + "/federation/notes/" + url.PathEscape(noteID.String()) + "/unlock"
 }
 
 func (s *Server) localFederationPostUnlockURL(postID uuid.UUID) string {
@@ -820,6 +875,72 @@ func (s *Server) handleFederationPostUnlockInbound(w http.ResponseWriter, r *htt
 	s.writeUnlockedPostJSON(w, row)
 }
 
+func (s *Server) handleFederationNoteUnlockInbound(w http.ResponseWriter, r *http.Request) {
+	if !s.federationConfigured(w) {
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_body"})
+		return
+	}
+	verified, err := s.verifyFederationRequest(r, body)
+	if err != nil {
+		if strings.Contains(err.Error(), "unsupported federation protocol") {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unsupported_protocol"})
+			return
+		}
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_signature"})
+		return
+	}
+	noteID, err := uuid.Parse(strings.TrimSpace(chi.URLParam(r, "noteID")))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_note_id"})
+		return
+	}
+	var req federationNoteUnlockRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_json"})
+		return
+	}
+	if _, err := s.validateFederationEventID(verified, req.EventID); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_event"})
+		return
+	}
+	if strings.TrimSpace(req.Password) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_password"})
+		return
+	}
+	row, err := s.db.NoteByID(r.Context(), noteID)
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+			return
+		}
+		writeServerError(w, "NoteByID federation note unlock", err)
+		return
+	}
+	if row.Status != "published" || row.Visibility == "private" {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+		return
+	}
+	premium := strings.TrimSpace(row.BodyPremiumMd)
+	if premium == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no_premium"})
+		return
+	}
+	if row.ViewPasswordHash == nil || strings.TrimSpace(*row.ViewPasswordHash) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no_password"})
+		return
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(*row.ViewPasswordHash), []byte(req.Password)); err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "wrong_password"})
+		return
+	}
+	_ = s.rememberFederationEventID(r.Context(), verified, req.EventID)
+	writeJSON(w, http.StatusOK, federationNoteUnlockResponse{BodyPremiumMd: row.BodyPremiumMd})
+}
+
 func (s *Server) handleFederationFollowInbound(w http.ResponseWriter, r *http.Request) {
 	if !s.federationConfigured(w) {
 		return
@@ -1015,26 +1136,43 @@ func (s *Server) handleFederationEventInbound(w http.ResponseWriter, r *http.Req
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 		return
 	}
-	if ev.Post == nil || (strings.TrimSpace(ev.Post.ID) == "" && strings.TrimSpace(ev.Post.URL) == "") {
+	hasPost := ev.Post != nil && (strings.TrimSpace(ev.Post.ID) != "" || strings.TrimSpace(ev.Post.URL) != "")
+	hasNote := ev.Note != nil && (strings.TrimSpace(ev.Note.ID) != "" || strings.TrimSpace(ev.Note.URL) != "")
+	if !hasPost && !hasNote {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_event"})
 		return
 	}
-	pubAt, err := time.Parse(time.RFC3339, strings.TrimSpace(ev.Post.PublishedAt))
-	if err != nil {
-		pubAt = time.Now().UTC()
-	}
-	objectID := strings.TrimSpace(ev.Post.URL)
-	if objectID == "" {
-		objectID = fmt.Sprintf("glipz://%s/posts/%s", strings.TrimSpace(ev.Author.Acct), strings.TrimSpace(ev.Post.ID))
+	pubAt := time.Now().UTC()
+	objectID := ""
+	if hasPost {
+		t, err := time.Parse(time.RFC3339, strings.TrimSpace(ev.Post.PublishedAt))
+		if err == nil {
+			pubAt = t
+		}
+		objectID = strings.TrimSpace(ev.Post.URL)
+		if objectID == "" {
+			objectID = fmt.Sprintf("glipz://%s/posts/%s", strings.TrimSpace(ev.Author.Acct), strings.TrimSpace(ev.Post.ID))
+		}
+	} else {
+		t, err := time.Parse(time.RFC3339, strings.TrimSpace(ev.Note.PublishedAt))
+		if err == nil {
+			pubAt = t
+		}
+		objectID = strings.TrimSpace(ev.Note.URL)
+		if objectID == "" {
+			objectID = fmt.Sprintf("glipz://%s/notes/%s", strings.TrimSpace(ev.Author.Acct), strings.TrimSpace(ev.Note.ID))
+		}
 	}
 	var localPostID uuid.UUID
 	hasLocalPost := false
-	if postID := strings.TrimSpace(ev.Post.ID); postID != "" {
+	if hasPost {
+		if postID := strings.TrimSpace(ev.Post.ID); postID != "" {
 		if parsed, err := uuid.Parse(postID); err == nil {
 			if ok, err := s.db.PostExists(r.Context(), parsed); err == nil && ok {
 				localPostID = parsed
 				hasLocalPost = true
 			}
+		}
 		}
 	}
 	if !hasLocalPost {
@@ -1053,9 +1191,16 @@ func (s *Server) handleFederationEventInbound(w http.ResponseWriter, r *http.Req
 			}
 		}
 	}
-	pollSnapshot := federationPollSnapshotFromEvent(ev.Post.Poll)
+	var pollSnapshot *repo.FederatedIncomingPollSnapshot
+	if hasPost {
+		pollSnapshot = federationPollSnapshotFromEvent(ev.Post.Poll)
+	}
 	switch kind {
 	case "post_created", "repost_created":
+		if !hasPost {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_event"})
+			return
+		}
 		in := repo.InsertFederatedIncomingInput{
 			ObjectIRI:              objectID,
 			CreateActivityIRI:      kind,
@@ -1088,6 +1233,10 @@ func (s *Server) handleFederationEventInbound(w http.ResponseWriter, r *http.Req
 		}
 		s.publishFederatedIncomingUpsertByObjectIRI(r.Context(), objectID)
 	case "post_updated":
+		if !hasPost {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_event"})
+			return
+		}
 		if err := s.db.UpdateFederatedIncomingFromNote(
 			r.Context(),
 			objectID,
@@ -1126,7 +1275,46 @@ func (s *Server) handleFederationEventInbound(w http.ResponseWriter, r *http.Req
 		if row.ID != uuid.Nil {
 			s.publishFederatedIncomingDelete(r.Context(), row)
 		}
+	case "note_created", "note_updated":
+		if !hasNote {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_event"})
+			return
+		}
+		updatedAt := pubAt
+		if t, err := time.Parse(time.RFC3339, strings.TrimSpace(ev.Note.UpdatedAt)); err == nil {
+			updatedAt = t
+		}
+		if err := s.db.UpsertFederatedIncomingNote(r.Context(), repo.UpsertFederatedIncomingNoteInput{
+			ObjectIRI:                   objectID,
+			ActorIRI:                    ev.Author.Acct,
+			ActorAcct:                   ev.Author.Acct,
+			ActorName:                   ev.Author.DisplayName,
+			ActorIconURL:                ev.Author.AvatarURL,
+			ActorProfileURL:             ev.Author.ProfileURL,
+			Title:                       ev.Note.Title,
+			BodyMd:                      ev.Note.BodyMd,
+			Visibility:                  ev.Note.Visibility,
+			PublishedAt:                 pubAt,
+			UpdatedAt:                   updatedAt,
+			HasPremium:                  ev.Note.HasPremium,
+			PaywallProvider:             ev.Note.PaywallProvider,
+			PatreonCampaignID:           ev.Note.PatreonCampaignID,
+			PatreonRequiredRewardTierID: ev.Note.PatreonRequiredRewardTierID,
+			UnlockURL:                   ev.Note.UnlockURL,
+		}); err != nil {
+			writeServerError(w, "UpsertFederatedIncomingNote", err)
+			return
+		}
+	case "note_deleted":
+		if err := s.db.SoftDeleteFederatedIncomingNoteByObjectIRI(r.Context(), objectID); err != nil {
+			writeServerError(w, "SoftDeleteFederatedIncomingNoteByObjectIRI", err)
+			return
+		}
 	case "post_liked", "post_unliked":
+		if !hasPost {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_event"})
+			return
+		}
 		liked := kind == "post_liked"
 		if hasLocalPost {
 			blocked, errBl := s.db.PostAuthorHasFederationBlock(r.Context(), localPostID, ev.Author.Acct)
@@ -1166,6 +1354,10 @@ func (s *Server) handleFederationEventInbound(w http.ResponseWriter, r *http.Req
 		}
 		s.publishFederatedIncomingUpsertByObjectIRI(r.Context(), objectID)
 	case "post_reaction_added", "post_reaction_removed":
+		if !hasPost {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_event"})
+			return
+		}
 		if ev.Reaction == nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_event"})
 			return
@@ -1211,6 +1403,10 @@ func (s *Server) handleFederationEventInbound(w http.ResponseWriter, r *http.Req
 		// For now, federated incoming posts only sync like_count.
 		// Reaction aggregation for federated incoming posts can be added later.
 	case "poll_voted":
+		if !hasPost {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_event"})
+			return
+		}
 		selectedPosition := 0
 		if ev.Post.Poll != nil {
 			selectedPosition = ev.Post.Poll.SelectedPosition
@@ -1258,6 +1454,10 @@ func (s *Server) handleFederationEventInbound(w http.ResponseWriter, r *http.Req
 			}
 		}
 	case "poll_tally_updated":
+		if !hasPost {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_event"})
+			return
+		}
 		if err := s.db.SetFederatedIncomingLikeCountByObjectIRI(r.Context(), objectID, ev.Post.LikeCount); err != nil {
 			writeServerError(w, "SetFederatedIncomingLikeCountByObjectIRI", err)
 			return
