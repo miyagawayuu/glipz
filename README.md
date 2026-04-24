@@ -195,6 +195,62 @@ curl -H "Authorization: Bearer $TOKEN" \
   https://your-instance.com/api/v1/posts/feed/home
 ```
 
+### Example: Unlock (password / membership entitlement)
+
+Glipz supports "Unlock" for protected content:
+
+- **Password unlock**: viewer enters a password.
+- **Membership unlock (federation)**: viewer requests a short-lived, verifiable `entitlement_jwt` (JWS) from the origin instance and uses it to unlock.
+
+#### Local post unlock (password)
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  https://your-instance.com/api/v1/posts/$POST_ID/unlock \
+  -d '{"password":"your-password"}'
+```
+
+#### Federated incoming post unlock (membership, one-click)
+
+If a federated incoming post is membership-locked, the web app can unlock it without a password.
+Under the hood, the viewer instance does:
+
+1. `POST {unlock_url_without_suffix}/entitlement` (federation-signed) to obtain `entitlement_jwt`
+2. `POST unlock_url` with `entitlement_jwt`
+
+From a client, you can simply call the viewer-instance API:
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  https://your-viewer-instance.com/api/v1/federation/posts/$INCOMING_ID/unlock \
+  -d '{}'
+```
+
+#### (PoC) Issue an entitlement JWT as site admin
+
+For debugging/PoC you can mint `entitlement_jwt` on the origin instance as a site admin:
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  https://your-origin-instance.com/api/v1/admin/federation/entitlements \
+  -d '{"post_id":"'"$POST_ID"'","viewer_acct":"alice@viewer.example"}'
+```
+
+To allow paid/membership entitlement issuance over federation, configure either:
+
+```env
+GLIPZ_FEDERATION_PAID_UNLOCK_ALLOW_ALL=true
+```
+
+or a trusted allowlist:
+
+```env
+GLIPZ_FEDERATION_PAID_UNLOCK_TRUSTED_INSTANCES=viewer.example,viewer2.example
+```
+
 ---
 
 ## Configuration
