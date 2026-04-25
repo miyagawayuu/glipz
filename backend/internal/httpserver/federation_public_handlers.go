@@ -87,6 +87,8 @@ func (s *Server) handlePublicFederatedIncomingStream(w http.ResponseWriter, r *h
 	ch := redisFederatedIncomingActorChannel(resolved.ActorID)
 	pubsub := s.rdb.Subscribe(ctx, ch)
 	defer func() { _ = pubsub.Close() }()
+	trackSSEOpen("federated_incoming_actor")
+	defer trackSSEClose("federated_incoming_actor")
 
 	if _, err := fmt.Fprintf(w, ": connected\n\n"); err != nil {
 		return
@@ -141,6 +143,8 @@ func (s *Server) handlePublicRemoteProfile(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, st, map[string]string{"error": ResolveFailureAPIError(err)})
 		return
 	}
+	disp.IconURL = s.federationRemoteMediaURL(disp.IconURL)
+	disp.HeaderURL = s.federationRemoteMediaURL(disp.HeaderURL)
 	writeJSON(w, http.StatusOK, disp)
 }
 
@@ -194,10 +198,10 @@ func (s *Server) handlePublicRemoteActorPosts(w http.ResponseWriter, r *http.Req
 			UserEmail:       "fed+" + resolved.Acct,
 			UserHandle:      resolved.Acct,
 			UserDisplayName: resolved.Name,
-			UserAvatarURL:   resolved.IconURL,
+			UserAvatarURL:   s.federationRemoteMediaURL(resolved.IconURL),
 			Caption:         row.Caption,
 			MediaType:       row.MediaType,
-			MediaURLs:       append([]string(nil), row.MediaURLs...),
+			MediaURLs:       s.federationRemoteMediaURLs(row.MediaURLs),
 			IsNSFW:          row.IsNSFW,
 			CreatedAt:       row.PublishedAt,
 			VisibleAt:       row.PublishedAt,

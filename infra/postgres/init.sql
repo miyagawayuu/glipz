@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS posts (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     visible_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     feed_broadcast_done BOOLEAN NOT NULL DEFAULT TRUE,
+    group_id UUID,
     CONSTRAINT posts_media_object_keys CHECK (
         (media_type = 'none' AND cardinality(object_keys) = 0)
         OR (media_type = 'image' AND cardinality(object_keys) BETWEEN 1 AND 4)
@@ -63,6 +64,16 @@ CREATE INDEX IF NOT EXISTS idx_posts_user_id ON posts (user_id);
 CREATE INDEX IF NOT EXISTS idx_posts_reply_to ON posts (reply_to_id) WHERE reply_to_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_posts_visible_at ON posts (visible_at DESC);
 CREATE INDEX IF NOT EXISTS idx_posts_user_visible_at ON posts (user_id, visible_at DESC);
+CREATE INDEX IF NOT EXISTS idx_posts_feed_visible_top
+    ON posts (visible_at DESC, id DESC)
+    WHERE reply_to_id IS NULL
+      AND COALESCE(btrim(reply_to_remote_object_iri), '') = ''
+      AND group_id IS NULL;
+CREATE INDEX IF NOT EXISTS idx_posts_user_feed_visible_top
+    ON posts (user_id, visible_at DESC, id DESC)
+    WHERE reply_to_id IS NULL
+      AND COALESCE(btrim(reply_to_remote_object_iri), '') = ''
+      AND group_id IS NULL;
 
 CREATE TABLE IF NOT EXISTS hashtags (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -155,6 +166,7 @@ CREATE TABLE IF NOT EXISTS post_reposts (
 );
 CREATE INDEX IF NOT EXISTS idx_post_reposts_post_id ON post_reposts (post_id);
 CREATE INDEX IF NOT EXISTS idx_post_reposts_created_at ON post_reposts (created_at);
+CREATE INDEX IF NOT EXISTS idx_post_reposts_created_desc ON post_reposts (created_at DESC, user_id, post_id);
 CREATE INDEX IF NOT EXISTS idx_post_reposts_user_created_at ON post_reposts (user_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS user_follows (
@@ -216,6 +228,9 @@ CREATE TABLE IF NOT EXISTS federation_remote_follows (
     UNIQUE (local_user_id, remote_actor_id)
 );
 CREATE INDEX IF NOT EXISTS idx_federation_remote_follows_local ON federation_remote_follows (local_user_id);
+CREATE INDEX IF NOT EXISTS idx_federation_remote_follows_actor_accepted
+    ON federation_remote_follows (remote_actor_id, local_user_id)
+    WHERE state = 'accepted';
 
 CREATE TABLE IF NOT EXISTS notes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

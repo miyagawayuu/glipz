@@ -75,6 +75,8 @@ func RunSocial(ctx context.Context, pool *pgxpool.Pool) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_post_reposts_post_id ON post_reposts (post_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_post_reposts_created_at ON post_reposts (created_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_post_reposts_created_desc
+			ON post_reposts (created_at DESC, user_id, post_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_post_reposts_user_created_at ON post_reposts (user_id, created_at DESC)`,
 	}
 	for i, q := range steps {

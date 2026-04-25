@@ -145,7 +145,7 @@ func (p *Pool) RecommendedCandidatePostIDs(ctx context.Context, viewerID uuid.UU
 			  AND p.visible_at <= NOW()
 			  AND p.visible_at >= $3
 			  AND p.group_id IS NULL
-			  AND ` + postReadableByViewerSQL("p", "$1") + `
+			  AND `+postReadableByViewerSQL("p", "$1")+`
 		),
 		popular_posts AS (
 			SELECT p.id
@@ -174,7 +174,7 @@ func (p *Pool) RecommendedCandidatePostIDs(ctx context.Context, viewerID uuid.UU
 			  AND p.visible_at <= NOW()
 			  AND p.visible_at >= $4
 			  AND p.group_id IS NULL
-			  AND ` + postReadableByViewerSQL("p", "$1") + `
+			  AND `+postReadableByViewerSQL("p", "$1")+`
 			ORDER BY (COALESCE(lk.like_count,0) + 2*COALESCE(rp.repost_count,0) + 2*COALESCE(rpl.reply_count,0)) DESC,
 					 p.visible_at DESC,
 					 p.id DESC
@@ -234,7 +234,7 @@ func (p *Pool) PostRowsByIDsForViewer(ctx context.Context, viewerID uuid.UUID, i
 		LEFT JOIN (
 			SELECT reply_to_id AS post_id, COUNT(*)::bigint AS reply_count
 			FROM posts
-			WHERE reply_to_id IS NOT NULL
+			WHERE reply_to_id = ANY($2::uuid[])
 			GROUP BY reply_to_id
 		) rpl ON rpl.post_id = p.id
 		LEFT JOIN (
@@ -242,16 +242,17 @@ func (p *Pool) PostRowsByIDsForViewer(ctx context.Context, viewerID uuid.UUID, i
 			FROM federation_incoming_posts
 			WHERE deleted_at IS NULL
 			  AND COALESCE(btrim(reply_to_object_iri), '') ~ '/posts/[0-9a-fA-F-]{36}$'
+			  AND substring(reply_to_object_iri FROM '/posts/([0-9a-fA-F-]{36})$')::uuid = ANY($2::uuid[])
 			GROUP BY 1
 		) frpl ON frpl.post_id = p.id
 		LEFT JOIN (
-			SELECT post_id, COUNT(*)::bigint AS like_count FROM post_likes GROUP BY post_id
+			SELECT post_id, COUNT(*)::bigint AS like_count FROM post_likes WHERE post_id = ANY($2::uuid[]) GROUP BY post_id
 		) lk ON lk.post_id = p.id
 		LEFT JOIN (
-			SELECT post_id, COUNT(*)::bigint AS like_count FROM post_remote_likes GROUP BY post_id
+			SELECT post_id, COUNT(*)::bigint AS like_count FROM post_remote_likes WHERE post_id = ANY($2::uuid[]) GROUP BY post_id
 		) rlk ON rlk.post_id = p.id
 		LEFT JOIN (
-			SELECT post_id, COUNT(*)::bigint AS repost_count FROM post_reposts GROUP BY post_id
+			SELECT post_id, COUNT(*)::bigint AS repost_count FROM post_reposts WHERE post_id = ANY($2::uuid[]) GROUP BY post_id
 		) rp ON rp.post_id = p.id
 		WHERE p.id = ANY($2::uuid[])
 		  AND p.user_id <> $1
@@ -295,4 +296,3 @@ func (p *Pool) PostRowsByIDsForViewer(ctx context.Context, viewerID uuid.UUID, i
 	}
 	return out, nil
 }
-

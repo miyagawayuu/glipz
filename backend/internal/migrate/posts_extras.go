@@ -75,6 +75,16 @@ func RunPostsExtras(ctx context.Context, pool *pgxpool.Pool) error {
 		`CREATE INDEX IF NOT EXISTS idx_post_poll_votes_option ON post_poll_votes(option_id)`,
 
 		`ALTER TABLE posts ADD COLUMN IF NOT EXISTS group_id UUID`,
+		`CREATE INDEX IF NOT EXISTS idx_posts_feed_visible_top
+			ON posts (visible_at DESC, id DESC)
+			WHERE reply_to_id IS NULL
+			  AND COALESCE(btrim(reply_to_remote_object_iri), '') = ''
+			  AND group_id IS NULL`,
+		`CREATE INDEX IF NOT EXISTS idx_posts_user_feed_visible_top
+			ON posts (user_id, visible_at DESC, id DESC)
+			WHERE reply_to_id IS NULL
+			  AND COALESCE(btrim(reply_to_remote_object_iri), '') = ''
+			  AND group_id IS NULL`,
 	}
 
 	for i, q := range steps {

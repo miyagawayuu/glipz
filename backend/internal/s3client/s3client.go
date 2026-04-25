@@ -15,6 +15,20 @@ import (
 	"github.com/aws/smithy-go"
 )
 
+var (
+	ErrNotFound           = errors.New("object not found")
+	ErrInvalidRange       = errors.New("invalid range")
+	ErrPresignUnsupported = errors.New("presigned uploads are not supported")
+)
+
+type Store interface {
+	PutObject(ctx context.Context, objectKey, contentType string, body io.Reader, size int64) error
+	PresignPut(ctx context.Context, objectKey, contentType string, ttl time.Duration) (string, error)
+	HeadObject(ctx context.Context, objectKey string) (ObjectMeta, error)
+	GetObject(ctx context.Context, objectKey, byteRange string) (*ObjectReader, error)
+	PublicURL(objectKey string) string
+}
+
 type Client struct {
 	internal           *s3.Client // Used for server-side writes to S3_ENDPOINT, for example http://minio:9000.
 	presign            *s3.PresignClient
@@ -159,6 +173,9 @@ func (c *Client) PublicURL(objectKey string) string {
 }
 
 func IsNotFound(err error) bool {
+	if errors.Is(err, ErrNotFound) {
+		return true
+	}
 	var apiErr smithy.APIError
 	if !errors.As(err, &apiErr) {
 		return false
@@ -172,6 +189,9 @@ func IsNotFound(err error) bool {
 }
 
 func IsInvalidRange(err error) bool {
+	if errors.Is(err, ErrInvalidRange) {
+		return true
+	}
 	var apiErr smithy.APIError
 	if !errors.As(err, &apiErr) {
 		return false

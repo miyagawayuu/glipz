@@ -137,6 +137,8 @@ const fedComposerText = ref("");
 const fedSendBusy = ref(false);
 const fedPendingFiles = ref<File[]>([]);
 const fedFileInput = ref<HTMLInputElement | null>(null);
+let threadListInFlight: Promise<void> | null = null;
+let threadRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 
 function triggerFedFilePicker() {
   fedFileInput.value?.click();
@@ -317,7 +319,28 @@ async function loadIdentity() {
 }
 
 async function loadThreadsOnly() {
-  threads.value = await listDMThreads();
+  if (threadListInFlight) return threadListInFlight;
+  threadListInFlight = (async () => {
+    threads.value = await listDMThreads();
+  })();
+  try {
+    await threadListInFlight;
+  } finally {
+    threadListInFlight = null;
+  }
+}
+
+function scheduleThreadListRefresh(delayMs = 1000) {
+  if (threadRefreshTimer) clearTimeout(threadRefreshTimer);
+  threadRefreshTimer = setTimeout(() => {
+    threadRefreshTimer = null;
+    if (!identityUnlocked.value) return;
+    if (threadId.value) {
+      void loadActiveThreadAndMessages();
+    } else {
+      void loadThreadsOnly();
+    }
+  }, delayMs);
 }
 
 async function resolveThreadFromQuery() {
@@ -1131,11 +1154,7 @@ watch(
 
 watch(unreadDMCount, () => {
   if (!identityUnlocked.value) return;
-  if (threadId.value) {
-    void loadActiveThreadAndMessages();
-  } else {
-    void loadThreadsOnly();
-  }
+  scheduleThreadListRefresh();
 });
 
 watch(dmReceivedTick, () => {
@@ -1166,6 +1185,10 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   outgoingCallTone.stop();
+  if (threadRefreshTimer) {
+    clearTimeout(threadRefreshTimer);
+    threadRefreshTimer = null;
+  }
   desktopMediaQuery?.removeEventListener("change", syncDesktopLayout);
   desktopMediaQuery = null;
   void disconnectCall();

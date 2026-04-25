@@ -113,7 +113,7 @@ func (p *Pool) InsertFederatedIncomingPost(ctx context.Context, in InsertFederat
 			membership_provider, membership_creator_id, membership_tier_id
 		) VALUES ($1, NULLIF(trim($2), ''), $3, $4, $5, NULLIF(trim($6), ''), NULLIF(trim($7), ''),
 			$8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20::jsonb, NULLIF(trim($21), ''),
-			NULLIF(trim($22), ''), NULLIF(trim($23), ''), NULLIF(trim($24), ''))
+			COALESCE(NULLIF(trim($22), ''), ''), COALESCE(NULLIF(trim($23), ''), ''), COALESCE(NULLIF(trim($24), ''), ''))
 		ON CONFLICT (object_iri) DO NOTHING
 		RETURNING id
 	`, strings.TrimSpace(in.ObjectIRI), strings.TrimSpace(in.CreateActivityIRI),
@@ -551,9 +551,9 @@ func (p *Pool) UpdateFederatedIncomingFromNote(ctx context.Context, objectIRI, c
 			view_password_scope = $12,
 			view_password_text_ranges = $13::jsonb,
 			unlock_url = NULLIF(trim($14), ''),
-			membership_provider = NULLIF(trim($15), ''),
-			membership_creator_id = NULLIF(trim($16), ''),
-			membership_tier_id = NULLIF(trim($17), '')
+			membership_provider = COALESCE(NULLIF(trim($15), ''), ''),
+			membership_creator_id = COALESCE(NULLIF(trim($16), ''), ''),
+			membership_tier_id = COALESCE(NULLIF(trim($17), ''), '')
 		WHERE deleted_at IS NULL AND object_iri = $1
 		RETURNING id
 	`, oi, truncateRunes(caption, 10000), mt, mediaURLs, isNSFW, publishedAt.UTC(), maxInt64(likeCount, 0),

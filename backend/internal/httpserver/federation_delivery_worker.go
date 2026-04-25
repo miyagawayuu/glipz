@@ -14,7 +14,6 @@ import (
 
 const (
 	federationOutboxMaxAttempts = 10
-	federationOutboxWorkerTick  = 8 * time.Second
 )
 
 func federationOutboxBackoff(attempt int) time.Duration {
@@ -41,7 +40,11 @@ func (s *Server) startFederationDeliveryWorker() {
 }
 
 func (s *Server) federationDeliveryWorkerLoop() {
-	t := time.NewTicker(federationOutboxWorkerTick)
+	tick := time.Duration(s.cfg.FederationDeliveryTickSeconds) * time.Second
+	if tick <= 0 {
+		tick = 8 * time.Second
+	}
+	t := time.NewTicker(tick)
 	defer t.Stop()
 	for range t.C {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
@@ -51,36 +54,77 @@ func (s *Server) federationDeliveryWorkerLoop() {
 }
 
 func (s *Server) processFederationOutboxBatch(ctx context.Context) {
-	rows, err := s.db.ClaimFederationDeliveries(ctx, 25)
+	start := time.Now()
+	rows, err := s.db.ClaimFederationDeliveries(ctx, s.cfg.FederationDeliveryBatchSize)
+	observeOperation("db.ClaimFederationDeliveries", start, err)
 	if err != nil {
 		log.Printf("federation outbox claim: %v", err)
 		return
 	}
+	if len(rows) == 0 {
+		return
+	}
+	workers := s.cfg.FederationDeliveryConcurrency
+	if workers <= 1 {
+		for _, row := range rows {
+			s.deliverOneFederationOutboxRow(ctx, row)
+		}
+		return
+	}
+	jobs := make(chan repo.FederationDeliveryRow)
+	done := make(chan struct{}, workers)
+	for i := 0; i < workers; i++ {
+		go func() {
+			defer func() { done <- struct{}{} }()
+			for row := range jobs {
+				s.deliverOneFederationOutboxRow(ctx, row)
+			}
+		}()
+	}
 	for _, row := range rows {
-		s.deliverOneFederationOutboxRow(ctx, row)
+		select {
+		case <-ctx.Done():
+			close(jobs)
+			for i := 0; i < workers; i++ {
+				<-done
+			}
+			return
+		case jobs <- row:
+		}
+	}
+	close(jobs)
+	for i := 0; i < workers; i++ {
+		<-done
 	}
 }
 
 func (s *Server) deliverOneFederationOutboxRow(ctx context.Context, row repo.FederationDeliveryRow) {
+	start := time.Now()
 	if h, err := federationHostFromInboxURL(row.InboxURL); err == nil {
 		blocked, errB := s.db.IsFederationDomainBlocked(ctx, h)
 		if errB == nil && blocked {
 			_ = s.db.FailFederationDelivery(ctx, row.ID, row.AttemptCount+1, "domain blocked", time.Now().UTC(), true)
+			observeFederationDelivery("blocked", time.Since(start))
 			return
 		}
 	}
 	var payload any
 	if err := json.Unmarshal(row.Payload, &payload); err != nil {
 		s.failFederationOutboxRow(ctx, row, err)
+		observeFederationDelivery("failed", time.Since(start))
 		return
 	}
 	if err := s.signedFederationPOST(ctx, row.InboxURL, payload); err != nil {
 		s.failFederationOutboxRow(ctx, row, err)
+		observeFederationDelivery("failed", time.Since(start))
 		return
 	}
 	if err := s.db.CompleteFederationDelivery(ctx, row.ID); err != nil {
 		log.Printf("federation outbox complete %s: %v", row.ID, err)
+		observeFederationDelivery("complete_record_failed", time.Since(start))
+		return
 	}
+	observeFederationDelivery("completed", time.Since(start))
 }
 
 func (s *Server) failFederationOutboxRow(ctx context.Context, row repo.FederationDeliveryRow, err error) {

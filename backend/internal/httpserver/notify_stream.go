@@ -61,6 +61,8 @@ func (s *Server) handleNotifyStream(w http.ResponseWriter, r *http.Request) {
 	chName := redisNotifyUserChannel(uid)
 	pubsub := s.rdb.Subscribe(ctx, chName)
 	defer func() { _ = pubsub.Close() }()
+	trackSSEOpen("notify")
+	defer trackSSEClose("notify")
 
 	if _, err := fmt.Fprintf(w, ": connected\n\n"); err != nil {
 		return
@@ -197,13 +199,32 @@ func (s *Server) handleListNotifications(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_kind"})
 		return
 	}
-	items, err := s.db.ListNotifications(r.Context(), uid, 50, kind)
+	cacheKey := uid.String() + "|" + kind
+	v, hit, err := s.notifyCache.getOrLoad(time.Now(), cacheKey, 3*time.Second, func() (any, error) {
+		start := time.Now()
+		items, err := s.db.ListNotifications(r.Context(), uid, 50, kind)
+		observeOperation("db.ListNotifications", start, err)
+		if err != nil {
+			return nil, err
+		}
+		s.enrichNotificationListItems(items)
+		return json.Marshal(map[string]any{"items": items})
+	})
+	if hit {
+		operationTotal.Add("cache.notifications.hit", 1)
+	} else {
+		operationTotal.Add("cache.notifications.miss", 1)
+	}
 	if err != nil {
 		writeServerError(w, "ListNotifications", err)
 		return
 	}
-	s.enrichNotificationListItems(items)
-	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+	payload, ok := v.([]byte)
+	if !ok {
+		writeServerError(w, "notifications cache type", fmt.Errorf("unexpected notifications cache value"))
+		return
+	}
+	writeJSONBytes(w, http.StatusOK, payload)
 }
 
 func (s *Server) handleNotificationUnreadCount(w http.ResponseWriter, r *http.Request) {

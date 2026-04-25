@@ -144,6 +144,12 @@ func (s *Server) handleFeedStream(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	pubsub := s.rdb.Subscribe(ctx, channels...)
 	defer func() { _ = pubsub.Close() }()
+	streamName := "feed_global"
+	if scope == "following" {
+		streamName = "feed_following"
+	}
+	trackSSEOpen(streamName)
+	defer trackSSEClose(streamName)
 
 	if _, err := fmt.Fprintf(w, ": connected\n\n"); err != nil {
 		return
@@ -193,6 +199,8 @@ func (s *Server) handlePublicFeedStream(w http.ResponseWriter, r *http.Request) 
 	ctx := r.Context()
 	pubsub := s.rdb.Subscribe(ctx, redisFeedGlobal)
 	defer func() { _ = pubsub.Close() }()
+	trackSSEOpen("feed_public")
+	defer trackSSEClose("feed_public")
 
 	if _, err := fmt.Fprintf(w, ": connected\n\n"); err != nil {
 		return

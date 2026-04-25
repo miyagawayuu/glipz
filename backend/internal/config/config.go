@@ -15,6 +15,8 @@ type Config struct {
 	DatabaseURL      string
 	RedisURL         string
 	JWTSecret        string
+	StorageMode      string
+	LocalStoragePath string
 	S3Endpoint       string
 	S3PublicEndpoint string
 	S3Region         string
@@ -42,19 +44,19 @@ type Config struct {
 	// Comma-separated site admin user IDs. Admin federation APIs stay unavailable when empty.
 	AdminUserIDs []uuid.UUID
 	// Time-to-live for email verification links.
-	RegistrationVerifyTTL  time.Duration
-	MailgunDomain          string
-	MailgunAPIKey          string
-	MailgunAPIBase         string
-	MailFromEmail          string
-	MailFromName           string
+	RegistrationVerifyTTL time.Duration
+	MailgunDomain         string
+	MailgunAPIKey         string
+	MailgunAPIBase        string
+	MailFromEmail         string
+	MailFromName          string
 	// TURN (coturn shared-secret / time-limited credentials).
 	// When set, DM calls can use TURN.
-	TurnHost         string
-	TurnPort         int
-	TurnsPort        int
-	TurnSharedSecret string
-	TurnTTLSeconds   int
+	TurnHost               string
+	TurnPort               int
+	TurnsPort              int
+	TurnSharedSecret       string
+	TurnTTLSeconds         int
 	WebPushVAPIDPublicKey  string
 	WebPushVAPIDPrivateKey string
 	WebPushVAPIDSubject    string
@@ -63,6 +65,26 @@ type Config struct {
 	PatreonClientSecret string
 	// Optional override. Default: {GLIPZ_PROTOCOL_PUBLIC_ORIGIN}/api/v1/fanclub/patreon/callback
 	PatreonRedirectURI string
+	// PayPal (payment). Optional. When PayPalClientID is empty, PayPal payment routes are unavailable.
+	PayPalClientID     string
+	PayPalClientSecret string
+	PayPalWebhookID    string
+	// "sandbox" (default) or "live"
+	PayPalEnv string
+	// Optional lightweight expvar metrics endpoint at /debug/vars.
+	MetricsEnabled bool
+	// Optional per-request access logs. Slow requests are still logged by metrics middleware when disabled.
+	AccessLogEnabled bool
+	// Optional slow request logging threshold in milliseconds. Zero disables slow request logs.
+	SlowRequestLogMs int
+	// Number of feed items returned by authenticated feed endpoints.
+	FeedPageSize int
+	// "proxy" (default) keeps serving local media through the API; "direct" redirects to S3/CDN public URLs.
+	MediaProxyMode string
+	// Federation delivery worker tuning.
+	FederationDeliveryBatchSize   int
+	FederationDeliveryConcurrency int
+	FederationDeliveryTickSeconds int
 }
 
 func Load() (Config, error) {
@@ -71,6 +93,8 @@ func Load() (Config, error) {
 		DatabaseURL:      os.Getenv("DATABASE_URL"),
 		RedisURL:         os.Getenv("REDIS_URL"),
 		JWTSecret:        os.Getenv("JWT_SECRET"),
+		StorageMode:      strings.ToLower(strings.TrimSpace(getEnv("GLIPZ_STORAGE_MODE", "s3"))),
+		LocalStoragePath: strings.TrimSpace(getEnv("GLIPZ_LOCAL_STORAGE_PATH", "data/media")),
 		S3Endpoint:       os.Getenv("S3_ENDPOINT"),
 		S3PublicEndpoint: os.Getenv("S3_PUBLIC_ENDPOINT"),
 		S3Region:         getEnv("S3_REGION", "us-east-1"),
@@ -87,14 +111,18 @@ func Load() (Config, error) {
 	if c.JWTSecret == "" || len(c.JWTSecret) < 16 {
 		return c, fmt.Errorf("JWT_SECRET must be set and at least 16 characters")
 	}
-	if c.S3Endpoint == "" || c.S3AccessKey == "" || c.S3SecretKey == "" || c.S3Bucket == "" {
+	if c.StorageMode != "local" {
+		c.StorageMode = "s3"
+	}
+	if c.StorageMode == "s3" && (c.S3Endpoint == "" || c.S3AccessKey == "" || c.S3SecretKey == "" || c.S3Bucket == "") {
 		return c, fmt.Errorf("S3_ENDPOINT, S3_ACCESS_KEY, S3_SECRET_KEY, S3_BUCKET are required")
 	}
 	if c.S3PublicEndpoint == "" {
 		c.S3PublicEndpoint = c.S3Endpoint
 	}
 	c.S3UsePathStyle = strings.EqualFold(os.Getenv("S3_USE_PATH_STYLE"), "true") ||
-		strings.HasPrefix(c.S3Endpoint, "http://minio")
+		strings.HasPrefix(c.S3Endpoint, "http://minio") ||
+		strings.Contains(strings.ToLower(c.S3Endpoint), ".r2.cloudflarestorage.com")
 	if v := os.Getenv("S3_USE_PATH_STYLE"); v != "" {
 		c.S3UsePathStyle, _ = strconv.ParseBool(v)
 	}
@@ -186,6 +214,24 @@ func Load() (Config, error) {
 	c.PatreonClientID = strings.TrimSpace(os.Getenv("PATREON_CLIENT_ID"))
 	c.PatreonClientSecret = strings.TrimSpace(os.Getenv("PATREON_CLIENT_SECRET"))
 	c.PatreonRedirectURI = strings.TrimSpace(os.Getenv("PATREON_REDIRECT_URI"))
+	c.PayPalClientID = strings.TrimSpace(os.Getenv("PAYPAL_CLIENT_ID"))
+	c.PayPalClientSecret = strings.TrimSpace(os.Getenv("PAYPAL_CLIENT_SECRET"))
+	c.PayPalWebhookID = strings.TrimSpace(os.Getenv("PAYPAL_WEBHOOK_ID"))
+	c.PayPalEnv = strings.ToLower(strings.TrimSpace(getEnv("PAYPAL_ENV", "sandbox")))
+	c.MetricsEnabled, _ = strconv.ParseBool(getEnv("GLIPZ_METRICS_ENABLED", "false"))
+	c.AccessLogEnabled, _ = strconv.ParseBool(getEnv("GLIPZ_ACCESS_LOG_ENABLED", "false"))
+	c.SlowRequestLogMs = positiveIntEnv("GLIPZ_SLOW_REQUEST_LOG_MS", 0, 0, 600000)
+	c.FeedPageSize = positiveIntEnv("GLIPZ_FEED_PAGE_SIZE", 30, 10, 100)
+	c.MediaProxyMode = strings.ToLower(strings.TrimSpace(getEnv("GLIPZ_MEDIA_PROXY_MODE", "proxy")))
+	if c.MediaProxyMode != "direct" {
+		c.MediaProxyMode = "proxy"
+	}
+	if c.StorageMode == "local" && c.MediaProxyMode == "direct" && c.GlipzProtocolMediaPublicBase == "" {
+		c.MediaProxyMode = "proxy"
+	}
+	c.FederationDeliveryBatchSize = positiveIntEnv("GLIPZ_FEDERATION_DELIVERY_BATCH_SIZE", 25, 1, 200)
+	c.FederationDeliveryConcurrency = positiveIntEnv("GLIPZ_FEDERATION_DELIVERY_CONCURRENCY", 1, 1, 32)
+	c.FederationDeliveryTickSeconds = positiveIntEnv("GLIPZ_FEDERATION_DELIVERY_TICK_SECONDS", 8, 1, 300)
 	for _, part := range strings.Split(os.Getenv("GLIPZ_ADMIN_USER_IDS"), ",") {
 		p := strings.TrimSpace(part)
 		if p == "" {
@@ -209,6 +255,18 @@ func getEnv(key, def string) string {
 		return v
 	}
 	return def
+}
+
+func positiveIntEnv(key string, def, min, max int) int {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return def
+	}
+	v, err := strconv.Atoi(raw)
+	if err != nil || v < min || v > max {
+		return def
+	}
+	return v
 }
 
 // parseCommaOrigins splits values such as "https://a.example, https://b.example".

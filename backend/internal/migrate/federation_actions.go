@@ -55,6 +55,14 @@ func RunFederationActions(ctx context.Context, pool *pgxpool.Pool) error {
 		`ALTER TABLE federation_incoming_posts ADD COLUMN IF NOT EXISTS view_password_scope INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE federation_incoming_posts ADD COLUMN IF NOT EXISTS view_password_text_ranges JSONB NOT NULL DEFAULT '[]'::jsonb`,
 		`ALTER TABLE federation_incoming_posts ADD COLUMN IF NOT EXISTS unlock_url TEXT`,
+		`CREATE INDEX IF NOT EXISTS idx_federation_incoming_top_level_list
+			ON federation_incoming_posts (published_at DESC, id DESC)
+			WHERE deleted_at IS NULL
+			  AND COALESCE(btrim(reply_to_object_iri), '') = ''`,
+		`CREATE INDEX IF NOT EXISTS idx_federation_incoming_recipient_top_level
+			ON federation_incoming_posts (recipient_user_id, published_at DESC, id DESC)
+			WHERE deleted_at IS NULL
+			  AND COALESCE(btrim(reply_to_object_iri), '') = ''`,
 		`CREATE TABLE IF NOT EXISTS federation_incoming_post_likes (
 			federation_incoming_post_id UUID NOT NULL REFERENCES federation_incoming_posts (id) ON DELETE CASCADE,
 			user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"expvar"
 	"fmt"
 	"io"
 	"log"
@@ -27,19 +28,24 @@ import (
 
 	"glipz.io/backend/internal/authjwt"
 	"glipz.io/backend/internal/config"
+	"glipz.io/backend/internal/payment/kernel"
 	"glipz.io/backend/internal/repo"
 	"glipz.io/backend/internal/s3client"
 )
 
 type Server struct {
-	cfg    config.Config
-	db     *repo.Pool
-	rdb    *redis.Client
-	s3     *s3client.Client
-	secret []byte
+	cfg             config.Config
+	db              *repo.Pool
+	rdb             *redis.Client
+	s3              s3client.Store
+	secret          []byte
+	publicFeedCache feedCache
+	userFeedCache   responseCache
+	notifyCache     responseCache
+	dmThreadsCache  responseCache
 }
 
-func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c *s3client.Client) http.Handler {
+func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c s3client.Store) http.Handler {
 	s := &Server{
 		cfg:    cfg,
 		db:     repo.New(pool),
@@ -48,7 +54,11 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c *s3client
 		secret: []byte(cfg.JWTSecret),
 	}
 	r := chi.NewRouter()
-	r.Use(middleware.RequestID, middleware.RealIP, middleware.Logger, middleware.Recoverer)
+	r.Use(middleware.RequestID, middleware.RealIP)
+	if cfg.AccessLogEnabled {
+		r.Use(middleware.Logger)
+	}
+	r.Use(middleware.Recoverer, observeRequests(time.Duration(cfg.SlowRequestLogMs)*time.Millisecond))
 	allowedOrigins := []string{"http://localhost:5173", "http://127.0.0.1:5173"}
 	for _, capOrigin := range []string{
 		"capacitor://localhost",
@@ -111,6 +121,9 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c *s3client
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
+	if cfg.MetricsEnabled {
+		r.Get("/debug/vars", expvar.Handler().ServeHTTP)
+	}
 
 	s.mountGlipzFederation(r)
 	s.startFederationDeliveryWorker()
@@ -131,6 +144,8 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c *s3client
 		r.Get("/public/federation/custom-emoji", s.handlePublicFederationCustomEmojiResolve)
 		r.Get("/media/object/*", s.handlePublicMediaObject)
 		r.Head("/media/object/*", s.handlePublicMediaObject)
+		r.Get("/media/remote", s.handlePublicRemoteMediaProxy)
+		r.Head("/media/remote", s.handlePublicRemoteMediaProxy)
 		r.Get("/fanclub/patreon/callback", s.handlePatreonCallback)
 
 		// Optional login: attach the viewer context when a valid token is present, otherwise keep the request anonymous.
@@ -182,6 +197,10 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c *s3client
 			r.Post("/fanclub/patreon/entitlement-federated", s.handlePatreonEntitlementFederated)
 			r.Get("/fanclub/patreon/campaigns", s.handlePatreonCampaigns)
 			r.Post("/fanclub/gumroad/entitlement", s.handleGumroadEntitlement)
+			r.Get("/payment/paypal/plans", s.handlePayPalListPlans)
+			r.Post("/payment/paypal/plans", s.handlePayPalUpsertPlan)
+			r.Post("/payment/paypal/subscription/create", s.handlePayPalSubscriptionCreate)
+			r.Post("/payment/paypal/entitlement", s.handlePayPalEntitlement)
 			r.Get("/me", s.handleMe)
 			r.Get("/me/custom-emojis", s.handleMeListCustomEmojis)
 			r.Post("/me/custom-emojis", s.handleMeCreateCustomEmoji)
@@ -272,6 +291,10 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c *s3client
 			r.Post("/users/by-handle/{handle}/follow", s.handleToggleFollow)
 			r.Patch("/me/profile", s.handlePatchMeProfile)
 		})
+
+		// PayPal webhook + return endpoints are unauthenticated.
+		r.Post("/payment/paypal/webhook", s.handlePayPalWebhook)
+		r.Get("/payment/paypal/subscription/return", s.handlePayPalSubscriptionReturn)
 	})
 	s.mountStaticSPAFallback(r)
 	go s.runFeedBroadcastScheduler(context.Background())
@@ -372,6 +395,12 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+func writeJSONBytes(w http.ResponseWriter, status int, b []byte) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_, _ = w.Write(b)
 }
 
 func isPGUniqueViolation(err error) bool {
@@ -763,6 +792,10 @@ func (s *Server) handlePresign(w http.ResponseWriter, r *http.Request) {
 	objectKey := "uploads/" + uid.String() + "/" + uuid.NewString() + ext
 	url, err := s.s3.PresignPut(r.Context(), objectKey, req.ContentType, 15*time.Minute)
 	if err != nil {
+		if errors.Is(err, s3client.ErrPresignUnsupported) {
+			writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "presigned_upload_unsupported"})
+			return
+		}
 		writeServerError(w, "presign", err)
 		return
 	}
@@ -877,6 +910,11 @@ type createPostMembership struct {
 	TierID    string `json:"tier_id"`
 }
 
+type createPostPayment struct {
+	Provider string `json:"provider"`
+	PlanID   string `json:"plan_id"`
+}
+
 type createPostReq struct {
 	Caption                string                      `json:"caption"`
 	MediaType              string                      `json:"media_type"`
@@ -893,12 +931,18 @@ type createPostReq struct {
 	VisibleAt              string                      `json:"visible_at"`
 	Poll                   *createPostPollReq          `json:"poll"`
 	Membership             *createPostMembership       `json:"membership,omitempty"`
+	Payment                *createPostPayment          `json:"payment,omitempty"`
 }
 
 type patchPostMembership struct {
 	Provider  string `json:"provider"`
 	CreatorID string `json:"creator_id"`
 	TierID    string `json:"tier_id"`
+}
+
+type patchPostPayment struct {
+	Provider string `json:"provider"`
+	PlanID   string `json:"plan_id"`
 }
 
 type patchPostReq struct {
@@ -911,6 +955,8 @@ type patchPostReq struct {
 	ViewPasswordTextRanges []viewPasswordTextRangeJSON `json:"view_password_text_ranges"`
 	Membership             *patchPostMembership        `json:"membership,omitempty"`
 	ClearMembership        bool                        `json:"clear_membership"`
+	Payment                *patchPostPayment           `json:"payment,omitempty"`
+	ClearPayment           bool                        `json:"clear_payment"`
 }
 
 func normalizeObjectKeys(req createPostReq) []string {
@@ -1152,7 +1198,31 @@ func (s *Server) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	id, err := s.db.CreatePost(r.Context(), uid, req.Caption, mt, keys, replyTo, replyToRemoteObjectIRI, req.IsNSFW, visibility, viewHash, viewScope, viewRanges, visibleAt, pollIn, mProv, mCre, mTier)
+	pProv, pCre, pPlan := "", "", ""
+	if req.Payment != nil {
+		prov := strings.ToLower(strings.TrimSpace(req.Payment.Provider))
+		planID := strings.TrimSpace(req.Payment.PlanID)
+		if prov != "" {
+			if planID == "" {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_payment"})
+				return
+			}
+			// Phase 1: only PayPal subscriptions.
+			if prov != "paypal" {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_payment"})
+				return
+			}
+			if mProv != "" {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_payment"})
+				return
+			}
+			pProv = prov
+			pCre = uid.String()
+			pPlan = planID
+		}
+	}
+
+	id, err := s.db.CreatePost(r.Context(), uid, req.Caption, mt, keys, replyTo, replyToRemoteObjectIRI, req.IsNSFW, visibility, viewHash, viewScope, viewRanges, visibleAt, pollIn, mProv, mCre, mTier, pProv, pCre, pPlan)
 	if err != nil {
 		if errors.Is(err, repo.ErrNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "reply_target_not_found"})
@@ -1320,6 +1390,10 @@ type feedItem struct {
 	MembershipProvider     string                      `json:"membership_provider,omitempty"`
 	MembershipCreatorID    string                      `json:"membership_creator_id,omitempty"`
 	MembershipTierID       string                      `json:"membership_tier_id,omitempty"`
+	HasPaymentLock         bool                        `json:"has_payment_lock,omitempty"`
+	PaymentProvider        string                      `json:"payment_provider,omitempty"`
+	PaymentCreatorID       string                      `json:"payment_creator_id,omitempty"`
+	PaymentPlanID          string                      `json:"payment_plan_id,omitempty"`
 	ViewPasswordScope      int                         `json:"view_password_scope"`
 	ViewPasswordTextRanges []viewPasswordTextRangeJSON `json:"view_password_text_ranges"`
 	ContentLocked          bool                        `json:"content_locked"`
@@ -1442,7 +1516,7 @@ func (s *Server) postRowToFeedItem(ctx context.Context, row repo.PostRow, viewer
 		}
 	}
 	if !unlocked {
-		if row.HasMembershipLock {
+		if row.HasMembershipLock || row.HasPaymentLock {
 			caption = ""
 			keys = []string{}
 			textLocked = true
@@ -1476,7 +1550,7 @@ func (s *Server) postRowToFeedItem(ctx context.Context, row repo.PostRow, viewer
 	}
 	pollJSON := buildFeedPoll(row.Poll)
 	if !unlocked {
-		if row.HasMembershipLock {
+		if row.HasMembershipLock || row.HasPaymentLock {
 			pollJSON = nil
 		} else if row.HasViewPassword && scope == repo.ViewPasswordScopeAll {
 			pollJSON = nil
@@ -1485,10 +1559,16 @@ func (s *Server) postRowToFeedItem(ctx context.Context, row repo.PostRow, viewer
 	memProvider := row.MembershipProvider
 	memCreator := row.MembershipCreatorID
 	memTier := row.MembershipTierID
+	payProvider := row.PaymentProvider
+	payCreator := row.PaymentCreatorID
+	payPlan := row.PaymentPlanID
 	if viewer != row.UserID {
 		memProvider = ""
 		memCreator = ""
 		memTier = ""
+		payProvider = ""
+		payCreator = ""
+		payPlan = ""
 	}
 	return feedItem{
 		ID:                     row.ID.String(),
@@ -1507,6 +1587,10 @@ func (s *Server) postRowToFeedItem(ctx context.Context, row repo.PostRow, viewer
 		MembershipProvider:     memProvider,
 		MembershipCreatorID:    memCreator,
 		MembershipTierID:       memTier,
+		HasPaymentLock:         row.HasPaymentLock,
+		PaymentProvider:        payProvider,
+		PaymentCreatorID:       payCreator,
+		PaymentPlanID:          payPlan,
 		ViewPasswordScope:      scope,
 		ViewPasswordTextRanges: repoRangesToJSON(row.ViewPasswordTextRanges),
 		ContentLocked:          contentLocked,
@@ -1757,50 +1841,88 @@ func (s *Server) handleFeed(w http.ResponseWriter, r *http.Request) {
 		s.handleRecommendedFeed(w, r, uid)
 		return
 	}
+	cacheKey := uid.String() + "|" + scope
+	v, hit, err := s.userFeedCache.getOrLoad(time.Now(), cacheKey, 5*time.Second, func() (any, error) {
+		items, err := s.feedItemsForViewer(r.Context(), uid, scope)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(map[string]any{"items": items})
+	})
+	if hit {
+		operationTotal.Add("cache.user_feed.hit", 1)
+	} else {
+		operationTotal.Add("cache.user_feed.miss", 1)
+	}
+	if err != nil {
+		writeServerError(w, "feedItemsForViewer", err)
+		return
+	}
+	payload, ok := v.([]byte)
+	if !ok {
+		writeServerError(w, "feed cache type", fmt.Errorf("unexpected feed cache value"))
+		return
+	}
+	writeJSONBytes(w, http.StatusOK, payload)
+}
+
+func (s *Server) feedItemsForViewer(ctx context.Context, uid uuid.UUID, scope string) ([]feedItem, error) {
+	limit := s.cfg.FeedPageSize
+	if limit <= 0 {
+		limit = 30
+	}
 	var posts []repo.PostRow
 	var err error
 	if scope == "following" {
-		posts, err = s.db.ListFeedFollowing(r.Context(), uid, 50)
+		start := time.Now()
+		posts, err = s.db.ListFeedFollowing(ctx, uid, limit)
+		observeOperation("db.ListFeedFollowing", start, err)
 	} else {
-		posts, err = s.db.ListFeed(r.Context(), uid, 50)
+		start := time.Now()
+		posts, err = s.db.ListFeed(ctx, uid, limit)
+		observeOperation("db.ListFeed", start, err)
 	}
 	if err != nil {
-		writeServerError(w, "ListFeed", err)
-		return
+		return nil, fmt.Errorf("ListFeed: %w", err)
 	}
 	var reposts []repo.RepostFeedEntry
 	if scope == "following" {
-		reposts, err = s.db.ListRecentRepostsFollowing(r.Context(), uid, 50)
+		start := time.Now()
+		reposts, err = s.db.ListRecentRepostsFollowing(ctx, uid, limit)
+		observeOperation("db.ListRecentRepostsFollowing", start, err)
 	} else {
-		reposts, err = s.db.ListRecentRepostsAll(r.Context(), uid, 50)
+		start := time.Now()
+		reposts, err = s.db.ListRecentRepostsAll(ctx, uid, limit)
+		observeOperation("db.ListRecentRepostsAll", start, err)
 	}
 	if err != nil {
-		writeServerError(w, "ListRecentReposts", err)
-		return
+		return nil, fmt.Errorf("ListRecentReposts: %w", err)
 	}
-	cells := mergePostsAndReposts(posts, reposts, 50)
-	items, err := s.encodeTimelineCells(r.Context(), cells, uid)
+	cells := mergePostsAndReposts(posts, reposts, limit)
+	items, err := s.encodeTimelineCells(ctx, cells, uid)
 	if err != nil {
-		writeServerError(w, "encodeTimelineCells", err)
-		return
+		return nil, fmt.Errorf("encodeTimelineCells: %w", err)
 	}
 	var remoteRows []repo.FederatedIncomingPost
 	var errR error
 	if scope == "following" {
-		remoteRows, errR = s.db.ListFederatedIncomingForRemoteFollows(r.Context(), uid, 50)
+		start := time.Now()
+		remoteRows, errR = s.db.ListFederatedIncomingForRemoteFollows(ctx, uid, limit)
+		observeOperation("db.ListFederatedIncomingForRemoteFollows", start, errR)
 	} else {
-		remoteRows, errR = s.db.ListFederatedIncomingForViewer(r.Context(), uid, 50, nil, nil)
+		start := time.Now()
+		remoteRows, errR = s.db.ListFederatedIncomingForViewer(ctx, uid, limit, nil, nil)
+		observeOperation("db.ListFederatedIncomingForViewer", start, errR)
 	}
 	if errR != nil {
-		writeServerError(w, "ListFederatedIncoming", errR)
-		return
+		return nil, fmt.Errorf("ListFederatedIncoming: %w", errR)
 	}
 	fedItems := make([]feedItem, 0, len(remoteRows))
 	for _, row := range remoteRows {
 		fedItems = append(fedItems, s.federatedIncomingToFeedItem(row))
 	}
-	items = mergeFeedItemsByVisibleAt(items, fedItems, 50)
-	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+	items = mergeFeedItemsByVisibleAt(items, fedItems, limit)
+	return items, nil
 }
 
 func (s *Server) handleBookmarks(w http.ResponseWriter, r *http.Request) {
@@ -1837,7 +1959,16 @@ func (s *Server) handleBookmarks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePublicFeed(w http.ResponseWriter, r *http.Request) {
+	now := time.Now()
+	if items, ok := s.publicFeedCache.get(now); ok {
+		operationTotal.Add("cache.public_feed.hit", 1)
+		writeJSON(w, http.StatusOK, map[string]any{"items": items})
+		return
+	}
+	operationTotal.Add("cache.public_feed.miss", 1)
+	start := time.Now()
 	rows, err := s.db.ListFeed(r.Context(), uuid.Nil, 30)
+	observeOperation("db.ListFeedPublic", start, err)
 	if err != nil {
 		writeServerError(w, "ListFeed public", err)
 		return
@@ -1847,6 +1978,7 @@ func (s *Server) handlePublicFeed(w http.ResponseWriter, r *http.Request) {
 		writeServerError(w, "encodeFeedRows public", err)
 		return
 	}
+	s.publicFeedCache.set(now, 5*time.Second, items)
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
@@ -1955,7 +2087,8 @@ func (s *Server) handlePostUnlock(w http.ResponseWriter, r *http.Request) {
 	}
 	hasPW := row.ViewPasswordHash != nil && strings.TrimSpace(*row.ViewPasswordHash) != ""
 	hasMem := row.HasMembershipLock
-	if !hasPW && !hasMem {
+	hasPay := row.HasPaymentLock
+	if !hasPW && !hasMem && !hasPay {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "not_protected"})
 		return
 	}
@@ -1971,12 +2104,49 @@ func (s *Server) handlePostUnlock(w http.ResponseWriter, r *http.Request) {
 	viewerAcct := s.localFullAcct(u.Handle)
 	pass := strings.TrimSpace(req.Password)
 	ent := strings.TrimSpace(req.EntitlementJWT)
+	if hasMem && hasPay {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_unlock"})
+		return
+	}
 	if hasMem {
 		if ent == "" {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_unlock"})
 			return
 		}
 		if err := s.verifyFederationEntitlementJWT(r.Context(), ent, viewerAcct, row, postID); err != nil {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_entitlement"})
+			return
+		}
+		if hasPW {
+			if pass == "" {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no_password"})
+				return
+			}
+			if err := bcrypt.CompareHashAndPassword([]byte(*row.ViewPasswordHash), []byte(pass)); err != nil {
+				writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "wrong_password"})
+				return
+			}
+		}
+	} else if hasPay {
+		if ent == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_unlock"})
+			return
+		}
+		claims, err := kernel.ParseEntitlement(s.secret, ent)
+		if err != nil {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_entitlement"})
+			return
+		}
+		if strings.TrimSpace(claims.Provider) != strings.TrimSpace(row.PaymentProvider) {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_entitlement"})
+			return
+		}
+		if strings.TrimSpace(claims.Subject) != uid.String() {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_entitlement"})
+			return
+		}
+		wantScope := "post:" + postID.String() + ":unlock"
+		if strings.TrimSpace(claims.Scope) != wantScope {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_entitlement"})
 			return
 		}
@@ -2087,6 +2257,10 @@ func (s *Server) handlePatchPost(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "membership_conflict"})
 		return
 	}
+	if req.ClearPayment && req.Payment != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "payment_conflict"})
+		return
+	}
 	var memUpdate *repo.PostMembershipUpdate
 	if req.ClearMembership {
 		memUpdate = &repo.PostMembershipUpdate{}
@@ -2106,6 +2280,29 @@ func (s *Server) handlePatchPost(w http.ResponseWriter, r *http.Request) {
 			newPW = nil
 		}
 	}
+	var payUpdate *repo.PostPaymentUpdate
+	if req.ClearPayment {
+		payUpdate = &repo.PostPaymentUpdate{}
+	} else if req.Payment != nil {
+		prov := strings.ToLower(strings.TrimSpace(req.Payment.Provider))
+		planID := strings.TrimSpace(req.Payment.PlanID)
+		if prov != "" {
+			if prov != "paypal" || planID == "" {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_payment"})
+				return
+			}
+			payUpdate = &repo.PostPaymentUpdate{
+				Provider:  prov,
+				CreatorID: uid.String(),
+				PlanID:    planID,
+			}
+			// payment lock is mutually exclusive with membership lock.
+			if memUpdate != nil && strings.TrimSpace(memUpdate.Provider) != "" {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_payment"})
+				return
+			}
+		}
+	}
 	if newPW != nil && memUpdate != nil {
 		np := strings.TrimSpace(*newPW)
 		if np != "" {
@@ -2115,7 +2312,7 @@ func (s *Server) handlePatchPost(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	err = s.db.UpdatePost(r.Context(), uid, postID, req.Caption, req.IsNSFW, req.Visibility, req.ClearViewPassword, newPW, req.ViewPasswordScope, viewRanges, memUpdate)
+	err = s.db.UpdatePost(r.Context(), uid, postID, req.Caption, req.IsNSFW, req.Visibility, req.ClearViewPassword, newPW, req.ViewPasswordScope, viewRanges, memUpdate, payUpdate)
 	if err != nil {
 		if errors.Is(err, repo.ErrForbidden) {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})

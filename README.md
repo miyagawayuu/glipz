@@ -1,7 +1,7 @@
 # Glipz
 
 <p align="center">
-  <strong>A modern, self-hosted social platform & federation protocol</strong><br>
+  <strong>A modern social platform for independent communities & federation protocol</strong><br>
   <em>Built for communities that value privacy, control, and secure data synchronization</em>
 </p>
 
@@ -9,7 +9,7 @@
 
 ## What is Glipz?
 
-Glipz is a **self-hosted social platform** and a **high-performance federation protocol** (glipz-federation/2). 
+Glipz is a **social platform for independently operated communities** and a **high-performance federation protocol** (glipz-federation/2). 
 
 Unlike generic protocols, Glipz is designed for speed, security (Ed25519), and optional gated post media (Unlock). It serves as both a full-featured social network and a reference implementation for the Glipz Federation Protocol.
 
@@ -24,7 +24,7 @@ This repository contains the official Go implementation of the Glipz Federation 
 - **Community builders** who want a private, customizable social space
 - **Creators** who want optional password- or membership-protected media on posts (Unlock; **Patreon** OAuth or **Gumroad** product license)
 - **Developers** who need a flexible API for building custom frontends
-- **Self-hosters** who prefer running their own infrastructure
+- **Independent operators** who want to run their own instance or managed infrastructure
 
 ---
 
@@ -35,7 +35,7 @@ This repository contains the official Go implementation of the Glipz Federation 
 | Feature | Description |
 |---------|-------------|
 | **Timelines** | Home, local, and federated timelines |
-| **Posts** | Text, media, polls, scheduled publishing; optional view password or Patreon / Gumroad membership gate on media |
+| **Posts** | Text, media, polls, scheduled publishing; optional view password, Patreon / Gumroad membership gate, or PayPal subscription paywall on media |
 | **Replies & Threads** | Full threaded conversations |
 | **Reposts** | Share posts with optional commentary |
 | **Reactions** | Emoji reactions on posts |
@@ -64,7 +64,7 @@ This repository contains the official Go implementation of the Glipz Federation 
 
 ### Media
 
-- S3-compatible storage (Wasabi, MinIO, AWS S3, etc.)
+- Media storage in a local server folder or S3-compatible storage (Cloudflare R2, Wasabi, MinIO, AWS S3, etc.)
 - Backend media proxy for privacy
 - Post attachments: images (up to four per post), single video, or single audio; web UI uses custom video/audio players (theme-aware)
 
@@ -74,6 +74,12 @@ This repository contains the official Go implementation of the Glipz Federation 
 - **Gumroad:** lock a post to a [Gumroad](https://gumroad.com) product by ID; viewers unlock by entering a valid license key. The server verifies keys against [Gumroad’s license API](https://gumroad.com/api#licenses)—no `GUMROAD_*` secrets are required in `.env` (see comments in [.env.example](.env.example)).
 - **Federation:** remote instances cannot mint `entitlement_jwt` for Patreon- or Gumroad-locked posts (returns `501` with `federation_membership_entitlement_unsupported`); unlock those memberships on the **origin** instance or with password-based unlock when applicable.
 - Other membership platforms (e.g. SubscribeStar, Ko-fi, Fansly, Ci-en, pixiv FANBOX, Fantia) are not integrated: most lack a stable, third-party–safe API to verify a viewer’s subscription in real time, or are unsuitable for server-side checks under Glipz’s model.
+
+### Payments (PayPal subscriptions; optional)
+
+- Glipz also supports **user-to-user (non-custodial) paywalls** under `internal/payment/…`.
+- **PayPal (subscriptions):** creators register a PayPal `plan_id` (created on PayPal) and can lock posts behind an active subscription. The server validates PayPal webhooks and mints short-lived unlock entitlements for viewers.
+- Configure `PAYPAL_*` in `.env` (see [.env.example](.env.example)). PayPal approvals return through `{GLIPZ_PROTOCOL_PUBLIC_ORIGIN}/api/v1/payment/paypal/subscription/return`; webhooks use `{GLIPZ_PROTOCOL_PUBLIC_ORIGIN}/api/v1/payment/paypal/webhook`.
 
 ### Developer Features
 
@@ -105,7 +111,7 @@ This repository contains the official Go implementation of the Glipz Federation 
 | **Frontend** | Vue 3, TypeScript, Vite, Tailwind CSS, vue-i18n (en / ja) |
 | **Database** | PostgreSQL 16 |
 | **Cache** | Redis 7 |
-| **Storage** | S3-compatible (Wasabi, MinIO, etc.) |
+| **Storage** | Local server folder or S3-compatible storage (Cloudflare R2, Wasabi, MinIO, etc.) |
 | **Mobile (optional)** | Capacitor 7 (Android / iOS) |
 | **Deployment** | Docker, Docker Compose (image builds Node 22 + Go 1.22) |
 
@@ -118,7 +124,7 @@ This repository contains the official Go implementation of the Glipz Federation 
 - Docker & Docker Compose
 - Node.js 22+ (for frontend development; matches `web/package.json` engines)
 - Go 1.22+ (optional, for backend development outside Docker)
-- S3-compatible storage bucket
+- Media storage: either a server-local folder or an S3-compatible bucket
 
 ### 1. Clone and configure
 
@@ -132,14 +138,28 @@ Edit `.env` with your settings. At minimum:
 
 ```env
 JWT_SECRET=your-secure-random-secret
-S3_ENDPOINT=https://s3.your-region.wasabisys.com
-S3_PUBLIC_ENDPOINT=https://s3.your-region.wasabisys.com
+
+# Simplest single-server setup:
+GLIPZ_STORAGE_MODE=local
+GLIPZ_LOCAL_STORAGE_PATH=./data/media
+```
+
+For S3-compatible storage instead:
+
+```env
+GLIPZ_STORAGE_MODE=s3
+S3_ENDPOINT=https://s3.your-provider.example
+S3_PUBLIC_ENDPOINT=https://s3.your-provider.example
 S3_REGION=your-region
 S3_ACCESS_KEY=your-access-key
 S3_SECRET_KEY=your-secret-key
 S3_BUCKET=your-bucket
-S3_USE_PATH_STYLE=false
+S3_USE_PATH_STYLE=true-or-false-for-your-provider
 ```
+
+In local mode, the backend stores uploaded files on disk and serves them from `/api/v1/media/object/*`. With Docker Compose, `./data/media` is mounted into the backend container so uploads survive container rebuilds.
+
+Cloudflare R2 uses `S3_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com`, `S3_REGION=auto`, and path-style access. For direct media delivery, set `GLIPZ_PROTOCOL_MEDIA_PUBLIC_BASE` to your R2 custom public domain and use `GLIPZ_MEDIA_PROXY_MODE=direct`.
 
 ### 2. Start the stack
 
@@ -175,13 +195,14 @@ Mailpit (started with the Docker stack) is for local development. In production,
 
 - [ ] Strong `JWT_SECRET`
 - [ ] HTTPS via reverse proxy (Nginx, Caddy, Traefik)
-- [ ] S3-compatible storage configured
+- [ ] Media storage configured (`GLIPZ_STORAGE_MODE=local` or S3-compatible storage)
 - [ ] `FRONTEND_ORIGIN` and (if federation) `GLIPZ_PROTOCOL_*` variables set
 - [ ] Database and Redis secured
 - [ ] Email provider configured (Mailgun, etc.)
 - [ ] `GLIPZ_ADMIN_USER_IDS` set if you need built-in admin UIs
 - [ ] Patreon fan club (if used): `PATREON_CLIENT_ID`, `PATREON_CLIENT_SECRET`, and matching redirect URI
 - [ ] Gumroad (if used): no extra instance secrets—ensure creators know the product ID and that viewers use valid license keys
+- [ ] PayPal payments (if used): `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID`, and `PAYPAL_ENV`
 
 ---
 
@@ -269,12 +290,21 @@ Membership entitlement over Glipz federation (`POST .../federation/posts/{postID
 | `JWT_SECRET` | Secret for JWT signing | Yes |
 | `DATABASE_URL` | PostgreSQL connection string | Provided by Compose when using Docker |
 | `REDIS_URL` | Redis connection string | Provided by Compose when using Docker |
-| `S3_*` | S3 storage configuration | Yes (local or cloud bucket) |
+| `GLIPZ_STORAGE_MODE` | `s3` for S3-compatible storage or `local` for server-local folder storage | Optional |
+| `GLIPZ_LOCAL_STORAGE_PATH` | Folder used when `GLIPZ_STORAGE_MODE=local`; default is `data/media` | Required for local storage |
+| `S3_*` | S3 storage configuration | Required when `GLIPZ_STORAGE_MODE=s3` |
 | `FRONTEND_ORIGIN` | Frontend origin(s) for CORS; comma-separated if apex + www | Recommended |
 | `GLIPZ_PROTOCOL_*` | Federation / discovery / media URLs | Optional |
+| `GLIPZ_METRICS_ENABLED` | Exposes lightweight expvar metrics at `/debug/vars` | Optional |
+| `GLIPZ_ACCESS_LOG_ENABLED` | Enables per-request access logs; disabled by default for throughput | Optional |
+| `GLIPZ_SLOW_REQUEST_LOG_MS` | Logs HTTP requests over this threshold in ms; `0` disables slow request logs | Optional |
+| `GLIPZ_FEED_PAGE_SIZE` | Authenticated feed items returned per request; lower values reduce payload size under load | Optional |
+| `GLIPZ_MEDIA_PROXY_MODE` | `proxy` streams media through the API; `direct` redirects to configured public media URLs | Optional |
+| `GLIPZ_FEDERATION_DELIVERY_*` | Batch size, concurrency, and tick interval for outbound federation delivery | Optional |
 | `GLIPZ_ADMIN_USER_IDS` | Comma-separated user UUIDs with site admin | Optional |
 | `PATREON_*` | Patreon OAuth for fan club features | Optional |
 | (none) | Gumroad: license checks use Gumroad’s public API; no Glipz env vars | — |
+| `PAYPAL_*` | PayPal subscriptions for payment paywalls | Optional |
 | `TURN_*` | WebRTC TURN credentials for DM calls | Optional |
 | `WEB_PUSH_VAPID_*` | Web Push (VAPID) keys | Optional |
 

@@ -289,32 +289,48 @@ func (s *Server) handleListDMThreads(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		return
 	}
-	items, err := s.db.ListDMThreads(r.Context(), uid, 50)
+	v, hit, err := s.dmThreadsCache.getOrLoad(time.Now(), uid.String(), 3*time.Second, func() (any, error) {
+		start := time.Now()
+		items, err := s.db.ListDMThreads(r.Context(), uid, 50)
+		observeOperation("db.ListDMThreads", start, err)
+		if err != nil {
+			return nil, err
+		}
+		out := make([]map[string]any, 0, len(items))
+		badgeMap, err := s.userBadgeMap(r.Context(), func() []uuid.UUID {
+			ids := make([]uuid.UUID, 0, len(items))
+			for _, it := range items {
+				ids = append(ids, it.PeerID)
+			}
+			return ids
+		}())
+		if err != nil {
+			return nil, fmt.Errorf("ListUserBadgesByIDs dm threads: %w", err)
+		}
+		for _, it := range items {
+			canCall, err := s.canReceiveDMCall(r.Context(), uid, it.PeerID)
+			if err != nil {
+				return nil, fmt.Errorf("canReceiveDMCall list: %w", err)
+			}
+			out = append(out, s.dmThreadToJSON(it, canCall, badgeMap[it.PeerID]))
+		}
+		return json.Marshal(map[string]any{"items": out})
+	})
+	if hit {
+		operationTotal.Add("cache.dm_threads.hit", 1)
+	} else {
+		operationTotal.Add("cache.dm_threads.miss", 1)
+	}
 	if err != nil {
 		writeServerError(w, "ListDMThreads", err)
 		return
 	}
-	out := make([]map[string]any, 0, len(items))
-	badgeMap, err := s.userBadgeMap(r.Context(), func() []uuid.UUID {
-		ids := make([]uuid.UUID, 0, len(items))
-		for _, it := range items {
-			ids = append(ids, it.PeerID)
-		}
-		return ids
-	}())
-	if err != nil {
-		writeServerError(w, "ListUserBadgesByIDs dm threads", err)
+	payload, ok := v.([]byte)
+	if !ok {
+		writeServerError(w, "dm threads cache type", fmt.Errorf("unexpected dm threads cache value"))
 		return
 	}
-	for _, it := range items {
-		canCall, err := s.canReceiveDMCall(r.Context(), uid, it.PeerID)
-		if err != nil {
-			writeServerError(w, "canReceiveDMCall list", err)
-			return
-		}
-		out = append(out, s.dmThreadToJSON(it, canCall, badgeMap[it.PeerID]))
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": out})
+	writeJSONBytes(w, http.StatusOK, payload)
 }
 
 func (s *Server) handleCreateDMThread(w http.ResponseWriter, r *http.Request) {
@@ -501,7 +517,9 @@ func (s *Server) handleListDMMessages(w http.ResponseWriter, r *http.Request) {
 		}
 		before = &t
 	}
+	start := time.Now()
 	items, err := s.db.ListDMMessages(r.Context(), uid, threadID, before, 50)
+	observeOperation("db.ListDMMessages", start, err)
 	if err != nil {
 		writeServerError(w, "ListDMMessages", err)
 		return
@@ -646,7 +664,9 @@ func (s *Server) handleDMUnreadCount(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		return
 	}
+	start := time.Now()
 	n, err := s.db.DMUnreadCount(r.Context(), uid)
+	observeOperation("db.DMUnreadCount", start, err)
 	if err != nil {
 		writeServerError(w, "DMUnreadCount", err)
 		return
@@ -674,6 +694,8 @@ func (s *Server) handleDMStream(w http.ResponseWriter, r *http.Request) {
 	chName := redisDMUserChannel(uid)
 	pubsub := s.rdb.Subscribe(ctx, chName)
 	defer func() { _ = pubsub.Close() }()
+	trackSSEOpen("dm")
+	defer trackSSEClose("dm")
 	if _, err := fmt.Fprintf(w, ": connected\n\n"); err != nil {
 		return
 	}
@@ -764,15 +786,15 @@ func (s *Server) handleIssueDMCallToken(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"call_id":        sess.CallID,
-		"role":           role,
-		"signaling_url":  "/api/v1/dm/calls/" + sess.CallID + "/signaling",
-		"ws_token":       wsTok,
-		"ice_servers":    iceServers,
-		"expires_at":     sess.ExpiresAt.UTC().Format(time.RFC3339),
-		"thread_id":      threadID.String(),
-		"peer_id":        thread.PeerID.String(),
-		"call_mode":      mode,
+		"call_id":       sess.CallID,
+		"role":          role,
+		"signaling_url": "/api/v1/dm/calls/" + sess.CallID + "/signaling",
+		"ws_token":      wsTok,
+		"ice_servers":   iceServers,
+		"expires_at":    sess.ExpiresAt.UTC().Format(time.RFC3339),
+		"thread_id":     threadID.String(),
+		"peer_id":       thread.PeerID.String(),
+		"call_mode":     mode,
 	})
 }
 

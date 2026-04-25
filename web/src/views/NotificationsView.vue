@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from "vue";
+import { onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import PullToRefresh from "../components/PullToRefresh.vue";
@@ -41,6 +41,8 @@ const avatarLoadFailed = reactive<Record<string, boolean>>({});
 const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
+let loadInFlight: Promise<void> | null = null;
+let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
 function isRepliesTab(): boolean {
   const raw = route.query.tab;
@@ -117,19 +119,24 @@ function goNotif(it: NotificationRow) {
 }
 
 async function loadList() {
+  if (loadInFlight) return loadInFlight;
   const token = getAccessToken();
   if (!token) return;
-  busy.value = true;
-  err.value = "";
-  try {
-    const res = await api<{ items: NotificationRow[] }>(notificationsApiPath(), { method: "GET", token });
-    items.value = Array.isArray(res.items) ? res.items : [];
-  } catch (e: unknown) {
-    err.value = e instanceof Error ? e.message : t("views.notifications.loadFailed");
-    items.value = [];
-  } finally {
-    busy.value = false;
-  }
+  loadInFlight = (async () => {
+    busy.value = true;
+    err.value = "";
+    try {
+      const res = await api<{ items: NotificationRow[] }>(notificationsApiPath(), { method: "GET", token });
+      items.value = Array.isArray(res.items) ? res.items : [];
+    } catch (e: unknown) {
+      err.value = e instanceof Error ? e.message : t("views.notifications.loadFailed");
+      items.value = [];
+    } finally {
+      busy.value = false;
+      loadInFlight = null;
+    }
+  })();
+  return loadInFlight;
 }
 
 async function markAllRead() {
@@ -147,7 +154,15 @@ async function markAllRead() {
 async function refreshList() {
   await loadList();
   await markAllRead();
-  await loadList();
+  items.value = items.value.map((it) => ({ ...it, read_at: it.read_at ?? new Date().toISOString() }));
+}
+
+function scheduleListRefresh() {
+  if (refreshTimer) clearTimeout(refreshTimer);
+  refreshTimer = setTimeout(() => {
+    refreshTimer = null;
+    void loadList();
+  }, 1000);
 }
 
 async function setNotificationsTab(tab: "all" | "replies") {
@@ -162,7 +177,7 @@ onMounted(async () => {
 });
 
 watch(notificationReceivedTick, () => {
-  void loadList();
+  scheduleListRefresh();
 });
 
 watch(
@@ -171,6 +186,13 @@ watch(
     void refreshList();
   },
 );
+
+onBeforeUnmount(() => {
+  if (refreshTimer) {
+    clearTimeout(refreshTimer);
+    refreshTimer = null;
+  }
+});
 </script>
 
 <template>

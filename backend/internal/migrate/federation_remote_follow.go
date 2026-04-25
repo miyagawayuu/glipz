@@ -32,6 +32,9 @@ func RunFederationRemoteFollow(ctx context.Context, pool *pgxpool.Pool) error {
 			UNIQUE (local_user_id, remote_actor_id)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_federation_remote_follows_local ON federation_remote_follows (local_user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_federation_remote_follows_actor_accepted
+			ON federation_remote_follows (remote_actor_id, local_user_id)
+			WHERE state = 'accepted'`,
 	}
 	for i, q := range steps {
 		if _, err := pool.Exec(ctx, q); err != nil {

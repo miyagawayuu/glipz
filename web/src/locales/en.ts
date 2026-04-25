@@ -9,6 +9,19 @@ type DeepPartial<T> = {
 };
 
 export const enOverrides: DeepPartial<AppMessageSchema> = {
+  payments: {
+    paypal: {
+      title: "PayPal (subscriptions)",
+      lead: "Register a PayPal subscription plan_id created on PayPal. Posts can be paywalled by subscription. The payee is the creator; the server admin is not the intermediary.",
+      planId: "PayPal plan_id",
+      label: "Label",
+      active: "Status",
+      registeredPlans: "Registered plans",
+      noPlans: "No plans yet.",
+      planHelp: "Create a subscription plan in PayPal, then register its plan_id here.",
+      noPlansHelp: "After you add a plan, the post composer can use it as a selectable paywall.",
+    },
+  },
   app: {
     loading: "Loading…",
     loadingShort: "Loading...",
@@ -77,6 +90,7 @@ export const enOverrides: DeepPartial<AppMessageSchema> = {
       close: "Close",
       answer: "Answer",
     },
+    // settings section labels come from ja base unless overridden
   },
   components: {
     repostModal: {
@@ -141,10 +155,14 @@ export const enOverrides: DeepPartial<AppMessageSchema> = {
       passwordLockedBody: "Enter the correct password to show {summary}.",
       membershipLockedTitle: "Members-only post",
       membershipLockedBody: "Once your membership is verified, you can view the content.",
+      paymentLockedTitle: "Paid post",
+      paymentLockedBody: "Once your PayPal subscription is verified, you can view the content.",
       unlockPasswordSr: "View password",
       unlockPlaceholder: "Password",
       unlockSubmit: "Show",
       membershipUnlockSubmit: "Show as member",
+      paymentSubscribeSubmit: "Subscribe with PayPal",
+      paymentUnlockSubmit: "Verify subscription and show",
       unlockSubmitting: "Checking…",
       quotedVideoPost: "Post with video",
       quotedAudioPost: "Post with audio",
@@ -260,6 +278,7 @@ export const enOverrides: DeepPartial<AppMessageSchema> = {
         gumroadLicensePlaceholder: "Gumroad license key",
         gumroadLicenseRequired: "Enter your Gumroad license key.",
         gumroadApiError: "Gumroad could not be reached. Try again later.",
+        paypalSubscriptionRequired: "A PayPal subscription is required. Subscribe first, then try again.",
         untrustedInstance:
           "The remote server does not trust this instance for this federation action.",
       },
@@ -273,6 +292,10 @@ export const enOverrides: DeepPartial<AppMessageSchema> = {
     },
     labels: {
       validUntil: "Expires: {date}",
+      active: "Active",
+      inactive: "Inactive",
+      on: "On",
+      off: "Off",
     },
     actions: {
       createAccount: "Create account",
@@ -281,6 +304,9 @@ export const enOverrides: DeepPartial<AppMessageSchema> = {
       confirm: "Confirm",
       register: "Sign up",
       login: "Log in",
+      save: "Save",
+      saving: "Saving…",
+      refresh: "Refresh",
     },
   },
   time: {
@@ -629,6 +655,17 @@ export const enOverrides: DeepPartial<AppMessageSchema> = {
       gumroadMembershipOpen: "Use Gumroad license verification",
       gumroadProductId: "Gumroad product ID",
       gumroadProductIdPlaceholder: "Membership product_id",
+      paymentTitle: "Paid-only",
+      paymentOpen: "Open paid-only options",
+      paymentClose: "Close paid-only options",
+      paymentHint: "You can paywall a post using a PayPal subscription (register a plan_id created on PayPal).",
+      paypalPaymentOpen: "Paywall with PayPal subscription",
+      paypalPlanId: "PayPal plan_id",
+      paypalPlanIdPlaceholder: "e.g. P-XXXXXXXXXXXXXXX",
+      paypalPlanHint: "Enter a plan_id created in your PayPal dashboard.",
+      paypalPlanSelectPlaceholder: "Select a registered plan",
+      paypalPlanSelectHint: "Only active registered plans are shown.",
+      paypalPlanSettingsLink: "Register a plan in Settings",
       selectedImageAlt: "Selected attachment {n}",
       removeImageAria: "Remove attachment {n}",
       whitespaceOnly: "(whitespace only)",
@@ -651,6 +688,8 @@ export const enOverrides: DeepPartial<AppMessageSchema> = {
         membershipWithPassword: "Remove the view password or turn off members-only; they cannot be used together",
         membershipIdsRequired: "Select or enter a campaign and tier for Patreon members-only",
         gumroadProductRequired: "Enter a Gumroad product ID",
+        paymentWithMembership: "Members-only and paid-only cannot be used together. Turn one off.",
+        paypalPlanRequired: "Enter a PayPal plan_id",
         editPasswordMismatch: "Passwords do not match",
         editProtectScopeRequired: "Choose what to protect",
         editProtectRangesRequired: "When protecting part of the text, add at least one range",
@@ -1099,6 +1138,7 @@ export const enOverrides: DeepPartial<AppMessageSchema> = {
         appearance: "Appearance",
         admin: "Administration",
         fanclub: "Fan club",
+        payments: "Payments",
       },
       items: {
         profileEdit: "Edit profile",
@@ -1315,6 +1355,11 @@ export const enOverrides: DeepPartial<AppMessageSchema> = {
       notFoundFederated: "Post not found (it may have been deleted)",
       notFound: "Post not found (it may be private or deleted)",
       loadFailed: "Failed to load",
+      paypalSubscriptionOkToast: "PayPal subscription approved.",
+      paypalSubscriptionOkTitle: "PayPal subscription approved",
+      paypalSubscriptionOkBody: "PayPal may take a short moment to send the webhook. Use the paid-post verify button below to unlock; if it is not ready yet, try again shortly.",
+      paypalSubscriptionCancelledTitle: "PayPal subscription was not completed",
+      paypalSubscriptionCancelledBody: "You can start the subscription again from the paid-post box below.",
     },
   },
   about: {

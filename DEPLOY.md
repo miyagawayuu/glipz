@@ -48,7 +48,7 @@ For project overview, see [README.md](README.md).
 | **Container Runtime** | Docker |
 | **Database** | PostgreSQL 16+ (managed or self-hosted) |
 | **Cache** | Redis 7+ (managed or self-hosted) |
-| **Storage** | S3-compatible (Wasabi, MinIO, AWS S3) |
+| **Storage** | Local server folder or S3-compatible storage (Cloudflare R2, Wasabi, MinIO, AWS S3) |
 | **Reverse Proxy** | Nginx, Caddy, or Traefik |
 | **Domain** | Public domain with DNS configured |
 
@@ -69,9 +69,14 @@ CREATE DATABASE glipz OWNER glipz;
 
 Start Redis or use a managed service (Redis Cloud, etc.).
 
-### 1.3 S3 Bucket
+### 1.3 Media Storage
 
-Create a bucket with:
+Choose one storage mode:
+
+- `GLIPZ_STORAGE_MODE=local`: store media under a server folder such as `/var/lib/glipz/media`.
+- `GLIPZ_STORAGE_MODE=s3`: store media in an S3-compatible bucket.
+
+For S3-compatible storage, create a bucket with:
 - **Public access blocked** (Glipz uses the media proxy)
 - **CORS enabled** for your domain
 
@@ -93,13 +98,18 @@ JWT_SECRET=your-very-long-random-secret
 DATABASE_URL=postgres://glipz:password@db-host:5432/glipz?sslmode=disable
 REDIS_URL=redis://redis-host:6379/0
 
-S3_ENDPOINT=https://s3.ap-northeast-1.wasabisys.com
-S3_PUBLIC_ENDPOINT=https://s3.ap-northeast-1.wasabisys.com
-S3_REGION=ap-northeast-1
-S3_ACCESS_KEY=your-access-key
-S3_SECRET_KEY=your-secret-key
-S3_BUCKET=your-bucket
-S3_USE_PATH_STYLE=false
+GLIPZ_STORAGE_MODE=local
+GLIPZ_LOCAL_STORAGE_PATH=/var/lib/glipz/media
+
+# Or, for S3-compatible storage:
+# GLIPZ_STORAGE_MODE=s3
+# S3_ENDPOINT=https://s3.ap-northeast-1.wasabisys.com
+# S3_PUBLIC_ENDPOINT=https://s3.ap-northeast-1.wasabisys.com
+# S3_REGION=ap-northeast-1
+# S3_ACCESS_KEY=your-access-key
+# S3_SECRET_KEY=your-secret-key
+# S3_BUCKET=your-bucket
+# S3_USE_PATH_STYLE=false
 
 # === Frontend & Federation ===
 
@@ -131,6 +141,8 @@ MAIL_FROM_NAME=Glipz
 | `FRONTEND_ORIGIN` | Your public web app URL |
 | `GLIPZ_PROTOCOL_PUBLIC_ORIGIN` | Backend API URL (can be same as frontend if behind same proxy) |
 | `GLIPZ_PROTOCOL_MEDIA_PUBLIC_BASE` | Media proxy URL for federation |
+| `GLIPZ_STORAGE_MODE` | `local` stores media on the server; `s3` uses S3-compatible storage |
+| `GLIPZ_LOCAL_STORAGE_PATH` | Local media directory; back it up if using `GLIPZ_STORAGE_MODE=local` |
 | `GLIPZ_ADMIN_USER_IDS` | Built-in moderation / admin API access |
 | `PATREON_*` | Patreon OAuth; redirect URI must match your public API origin |
 
@@ -158,11 +170,13 @@ docker run -d \
   --name glipz \
   --restart unless-stopped \
   --env-file .env \
+  -v /var/lib/glipz/media:/var/lib/glipz/media \
   -p 127.0.0.1:8080:8080 \
   glipz:latest
 ```
 
 > **Important**: Only expose port 8080 to localhost. Access through your reverse proxy.
+> If you use `GLIPZ_STORAGE_MODE=s3`, the media volume mount is not required.
 
 ---
 

@@ -17,7 +17,7 @@ Install these before starting:
 | **Node.js 22+** | Yes (frontend) | Matches `web/package.json` `engines`; Docker image uses Node 22 |
 | **npm** | Yes (frontend) | Comes with Node.js |
 | **Go 1.22+** | No | Only if running backend outside Docker |
-| **S3-compatible storage** | Yes | Wasabi, MinIO, AWS S3, etc. |
+| **Media storage** | Yes | Server-local folder or S3-compatible storage (Cloudflare R2, Wasabi, MinIO, AWS S3, etc.) |
 
 ---
 
@@ -49,13 +49,19 @@ At minimum, set these in `.env`:
 ```env
 JWT_SECRET=your-secure-random-secret
 
-S3_ENDPOINT=https://s3.your-region.wasabisys.com
-S3_PUBLIC_ENDPOINT=https://s3.your-region.wasabisys.com
-S3_REGION=your-region
-S3_ACCESS_KEY=your-access-key
-S3_SECRET_KEY=your-secret-key
-S3_BUCKET=your-bucket
-S3_USE_PATH_STYLE=false
+# Either use a server-local folder:
+GLIPZ_STORAGE_MODE=local
+GLIPZ_LOCAL_STORAGE_PATH=./data/media
+
+# Or use S3-compatible storage:
+# GLIPZ_STORAGE_MODE=s3
+# S3_ENDPOINT=https://s3.your-region.wasabisys.com
+# S3_PUBLIC_ENDPOINT=https://s3.your-region.wasabisys.com
+# S3_REGION=your-region
+# S3_ACCESS_KEY=your-access-key
+# S3_SECRET_KEY=your-secret-key
+# S3_BUCKET=your-bucket
+# S3_USE_PATH_STYLE=false
 ```
 
 ### Recommended Variables
@@ -228,8 +234,9 @@ See [.env.example](.env.example) for all options.
 
 - `.env` file exists
 - `JWT_SECRET` is set
-- S3 variables are set
-- S3 bucket is reachable from Docker
+- `GLIPZ_STORAGE_MODE` is either `local` or `s3`
+- For local storage, `GLIPZ_LOCAL_STORAGE_PATH` is writable by the backend
+- For S3 storage, S3 variables are set and the bucket is reachable from Docker
 
 ### Frontend loads but API fails
 
@@ -239,9 +246,9 @@ See [.env.example](.env.example) for all options.
 
 ### Media upload fails
 
-- S3 credentials and bucket name are correct
-- `S3_USE_PATH_STYLE` matches your provider
-- Endpoint URL is correct for your region
+- For local storage, the directory exists or can be created by the backend process
+- For local storage in Docker Compose, `./data/media` is mounted into the backend container
+- For S3 storage, credentials, bucket name, endpoint URL, and `S3_USE_PATH_STYLE` match your provider
 
 ### Federation not working
 
@@ -267,7 +274,7 @@ Before going live:
 
 - [ ] Strong `JWT_SECRET` (use a random generator)
 - [ ] HTTPS configured (reverse proxy)
-- [ ] S3 credentials configured
+- [ ] Media storage configured (`GLIPZ_STORAGE_MODE=local` with a backed-up folder, or `GLIPZ_STORAGE_MODE=s3` with valid S3 credentials)
 - [ ] `FRONTEND_ORIGIN` set to your public URL
 - [ ] `GLIPZ_PROTOCOL_PUBLIC_ORIGIN` set (if using federation)
 - [ ] Database and Redis secured

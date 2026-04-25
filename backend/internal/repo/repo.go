@@ -869,7 +869,7 @@ func (p *Pool) PostExists(ctx context.Context, id uuid.UUID) (bool, error) {
 	return ok, nil
 }
 
-func (p *Pool) CreatePost(ctx context.Context, userID uuid.UUID, caption, mediaType string, objectKeys []string, replyTo *uuid.UUID, replyToRemoteObjectIRI string, isNSFW bool, visibility string, viewPasswordHash *string, viewPasswordScope int, viewPasswordTextRanges []ViewPasswordTextRange, visibleAt time.Time, pollIn *PollCreateInput, membershipProvider, membershipCreatorID, membershipTierID string) (uuid.UUID, error) {
+func (p *Pool) CreatePost(ctx context.Context, userID uuid.UUID, caption, mediaType string, objectKeys []string, replyTo *uuid.UUID, replyToRemoteObjectIRI string, isNSFW bool, visibility string, viewPasswordHash *string, viewPasswordScope int, viewPasswordTextRanges []ViewPasswordTextRange, visibleAt time.Time, pollIn *PollCreateInput, membershipProvider, membershipCreatorID, membershipTierID string, paymentProvider, paymentCreatorID, paymentPlanID string) (uuid.UUID, error) {
 	if objectKeys == nil {
 		objectKeys = []string{}
 	}
@@ -933,10 +933,14 @@ func (p *Pool) CreatePost(ctx context.Context, userID uuid.UUID, caption, mediaT
 		INSERT INTO posts (
 			user_id, caption, media_type, object_keys, reply_to_id, reply_to_remote_object_iri,
 			is_nsfw, visibility, view_password_hash, view_password_scope, view_password_text_ranges, visible_at, feed_broadcast_done, group_id,
-			membership_provider, membership_creator_id, membership_tier_id
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13, NULL, $14, $15, $16)
+			membership_provider, membership_creator_id, membership_tier_id,
+			payment_provider, payment_creator_id, payment_plan_id
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13, NULL, $14, $15, $16, $17, $18, $19)
 		RETURNING id
-	`, userID, caption, mediaType, objectKeys, replyTo, replyToRemoteObjectIRI, isNSFW, visibility, viewPasswordHash, scope, rangesJSON, visibleAt.UTC(), feedDone, membershipProvider, membershipCreatorID, membershipTierID).Scan(&id)
+	`, userID, caption, mediaType, objectKeys, replyTo, replyToRemoteObjectIRI, isNSFW, visibility, viewPasswordHash, scope, rangesJSON, visibleAt.UTC(), feedDone,
+		membershipProvider, membershipCreatorID, membershipTierID,
+		paymentProvider, paymentCreatorID, paymentPlanID,
+	).Scan(&id)
 	if err != nil {
 		return uuid.Nil, err
 	}
@@ -982,6 +986,10 @@ type PostRow struct {
 	MembershipProvider     string
 	MembershipCreatorID    string
 	MembershipTierID       string
+	HasPaymentLock         bool
+	PaymentProvider        string
+	PaymentCreatorID       string
+	PaymentPlanID          string
 	CreatedAt              time.Time
 	VisibleAt              time.Time
 	Poll                   *PostPoll
@@ -1009,6 +1017,10 @@ type PostSensitive struct {
 	MembershipProvider     string
 	MembershipCreatorID    string
 	MembershipTierID       string
+	HasPaymentLock         bool
+	PaymentProvider        string
+	PaymentCreatorID       string
+	PaymentPlanID          string
 }
 
 func (p *Pool) PostSensitiveByID(ctx context.Context, postID uuid.UUID) (PostSensitive, error) {
@@ -1021,10 +1033,14 @@ func (p *Pool) PostSensitiveByID(ctx context.Context, postID uuid.UUID) (PostSen
 			COALESCE(view_password_scope, 0),
 			COALESCE(view_password_text_ranges, '[]'::jsonb)::text,
 			(COALESCE(btrim(membership_provider), '') <> '') AS has_membership_lock,
-			COALESCE(membership_provider, ''), COALESCE(membership_creator_id, ''), COALESCE(membership_tier_id, '')
+			COALESCE(membership_provider, ''), COALESCE(membership_creator_id, ''), COALESCE(membership_tier_id, ''),
+			(COALESCE(btrim(payment_provider), '') <> '') AS has_payment_lock,
+			COALESCE(payment_provider, ''), COALESCE(payment_creator_id, ''), COALESCE(payment_plan_id, '')
 		FROM posts WHERE id = $1
 	`, postID).Scan(&row.ID, &row.UserID, &row.Caption, &row.MediaType, &row.ObjectKeys, &row.IsNSFW, &hash, &scope, &textRanges,
-		&row.HasMembershipLock, &row.MembershipProvider, &row.MembershipCreatorID, &row.MembershipTierID)
+		&row.HasMembershipLock, &row.MembershipProvider, &row.MembershipCreatorID, &row.MembershipTierID,
+		&row.HasPaymentLock, &row.PaymentProvider, &row.PaymentCreatorID, &row.PaymentPlanID,
+	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return PostSensitive{}, ErrNotFound
 	}
@@ -1057,6 +1073,8 @@ func (p *Pool) PostRowForViewer(ctx context.Context, viewerID, postID uuid.UUID)
 			COALESCE(p.view_password_text_ranges, '[]'::jsonb)::text,
 			(COALESCE(btrim(p.membership_provider), '') <> '') AS has_membership_lock,
 			COALESCE(p.membership_provider, ''), COALESCE(p.membership_creator_id, ''), COALESCE(p.membership_tier_id, ''),
+			(COALESCE(btrim(p.payment_provider), '') <> '') AS has_payment_lock,
+			COALESCE(p.payment_provider, ''), COALESCE(p.payment_creator_id, ''), COALESCE(p.payment_plan_id, ''),
 			p.created_at, p.visible_at,
 			(COALESCE(rpl.reply_count, 0) + COALESCE(frpl.reply_count, 0))::bigint,
 			COALESCE(lk.like_count, 0)::bigint + COALESCE(rlk.like_count, 0)::bigint,
@@ -1095,6 +1113,7 @@ func (p *Pool) PostRowForViewer(ctx context.Context, viewerID, postID uuid.UUID)
 		&r.ID, &r.UserID, &r.Email, &r.UserHandle, &r.DisplayName, &av, &r.Caption, &r.MediaType, &r.ObjectKeys,
 		&r.IsNSFW, &r.Visibility, &r.HasViewPassword, &scope, &textRanges,
 		&r.HasMembershipLock, &r.MembershipProvider, &r.MembershipCreatorID, &r.MembershipTierID,
+		&r.HasPaymentLock, &r.PaymentProvider, &r.PaymentCreatorID, &r.PaymentPlanID,
 		&r.CreatedAt, &r.VisibleAt,
 		&r.ReplyCount, &r.LikeCount, &r.RepostCount, &r.LikedByMe, &r.RepostedByMe, &r.BookmarkedByMe,
 	)
@@ -1149,6 +1168,8 @@ func (p *Pool) ListThreadDescendants(ctx context.Context, viewerID, rootPostID u
 			COALESCE(p.view_password_text_ranges, '[]'::jsonb)::text,
 			(COALESCE(btrim(p.membership_provider), '') <> '') AS has_membership_lock,
 			COALESCE(p.membership_provider, ''), COALESCE(p.membership_creator_id, ''), COALESCE(p.membership_tier_id, ''),
+			(COALESCE(btrim(p.payment_provider), '') <> '') AS has_payment_lock,
+			COALESCE(p.payment_provider, ''), COALESCE(p.payment_creator_id, ''), COALESCE(p.payment_plan_id, ''),
 			p.created_at, p.visible_at,
 			(COALESCE(rpl.reply_count, 0) + COALESCE(frpl.reply_count, 0))::bigint,
 			COALESCE(lk.like_count, 0)::bigint + COALESCE(rlk.like_count, 0)::bigint,
@@ -1201,10 +1222,13 @@ func (p *Pool) ListThreadDescendants(ctx context.Context, viewerID, rootPostID u
 		var textRanges string
 		var hasMembershipLock bool
 		var membershipProvider, membershipCreatorID, membershipTierID string
+		var hasPaymentLock bool
+		var paymentProvider, paymentCreatorID, paymentPlanID string
 		if err := rows.Scan(
 			&r.ID, &r.UserID, &r.Email, &r.UserHandle, &r.DisplayName, &av, &r.Caption, &r.MediaType, &r.ObjectKeys,
 			&r.IsNSFW, &r.Visibility, &r.HasViewPassword, &scope, &textRanges,
 			&hasMembershipLock, &membershipProvider, &membershipCreatorID, &membershipTierID,
+			&hasPaymentLock, &paymentProvider, &paymentCreatorID, &paymentPlanID,
 			&r.CreatedAt, &r.VisibleAt,
 			&r.ReplyCount, &r.LikeCount, &r.RepostCount, &r.LikedByMe, &r.RepostedByMe, &r.BookmarkedByMe,
 			&replyTo,
@@ -1224,6 +1248,10 @@ func (p *Pool) ListThreadDescendants(ctx context.Context, viewerID, rootPostID u
 		r.MembershipProvider = strings.TrimSpace(membershipProvider)
 		r.MembershipCreatorID = strings.TrimSpace(membershipCreatorID)
 		r.MembershipTierID = strings.TrimSpace(membershipTierID)
+		r.HasPaymentLock = hasPaymentLock
+		r.PaymentProvider = strings.TrimSpace(paymentProvider)
+		r.PaymentCreatorID = strings.TrimSpace(paymentCreatorID)
+		r.PaymentPlanID = strings.TrimSpace(paymentPlanID)
 		var replyToID *uuid.UUID
 		if replyTo.Valid {
 			x := uuid.UUID(replyTo.Bytes)
@@ -1239,8 +1267,14 @@ type PostMembershipUpdate struct {
 	Provider, CreatorID, TierID string
 }
 
-// UpdatePost lets only the post owner update caption, NSFW state, visibility, view-password settings, and optional membership lock.
-func (p *Pool) UpdatePost(ctx context.Context, ownerID, postID uuid.UUID, caption string, isNSFW bool, visibility string, clearViewPassword bool, newPassword *string, viewPasswordScope int, viewPasswordTextRanges []ViewPasswordTextRange, memUpdate *PostMembershipUpdate) error {
+// PostPaymentUpdate when non-nil updates payment lock columns; empty strings clear the lock.
+type PostPaymentUpdate struct {
+	Provider, CreatorID, PlanID string
+}
+
+// UpdatePost lets only the post owner update caption, NSFW state, visibility, view-password settings,
+// and optional membership/payment locks.
+func (p *Pool) UpdatePost(ctx context.Context, ownerID, postID uuid.UUID, caption string, isNSFW bool, visibility string, clearViewPassword bool, newPassword *string, viewPasswordScope int, viewPasswordTextRanges []ViewPasswordTextRange, memUpdate *PostMembershipUpdate, payUpdate *PostPaymentUpdate) error {
 	row, err := p.PostSensitiveByID(ctx, postID)
 	if err != nil {
 		return err
@@ -1250,6 +1284,9 @@ func (p *Pool) UpdatePost(ctx context.Context, ownerID, postID uuid.UUID, captio
 	}
 	if row.HasMembershipLock && newPassword != nil && strings.TrimSpace(*newPassword) != "" {
 		return ErrMembershipWithPassword
+	}
+	if memUpdate != nil && payUpdate != nil && strings.TrimSpace(memUpdate.Provider) != "" && strings.TrimSpace(payUpdate.Provider) != "" {
+		return fmt.Errorf("cannot set membership and payment locks together")
 	}
 	var hash *string
 	scope := row.ViewPasswordScope
@@ -1287,18 +1324,24 @@ func (p *Pool) UpdatePost(ctx context.Context, ownerID, postID uuid.UUID, captio
 		ranges = nil
 	}
 	visibility = normalizePostVisibility(visibility)
-	memProv, memCre, memTier := "", "", ""
+	memProv, memCre, memTier := row.MembershipProvider, row.MembershipCreatorID, row.MembershipTierID
 	if memUpdate != nil {
 		memProv = memUpdate.Provider
 		memCre = memUpdate.CreatorID
 		memTier = memUpdate.TierID
+	}
+	payProv, payCre, payPlan := row.PaymentProvider, row.PaymentCreatorID, row.PaymentPlanID
+	if payUpdate != nil {
+		payProv = payUpdate.Provider
+		payCre = payUpdate.CreatorID
+		payPlan = payUpdate.PlanID
 	}
 	tx, err := p.db.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if memUpdate == nil {
+	if memUpdate == nil && payUpdate == nil {
 		if _, err := tx.Exec(ctx, `
 			UPDATE posts SET caption = $1, is_nsfw = $2, visibility = $3, view_password_hash = $4, view_password_scope = $5, view_password_text_ranges = $6::jsonb
 			WHERE id = $7 AND user_id = $8
@@ -1308,9 +1351,13 @@ func (p *Pool) UpdatePost(ctx context.Context, ownerID, postID uuid.UUID, captio
 	} else {
 		if _, err := tx.Exec(ctx, `
 			UPDATE posts SET caption = $1, is_nsfw = $2, visibility = $3, view_password_hash = $4, view_password_scope = $5, view_password_text_ranges = $6::jsonb,
-			membership_provider = $9, membership_creator_id = $10, membership_tier_id = $11
+			membership_provider = $9, membership_creator_id = $10, membership_tier_id = $11,
+			payment_provider = $12, payment_creator_id = $13, payment_plan_id = $14
 			WHERE id = $7 AND user_id = $8
-		`, caption, isNSFW, visibility, hash, scope, MarshalViewPasswordTextRanges(ranges), postID, ownerID, memProv, memCre, memTier); err != nil {
+		`, caption, isNSFW, visibility, hash, scope, MarshalViewPasswordTextRanges(ranges), postID, ownerID,
+			memProv, memCre, memTier,
+			payProv, payCre, payPlan,
+		); err != nil {
 			return err
 		}
 	}
@@ -1374,6 +1421,17 @@ func (p *Pool) ListFeed(ctx context.Context, viewerID uuid.UUID, limit int) ([]P
 		limit = 50
 	}
 	rows, err := p.db.Query(ctx, `
+		WITH candidate AS (
+			SELECT p.id
+			FROM posts p
+			WHERE p.reply_to_id IS NULL
+			  AND COALESCE(btrim(p.reply_to_remote_object_iri), '') = ''
+			  AND p.visible_at <= NOW()
+			  AND p.group_id IS NULL
+			  AND `+postReadableByViewerSQL("p", "$1")+`
+			ORDER BY p.visible_at DESC, p.id DESC
+			LIMIT $2
+		)
 		SELECT p.id, p.user_id, u.email, u.handle, u.display_name, u.avatar_object_key, p.caption, p.media_type, p.object_keys,
 			p.is_nsfw,
 			`+postVisibilityExpr("p")+`,
@@ -1390,11 +1448,12 @@ func (p *Pool) ListFeed(ctx context.Context, viewerID uuid.UUID, limit int) ([]P
 			EXISTS (SELECT 1 FROM post_reposts r WHERE r.post_id = p.id AND r.user_id = $1),
 			EXISTS (SELECT 1 FROM post_bookmarks b WHERE b.post_id = p.id AND b.user_id = $1)
 		FROM posts p
+		JOIN candidate c ON c.id = p.id
 		JOIN users u ON u.id = p.user_id
 		LEFT JOIN (
 			SELECT reply_to_id AS post_id, COUNT(*)::bigint AS reply_count
 			FROM posts
-			WHERE reply_to_id IS NOT NULL
+			WHERE reply_to_id IN (SELECT id FROM candidate)
 			GROUP BY reply_to_id
 		) rpl ON rpl.post_id = p.id
 		LEFT JOIN (
@@ -1402,24 +1461,19 @@ func (p *Pool) ListFeed(ctx context.Context, viewerID uuid.UUID, limit int) ([]P
 			FROM federation_incoming_posts
 			WHERE deleted_at IS NULL
 			  AND COALESCE(btrim(reply_to_object_iri), '') ~ '/posts/[0-9a-fA-F-]{36}$'
+			  AND substring(reply_to_object_iri FROM '/posts/([0-9a-fA-F-]{36})$')::uuid IN (SELECT id FROM candidate)
 			GROUP BY 1
 		) frpl ON frpl.post_id = p.id
 		LEFT JOIN (
-			SELECT post_id, COUNT(*)::bigint AS like_count FROM post_likes GROUP BY post_id
+			SELECT post_id, COUNT(*)::bigint AS like_count FROM post_likes WHERE post_id IN (SELECT id FROM candidate) GROUP BY post_id
 		) lk ON lk.post_id = p.id
 		LEFT JOIN (
-			SELECT post_id, COUNT(*)::bigint AS like_count FROM post_remote_likes GROUP BY post_id
+			SELECT post_id, COUNT(*)::bigint AS like_count FROM post_remote_likes WHERE post_id IN (SELECT id FROM candidate) GROUP BY post_id
 		) rlk ON rlk.post_id = p.id
 		LEFT JOIN (
-			SELECT post_id, COUNT(*)::bigint AS repost_count FROM post_reposts GROUP BY post_id
+			SELECT post_id, COUNT(*)::bigint AS repost_count FROM post_reposts WHERE post_id IN (SELECT id FROM candidate) GROUP BY post_id
 		) rp ON rp.post_id = p.id
-		WHERE p.reply_to_id IS NULL
-		  AND COALESCE(btrim(p.reply_to_remote_object_iri), '') = ''
-		  AND p.visible_at <= NOW()
-		  AND p.group_id IS NULL
-		  AND `+postReadableByViewerSQL("p", "$1")+`
 		ORDER BY p.visible_at DESC, p.id DESC
-		LIMIT $2
 	`, viewerID, limit)
 	if err != nil {
 		return nil, err
@@ -1465,6 +1519,21 @@ func (p *Pool) ListUserPosts(ctx context.Context, viewerID, authorID uuid.UUID, 
 		limit = 50
 	}
 	rows, err := p.db.Query(ctx, `
+		WITH candidate AS (
+			SELECT p.id
+			FROM posts p
+			WHERE p.reply_to_id IS NULL
+			  AND COALESCE(btrim(p.reply_to_remote_object_iri), '') = ''
+			  AND p.visible_at <= NOW()
+			  AND p.group_id IS NULL
+			  AND EXISTS (
+				SELECT 1 FROM user_follows f
+				WHERE f.follower_id = $1 AND f.followee_id = p.user_id
+			  )
+			  AND `+postReadableByViewerSQL("p", "$1")+`
+			ORDER BY p.visible_at DESC, p.id DESC
+			LIMIT $2
+		)
 		SELECT p.id, p.user_id, u.email, u.handle, u.display_name, u.avatar_object_key, p.caption, p.media_type, p.object_keys,
 			p.is_nsfw,
 			`+postVisibilityExpr("p")+`,
@@ -2111,33 +2180,24 @@ func (p *Pool) ListFeedFollowing(ctx context.Context, viewerID uuid.UUID, limit 
 			EXISTS (SELECT 1 FROM post_reposts r WHERE r.post_id = p.id AND r.user_id = $1),
 			EXISTS (SELECT 1 FROM post_bookmarks b WHERE b.post_id = p.id AND b.user_id = $1)
 		FROM posts p
+		JOIN candidate c ON c.id = p.id
 		JOIN users u ON u.id = p.user_id
 		LEFT JOIN (
 			SELECT reply_to_id AS post_id, COUNT(*)::bigint AS reply_count
 			FROM posts
-			WHERE reply_to_id IS NOT NULL
+			WHERE reply_to_id IN (SELECT id FROM candidate)
 			GROUP BY reply_to_id
 		) rpl ON rpl.post_id = p.id
 		LEFT JOIN (
-			SELECT post_id, COUNT(*)::bigint AS like_count FROM post_likes GROUP BY post_id
+			SELECT post_id, COUNT(*)::bigint AS like_count FROM post_likes WHERE post_id IN (SELECT id FROM candidate) GROUP BY post_id
 		) lk ON lk.post_id = p.id
 		LEFT JOIN (
-			SELECT post_id, COUNT(*)::bigint AS like_count FROM post_remote_likes GROUP BY post_id
+			SELECT post_id, COUNT(*)::bigint AS like_count FROM post_remote_likes WHERE post_id IN (SELECT id FROM candidate) GROUP BY post_id
 		) rlk ON rlk.post_id = p.id
 		LEFT JOIN (
-			SELECT post_id, COUNT(*)::bigint AS repost_count FROM post_reposts GROUP BY post_id
+			SELECT post_id, COUNT(*)::bigint AS repost_count FROM post_reposts WHERE post_id IN (SELECT id FROM candidate) GROUP BY post_id
 		) rp ON rp.post_id = p.id
-		WHERE p.reply_to_id IS NULL
-		  AND COALESCE(btrim(p.reply_to_remote_object_iri), '') = ''
-		  AND p.visible_at <= NOW()
-		  AND p.group_id IS NULL
-		  AND EXISTS (
-			SELECT 1 FROM user_follows f
-			WHERE f.follower_id = $1 AND f.followee_id = p.user_id
-		  )
-		  AND `+postReadableByViewerSQL("p", "$1")+`
 		ORDER BY p.visible_at DESC, p.id DESC
-		LIMIT $2
 	`, viewerID, limit)
 	if err != nil {
 		return nil, err

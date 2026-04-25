@@ -44,6 +44,14 @@ export type TimelinePost = {
   membership_creator_id?: string;
   /** Provider-specific tier or reward id. */
   membership_tier_id?: string;
+  /** Whether the post is payment-locked (local U2U paywall). */
+  has_payment_lock?: boolean;
+  /** Payment provider (e.g. paypal). Omitted for viewers on some API paths. */
+  payment_provider?: string;
+  /** Payment “creator” id (Glipz user UUID) for local checks. */
+  payment_creator_id?: string;
+  /** Provider-specific plan id (PayPal plan_id). */
+  payment_plan_id?: string;
   /** Bitmask for protected targets: text, media, or all content. */
   view_password_scope?: number;
   /** Protected text ranges within the caption body. */

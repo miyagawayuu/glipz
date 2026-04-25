@@ -4,6 +4,8 @@ node_modules
 dist
 *.log
 docs
+data/
+*.exe
 
 # Capacitor / native app files
 # Keep Capacitor out of the GitHub-published repository.

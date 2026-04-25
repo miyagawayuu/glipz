@@ -6,6 +6,7 @@ import { useI18n } from "vue-i18n";
 import DMSettingsPanel from "../components/DMSettingsPanel.vue";
 import FanclubGumroadSettings from "../components/FanclubGumroadSettings.vue";
 import FanclubPatreonSettings from "../components/FanclubPatreonSettings.vue";
+import PaymentPayPalSettings from "../components/PaymentPayPalSettings.vue";
 import Icon from "../components/Icon.vue";
 import SecuritySettingsPanel from "../components/SecuritySettingsPanel.vue";
 import { securitySettingsKey, useSecuritySettings } from "../composables/useSecuritySettings";
@@ -48,6 +49,9 @@ const localeOptions = computed(() => [
   { value: "ja" as const, label: t("app.locale.ja") },
   { value: "en" as const, label: t("app.locale.en") },
 ]);
+const selectedThemeDescription = computed(() =>
+  themeOptions.value.find((opt) => opt.value === themePreference.value)?.description ?? "",
+);
 
 function selectTheme(next: ThemePreference) {
   themePreference.value = next;
@@ -136,6 +140,13 @@ onActivated(syncThemeFromStorage);
 
       <section>
         <h2 class="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+          {{ $t("views.settings.sections.payments") }}
+        </h2>
+        <PaymentPayPalSettings />
+      </section>
+
+      <section>
+        <h2 class="text-xs font-semibold uppercase tracking-wide text-neutral-500">
           {{ $t("views.settings.sections.directMessages") }}
         </h2>
         <div class="mt-3">
@@ -174,65 +185,36 @@ onActivated(syncThemeFromStorage);
         <div class="mt-3 space-y-3 rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
           <div>
             <p class="text-sm font-medium text-neutral-900">{{ $t("app.theme.heading") }}</p>
-            <div class="mt-2 space-y-1">
-              <button
+            <select
+              class="mt-2 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none ring-lime-500/30 transition focus:border-lime-400 focus:ring-2 focus:ring-lime-400/40"
+              :value="themePreference"
+              @change="selectTheme(($event.target as HTMLSelectElement).value as ThemePreference)"
+            >
+              <option
                 v-for="opt in themeOptions"
                 :key="opt.value"
-                type="button"
-                class="flex w-full items-start justify-between gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-colors"
-                :class="
-                  themePreference === opt.value
-                    ? 'bg-lime-50 text-lime-900'
-                    : 'text-neutral-800 hover:bg-neutral-50'
-                "
-                @click="selectTheme(opt.value)"
+                :value="opt.value"
               >
-                <span class="min-w-0">
-                  <span class="block font-medium">{{ opt.label }}</span>
-                  <span
-                    class="mt-0.5 block text-xs"
-                    :class="themePreference === opt.value ? 'text-lime-800' : 'text-neutral-500'"
-                  >{{ opt.description }}</span>
-                </span>
-                <span
-                  class="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border"
-                  :class="
-                    themePreference === opt.value
-                      ? 'border-lime-600 bg-lime-600 text-white'
-                      : 'border-neutral-200 text-transparent'
-                  "
-                  aria-hidden="true"
-                >
-                  <Icon name="check" class="h-3.5 w-3.5" stroke-width="2" />
-                </span>
-              </button>
-            </div>
+                {{ opt.label }}
+              </option>
+            </select>
+            <p class="mt-2 text-xs text-neutral-500">{{ selectedThemeDescription }}</p>
           </div>
           <div class="border-t border-neutral-200 pt-4">
             <p class="text-sm font-medium text-neutral-900">{{ $t("app.locale.heading") }}</p>
-            <div class="mt-2 space-y-1">
-              <button
+            <select
+              class="mt-2 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none ring-lime-500/30 transition focus:border-lime-400 focus:ring-2 focus:ring-lime-400/40"
+              :value="locale"
+              @change="selectLocale(($event.target as HTMLSelectElement).value as AppLocale)"
+            >
+              <option
                 v-for="opt in localeOptions"
                 :key="opt.value"
-                type="button"
-                class="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-colors"
-                :class="locale === opt.value ? 'bg-lime-50 text-lime-900' : 'text-neutral-800 hover:bg-neutral-50'"
-                @click="selectLocale(opt.value)"
+                :value="opt.value"
               >
-                <span class="font-medium">{{ opt.label }}</span>
-                <span
-                  class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border"
-                  :class="
-                    locale === opt.value
-                      ? 'border-lime-600 bg-lime-600 text-white'
-                      : 'border-neutral-200 text-transparent'
-                  "
-                  aria-hidden="true"
-                >
-                  <Icon name="check" class="h-3.5 w-3.5" stroke-width="2" />
-                </span>
-              </button>
-            </div>
+                {{ opt.label }}
+              </option>
+            </select>
           </div>
         </div>
       </section>

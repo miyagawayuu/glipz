@@ -5,6 +5,15 @@
 :root {
   color-scheme: light;
   --color-frame: 229 229 229;
+  --theme-bg: 255 255 255;
+  --theme-surface: 255 255 255;
+  --theme-surface-muted: 255 255 255;
+  --theme-text: 0 0 0;
+  --theme-text-muted: 64 64 64;
+  --theme-accent-bg: 247 254 231;
+  --theme-accent-bg-strong: 132 204 22;
+  --theme-accent-text: 63 98 18;
+  --theme-accent-text-strong: 54 83 20;
 }
 
 html,
@@ -24,11 +33,20 @@ body,
 html.dark {
   color-scheme: dark;
   --color-frame: 64 64 64;
+  --theme-bg: 23 23 23;
+  --theme-surface: 38 38 38;
+  --theme-surface-muted: 38 38 38;
+  --theme-text: 250 250 250;
+  --theme-text-muted: 212 212 212;
+  --theme-accent-bg: 54 83 20;
+  --theme-accent-bg-strong: 132 204 22;
+  --theme-accent-text: 190 242 100;
+  --theme-accent-text-strong: 217 249 157;
 }
 
 body {
-  background-color: rgb(255 255 255);
-  color: rgb(23 23 23);
+  background-color: rgb(var(--theme-bg));
+  color: rgb(var(--theme-text));
 }
 
 input,
@@ -41,8 +59,149 @@ select:focus {
 }
 
 html.dark body {
-  background-color: rgb(10 10 10);
-  color: rgb(250 250 250);
+  background-color: rgb(var(--theme-bg));
+  color: rgb(var(--theme-text));
+}
+
+.bg-neutral-50,
+.bg-neutral-50\/90,
+.bg-neutral-50\/80,
+.bg-neutral-50\/60,
+.bg-neutral-50\/50,
+.bg-neutral-100,
+.bg-neutral-100\/85,
+.bg-neutral-200\/50,
+.hover\:bg-neutral-50:hover,
+.hover\:bg-neutral-50\/90:hover,
+.hover\:bg-neutral-200:hover,
+.hover\:bg-neutral-200\/50:hover {
+  background-color: rgb(var(--theme-surface-muted));
+}
+
+.bg-lime-50,
+.bg-lime-50\/80,
+.bg-lime-50\/60,
+.bg-lime-50\/50,
+.bg-lime-50\/40,
+.bg-lime-100,
+.bg-sky-50,
+.bg-sky-50\/90,
+.bg-sky-50\/70,
+.bg-sky-50\/60,
+.bg-sky-50\/40,
+.bg-emerald-50,
+.bg-emerald-50\/90,
+.bg-emerald-50\/70,
+.bg-emerald-50\/60,
+.bg-amber-50,
+.bg-amber-50\/90,
+.bg-amber-50\/70,
+.bg-amber-100,
+.bg-violet-50,
+.bg-violet-50\/60,
+.bg-violet-50\/40,
+.hover\:bg-lime-50:hover,
+.hover\:bg-sky-50:hover,
+.hover\:bg-emerald-50:hover,
+.hover\:bg-amber-50:hover,
+.hover\:bg-violet-50:hover {
+  background-color: rgb(var(--theme-accent-bg) / 0.75);
+}
+
+.bg-lime-600,
+.bg-sky-600,
+.bg-emerald-600,
+.bg-amber-600,
+.bg-violet-600,
+.hover\:bg-lime-500:hover,
+.hover\:bg-sky-500:hover,
+.hover\:bg-emerald-500:hover,
+.hover\:bg-amber-500:hover,
+.hover\:bg-violet-500:hover,
+.hover\:bg-lime-600:hover,
+.hover\:bg-sky-600:hover,
+.hover\:bg-emerald-600:hover,
+.hover\:bg-amber-600:hover,
+.hover\:bg-violet-600:hover {
+  background-color: rgb(var(--theme-accent-bg-strong));
+}
+
+.hover\:bg-lime-700:hover,
+.hover\:bg-sky-700:hover,
+.hover\:bg-emerald-700:hover,
+.hover\:bg-amber-700:hover,
+.hover\:bg-violet-700:hover {
+  background-color: rgb(77 124 15);
+}
+
+.text-neutral-900,
+.text-neutral-800 {
+  color: rgb(var(--theme-text));
+}
+
+.text-neutral-700,
+.text-neutral-600,
+.text-neutral-500 {
+  color: rgb(var(--theme-text-muted));
+}
+
+.text-lime-950,
+.text-lime-900,
+.text-lime-800,
+.text-lime-700,
+.text-lime-600,
+.text-sky-950,
+.text-sky-900,
+.text-sky-900\/80,
+.text-sky-800,
+.text-sky-700,
+.text-sky-600,
+.text-emerald-950,
+.text-emerald-900,
+.text-emerald-900\/80,
+.text-emerald-800,
+.text-emerald-700,
+.text-emerald-600,
+.text-amber-950,
+.text-amber-900,
+.text-amber-900\/80,
+.text-amber-900\/75,
+.text-amber-800,
+.text-amber-700,
+.text-amber-600,
+.text-amber-500,
+.text-violet-950,
+.text-violet-900,
+.text-violet-800,
+.text-violet-700,
+.text-violet-600,
+.hover\:text-lime-900:hover,
+.hover\:text-lime-800:hover,
+.hover\:text-sky-900:hover,
+.hover\:text-sky-800:hover,
+.hover\:text-emerald-900:hover,
+.hover\:text-emerald-800:hover,
+.hover\:text-amber-900:hover,
+.hover\:text-amber-800:hover,
+.hover\:text-amber-500:hover,
+.hover\:text-violet-900:hover,
+.hover\:text-violet-800:hover {
+  color: rgb(var(--theme-accent-text-strong));
+}
+
+.text-lime-100 {
+  color: rgb(255 255 255);
+}
+
+.ring-sky-500,
+.ring-emerald-500,
+.ring-amber-500,
+.ring-violet-500,
+.focus\:ring-sky-500:focus,
+.focus\:ring-emerald-500:focus,
+.focus\:ring-amber-500:focus,
+.focus\:ring-violet-500:focus {
+  --tw-ring-color: rgb(132 204 22);
 }
 
 html.dark ::selection {
@@ -95,14 +254,25 @@ html.dark .bg-lime-50,
 html.dark .bg-lime-50\/80,
 html.dark .bg-lime-50\/60,
 html.dark .bg-lime-50\/50,
-html.dark .bg-lime-50\/40 {
-  background-color: rgb(54 83 20 / 0.45);
-}
-
+html.dark .bg-lime-50\/40,
+html.dark .bg-lime-100,
+html.dark .bg-sky-50,
+html.dark .bg-sky-50\/90,
+html.dark .bg-sky-50\/70,
+html.dark .bg-sky-50\/60,
+html.dark .bg-sky-50\/40,
+html.dark .bg-emerald-50,
+html.dark .bg-emerald-50\/90,
+html.dark .bg-emerald-50\/70,
+html.dark .bg-emerald-50\/60,
+html.dark .bg-amber-50,
+html.dark .bg-amber-50\/90,
+html.dark .bg-amber-50\/70,
+html.dark .bg-amber-100,
 html.dark .bg-violet-50,
 html.dark .bg-violet-50\/60,
 html.dark .bg-violet-50\/40 {
-  background-color: rgb(76 29 149 / 0.25);
+  background-color: rgb(54 83 20 / 0.45);
 }
 
 html.dark .bg-red-50,
@@ -177,13 +347,24 @@ html.dark .text-lime-800 {
 }
 
 html.dark .text-lime-700,
-html.dark .text-lime-100 {
-  color: rgb(163 230 53 / 1);
-}
-
+html.dark .text-lime-100,
+html.dark .text-sky-950,
+html.dark .text-sky-900,
+html.dark .text-sky-900\/80,
+html.dark .text-sky-800,
+html.dark .text-emerald-950,
+html.dark .text-emerald-900,
+html.dark .text-emerald-900\/80,
+html.dark .text-emerald-800,
+html.dark .text-amber-950,
+html.dark .text-amber-900,
+html.dark .text-amber-900\/80,
+html.dark .text-amber-900\/75,
+html.dark .text-amber-800,
+html.dark .text-violet-950,
 html.dark .text-violet-900,
 html.dark .text-violet-800 {
-  color: rgb(221 214 254 / 1);
+  color: rgb(163 230 53 / 1);
 }
 
 html.dark .text-red-800,
@@ -248,4 +429,51 @@ html.dark .prose {
   --tw-prose-pre-bg: rgb(23 23 23);
   --tw-prose-th-borders: rgb(82 82 82);
   --tw-prose-td-borders: rgb(64 64 64);
+}
+
+/* Keep borders consistent with timeline separators (`border-neutral-200`). */
+.border-neutral-200,
+.border-neutral-200\/90,
+.border-neutral-200\/80,
+.border-neutral-200\/30,
+.border-lime-100,
+.border-lime-200,
+.border-lime-200\/90,
+.border-lime-200\/80,
+.border-lime-300,
+.border-lime-400,
+.border-lime-500,
+.border-sky-100,
+.border-sky-200,
+.border-sky-200\/90,
+.border-sky-300,
+.border-sky-300\/80,
+.border-sky-500,
+.border-emerald-100,
+.border-emerald-200,
+.border-emerald-200\/90,
+.border-emerald-300,
+.border-amber-100,
+.border-amber-200,
+.border-amber-200\/90,
+.border-amber-300,
+.border-amber-300\/80,
+.border-violet-200,
+.border-violet-200\/90,
+.border-violet-200\/80,
+.border-red-200,
+.border-red-300,
+.border-white,
+.border-white\/15,
+.border-white\/25,
+.hover\:border-lime-200:hover,
+.hover\:border-lime-400:hover,
+.focus\:border-lime-400:focus,
+.focus-within\:border-lime-400:focus-within {
+  border-color: rgb(var(--color-frame));
+}
+
+.divide-neutral-200 > :not([hidden]) ~ :not([hidden]),
+.divide-frame > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgb(var(--color-frame));
 }

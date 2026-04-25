@@ -54,6 +54,9 @@ func main() {
 	if err := migrate.RunPostsExtras(ctx, pool); err != nil {
 		log.Fatalf("migrate posts extras: %v", err)
 	}
+	if err := migrate.RunPaymentPayPal(ctx, pool); err != nil {
+		log.Fatalf("migrate payment paypal: %v", err)
+	}
 	if err := migrate.RunFederationSubscribers(ctx, pool); err != nil {
 		log.Fatalf("migrate federation subscribers: %v", err)
 	}
@@ -127,20 +130,26 @@ func main() {
 		log.Fatalf("redis ping: %v", err)
 	}
 
-	s3c, err := s3client.New(
-		cfg.S3Endpoint,
-		cfg.S3PublicEndpoint,
-		cfg.S3Region,
-		cfg.S3AccessKey,
-		cfg.S3SecretKey,
-		cfg.S3Bucket,
-		cfg.S3UsePathStyle,
-	)
+	var mediaStore s3client.Store
+	switch cfg.StorageMode {
+	case "local":
+		mediaStore, err = s3client.NewLocal(cfg.LocalStoragePath, cfg.GlipzProtocolMediaPublicBase)
+	default:
+		mediaStore, err = s3client.New(
+			cfg.S3Endpoint,
+			cfg.S3PublicEndpoint,
+			cfg.S3Region,
+			cfg.S3AccessKey,
+			cfg.S3SecretKey,
+			cfg.S3Bucket,
+			cfg.S3UsePathStyle,
+		)
+	}
 	if err != nil {
-		log.Fatalf("s3: %v", err)
+		log.Fatalf("media storage: %v", err)
 	}
 
-	h := httpserver.New(cfg, pool, rdb, s3c)
+	h := httpserver.New(cfg, pool, rdb, mediaStore)
 	addr := ":" + cfg.Port
 	srv := &http.Server{
 		Addr:              addr,

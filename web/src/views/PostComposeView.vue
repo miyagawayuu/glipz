@@ -15,6 +15,8 @@ import {
   mergePickedComposerFiles,
 } from "../lib/composerMedia";
 import { patreonSettingsPath, usePatreonComposer } from "../composables/usePatreonComposer";
+import { usePaymentComposer } from "../composables/usePaymentComposer";
+import { listPayPalPlans, type PayPalPlanRow } from "../lib/paymentPayPal";
 import { avatarInitials, handleAt } from "../lib/feedDisplay";
 import { parseComposerReplyQuery, type ComposerReplyTarget } from "../lib/postComposer";
 import {
@@ -97,7 +99,30 @@ const {
   connectPatreonOAuth,
 } = usePatreonComposer({ viewPassword, viewPasswordConfirm, composerPasswordOpen });
 
+const {
+  composerPaymentOpen,
+  paymentUsePayPal,
+  payPalPlanId,
+  resetPaymentComposerState,
+  validatePaymentForSubmit,
+  applyPaymentToBody,
+} = usePaymentComposer({ viewPassword, viewPasswordConfirm, composerPasswordOpen, membershipUsePatreon });
+
 const patreonSettingsHref = patreonSettingsPath;
+const paypalPlans = ref<PayPalPlanRow[]>([]);
+const paypalPlansLoading = ref(false);
+const activePayPalPlans = computed(() => paypalPlans.value.filter((plan) => plan.active !== false));
+
+async function loadPayPalPlans(token: string) {
+  paypalPlansLoading.value = true;
+  try {
+    paypalPlans.value = await listPayPalPlans(token);
+  } catch {
+    paypalPlans.value = [];
+  } finally {
+    paypalPlansLoading.value = false;
+  }
+}
 
 function hasComposerContent(): boolean {
   if (selectedImages.value.length > 0) return true;
@@ -130,6 +155,7 @@ async function loadMe() {
     myAvatarUrl.value = u.avatar_url && String(u.avatar_url).trim() !== "" ? String(u.avatar_url) : null;
     composerAvatarImgFailed.value = false;
     void loadPatreon(token);
+    void loadPayPalPlans(token);
   } catch {
     myEmail.value = null;
     myHandle.value = null;
@@ -276,6 +302,7 @@ function resetComposer() {
   composerScheduleOpen.value = false;
   composerVisibilityOpen.value = false;
   resetPatreonComposerState();
+  resetPaymentComposerState();
 }
 
 async function submitPost() {
@@ -295,6 +322,11 @@ async function submitPost() {
   const memErr = validateMembershipForSubmit(pw, pw2, t);
   if (memErr) {
     err.value = memErr;
+    return;
+  }
+  const payErr = validatePaymentForSubmit(t);
+  if (payErr) {
+    err.value = payErr;
     return;
   }
   if (pw || pw2) {
@@ -372,6 +404,7 @@ async function submitPost() {
       }
     }
     applyMembershipToBody(body);
+    applyPaymentToBody(body);
     if (replyingTo.value) {
       if (replyingTo.value.is_federated) {
         const incomingId = replyingTo.value.id.startsWith("federated:")
@@ -566,6 +599,18 @@ onBeforeUnmount(() => {
             <button
               type="button"
               class="rounded-full p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800"
+              :class="(paymentUsePayPal || composerPaymentOpen) && 'bg-emerald-50 text-emerald-800'"
+              :title="composerPaymentOpen ? $t('views.compose.paymentClose') : $t('views.compose.paymentTitle')"
+              :aria-expanded="composerPaymentOpen"
+              aria-controls="composer-payment-panel"
+              @click="composerPaymentOpen = !composerPaymentOpen"
+            >
+              <span class="sr-only">{{ $t("views.compose.paymentOpen") }}</span>
+              <Icon name="wallet" class="h-5 w-5" />
+            </button>
+            <button
+              type="button"
+              class="rounded-full p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800"
               :class="composerPollOpen && 'bg-lime-50 text-lime-800'"
               :title="$t('views.compose.pollTitle')"
               :aria-pressed="composerPollOpen"
@@ -609,7 +654,7 @@ onBeforeUnmount(() => {
             {{ busy ? $t("views.compose.submitting") : $t("views.compose.submit") }}
           </button>
         </div>
-        <div v-if="composerPollOpen" class="mt-3 rounded-xl border border-lime-200/80 bg-lime-50/50 px-3 py-3 text-sm">
+        <div v-if="composerPollOpen" class="mt-3 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-3 text-sm">
           <p class="mb-2 text-xs font-medium text-neutral-700">{{ $t("views.compose.pollSectionTitle") }}</p>
           <div class="space-y-2">
             <div v-for="(_po, i) in pollOptionInputs" :key="i">
@@ -650,14 +695,14 @@ onBeforeUnmount(() => {
         <div
           v-if="composerScheduleOpen"
           id="composer-schedule-panel"
-          class="mt-3 rounded-xl border border-violet-200/90 bg-violet-50/60 px-3 py-3 text-sm"
+          class="mt-3 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-3 text-sm"
         >
           <label class="text-xs font-medium text-neutral-700" for="schedule-at">{{ $t("views.compose.schedulePanelLabel") }}</label>
           <input
             id="schedule-at"
             v-model="scheduleLocal"
             type="datetime-local"
-            class="mt-1 w-full max-w-xs rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none ring-violet-500 focus:ring-2"
+            class="mt-1 w-full max-w-xs rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none ring-lime-500 focus:ring-2"
           />
           <p class="mt-2 text-xs text-neutral-600">{{ $t("views.compose.scheduleHint") }}</p>
         </div>
@@ -680,17 +725,20 @@ onBeforeUnmount(() => {
             {{ composerVisibilityMeta(composerVisibility).description }}
           </p>
         </div>
-        <div v-if="composerNsfwOpen || composerPasswordOpen || composerMembershipOpen" class="mt-3 space-y-3">
+        <div
+          v-if="composerNsfwOpen || composerPasswordOpen || composerMembershipOpen || composerPaymentOpen"
+          class="mt-3 space-y-3"
+        >
           <div
             v-if="composerNsfwOpen"
             id="composer-nsfw-panel"
-            class="rounded-xl border border-amber-200/90 bg-amber-50/70 px-3 py-3 text-sm"
+            class="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-3 text-sm"
           >
             <label class="inline-flex cursor-pointer items-center gap-2 text-neutral-800">
-              <input v-model="isNsfw" type="checkbox" class="h-4 w-4 rounded border-neutral-200 text-amber-600 focus:ring-amber-500" />
+              <input v-model="isNsfw" type="checkbox" class="h-4 w-4 rounded border-neutral-200 text-lime-600 focus:ring-lime-500" />
               <span>{{ $t("views.compose.nsfwPostCheckbox") }}</span>
             </label>
-            <p class="mt-2 text-xs text-amber-900/75">{{ $t("views.compose.nsfwPostHint") }}</p>
+            <p class="mt-2 text-xs text-neutral-600">{{ $t("views.compose.nsfwPostHint") }}</p>
           </div>
           <div
             v-if="composerPasswordOpen"
@@ -794,16 +842,16 @@ onBeforeUnmount(() => {
           <div
             v-if="composerMembershipOpen"
             id="composer-membership-panel"
-            class="rounded-xl border border-sky-200/90 bg-sky-50/70 px-3 py-3 text-sm"
+            class="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-3 text-sm"
           >
-            <p class="text-xs font-medium text-sky-950">{{ $t("views.compose.membershipTitle") }}</p>
-            <p class="mt-1 text-xs text-sky-900/80">{{ $t("views.compose.membershipHint") }}</p>
+            <p class="text-xs font-medium text-neutral-700">{{ $t("views.compose.membershipTitle") }}</p>
+            <p class="mt-1 text-xs text-neutral-600">{{ $t("views.compose.membershipHint") }}</p>
             <div class="mt-3 flex flex-wrap gap-2">
               <button
                 v-if="patreonAvailable"
                 type="button"
                 class="rounded-full border px-3 py-1.5 text-xs font-medium"
-                :class="membershipProvider === 'patreon' ? 'border-sky-500 bg-white text-sky-900' : 'border-sky-200 text-sky-800 hover:bg-white'"
+                :class="membershipProvider === 'patreon' ? 'border-lime-500 bg-lime-50 text-lime-800' : 'border-neutral-200 text-neutral-700 hover:bg-neutral-50'"
                 @click="membershipProvider = 'patreon'"
               >
                 Patreon
@@ -811,7 +859,7 @@ onBeforeUnmount(() => {
               <button
                 type="button"
                 class="rounded-full border px-3 py-1.5 text-xs font-medium"
-                :class="membershipProvider === 'gumroad' ? 'border-sky-500 bg-white text-sky-900' : 'border-sky-200 text-sky-800 hover:bg-white'"
+                :class="membershipProvider === 'gumroad' ? 'border-lime-500 bg-lime-50 text-lime-800' : 'border-neutral-200 text-neutral-700 hover:bg-neutral-50'"
                 @click="membershipProvider = 'gumroad'"
               >
                 Gumroad
@@ -821,7 +869,7 @@ onBeforeUnmount(() => {
               <button
                 type="button"
                 :disabled="patreonConnectBusy"
-                class="inline-flex w-fit rounded-full bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-700 disabled:opacity-50"
+                class="inline-flex w-fit rounded-full bg-lime-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-lime-700 disabled:opacity-50"
                 @click="connectPatreonFromCompose"
               >
                 {{
@@ -830,35 +878,35 @@ onBeforeUnmount(() => {
                     : $t("views.settings.fanclubPatreon.connect")
                 }}
               </button>
-              <RouterLink :to="patreonSettingsHref" class="text-xs font-medium text-sky-800 underline">{{
+              <RouterLink :to="patreonSettingsHref" class="text-xs font-medium text-lime-800 underline">{{
                 $t("views.compose.membershipGoSettings")
               }}</RouterLink>
             </div>
             <template v-else-if="membershipProvider === 'patreon'">
-              <label class="mt-3 flex cursor-pointer items-center gap-2 text-sm text-sky-950">
-                <input v-model="membershipUsePatreon" type="checkbox" class="h-4 w-4 rounded border-sky-300 text-sky-600" />
+              <label class="mt-3 flex cursor-pointer items-center gap-2 text-sm text-neutral-800">
+                <input v-model="membershipUsePatreon" type="checkbox" class="h-4 w-4 rounded border-neutral-200 text-lime-600" />
                 <span>{{ $t("views.compose.membershipOpen") }}</span>
               </label>
               <div v-if="membershipUsePatreon" class="mt-3 space-y-2">
                 <div v-if="patreonCampaigns.length" class="grid gap-2 sm:grid-cols-2">
                   <div>
-                    <label class="mb-0.5 block text-xs text-sky-900/80" for="mem-camp">{{ $t("views.compose.membershipPickCampaign") }}</label>
+                    <label class="mb-0.5 block text-xs text-neutral-500" for="mem-camp">{{ $t("views.compose.membershipPickCampaign") }}</label>
                     <select
                       id="mem-camp"
                       v-model="membershipCampaignId"
-                      class="w-full rounded-xl border border-sky-200 bg-white px-2 py-2 text-sm text-neutral-900"
+                      class="w-full rounded-xl border border-neutral-200 bg-white px-2 py-2 text-sm text-neutral-900"
                     >
                       <option value="">{{ "—" }}</option>
                       <option v-for="c in patreonCampaigns" :key="c.id" :value="c.id">{{ c.title || c.id }}</option>
                     </select>
                   </div>
                   <div>
-                    <label class="mb-0.5 block text-xs text-sky-900/80" for="mem-tier">{{ $t("views.compose.membershipPickTier") }}</label>
+                    <label class="mb-0.5 block text-xs text-neutral-500" for="mem-tier">{{ $t("views.compose.membershipPickTier") }}</label>
                     <select
                       id="mem-tier"
                       v-model="membershipTierId"
                       :disabled="!membershipCampaignId"
-                      class="w-full rounded-xl border border-sky-200 bg-white px-2 py-2 text-sm text-neutral-900 disabled:opacity-50"
+                      class="w-full rounded-xl border border-neutral-200 bg-white px-2 py-2 text-sm text-neutral-900 disabled:opacity-50"
                     >
                       <option value="">{{ "—" }}</option>
                       <option v-for="tier in membershipTierOptions" :key="tier.id" :value="tier.id">{{
@@ -869,35 +917,35 @@ onBeforeUnmount(() => {
                 </div>
                 <div v-else class="grid gap-2 sm:grid-cols-2">
                   <div>
-                    <label class="mb-0.5 block text-xs text-sky-900/80" for="mem-cid">{{ $t("views.compose.membershipCampaign") }}</label>
+                    <label class="mb-0.5 block text-xs text-neutral-500" for="mem-cid">{{ $t("views.compose.membershipCampaign") }}</label>
                     <input
                       id="mem-cid"
                       v-model="membershipCampaignId"
                       type="text"
                       autocomplete="off"
-                      class="w-full rounded-xl border border-sky-200 bg-white px-2 py-2 text-sm text-neutral-900"
+                      class="w-full rounded-xl border border-neutral-200 bg-white px-2 py-2 text-sm text-neutral-900"
                     />
                   </div>
                   <div>
-                    <label class="mb-0.5 block text-xs text-sky-900/80" for="mem-tid">{{ $t("views.compose.membershipTier") }}</label>
+                    <label class="mb-0.5 block text-xs text-neutral-500" for="mem-tid">{{ $t("views.compose.membershipTier") }}</label>
                     <input
                       id="mem-tid"
                       v-model="membershipTierId"
                       type="text"
                       autocomplete="off"
-                      class="w-full rounded-xl border border-sky-200 bg-white px-2 py-2 text-sm text-neutral-900"
+                      class="w-full rounded-xl border border-neutral-200 bg-white px-2 py-2 text-sm text-neutral-900"
                     />
                   </div>
                 </div>
               </div>
             </template>
             <template v-else>
-              <label class="mt-3 flex cursor-pointer items-center gap-2 text-sm text-sky-950">
-                <input v-model="membershipUsePatreon" type="checkbox" class="h-4 w-4 rounded border-sky-300 text-sky-600" />
+              <label class="mt-3 flex cursor-pointer items-center gap-2 text-sm text-neutral-800">
+                <input v-model="membershipUsePatreon" type="checkbox" class="h-4 w-4 rounded border-neutral-200 text-lime-600" />
                 <span>{{ $t("views.compose.gumroadMembershipOpen") }}</span>
               </label>
               <div v-if="membershipUsePatreon" class="mt-3">
-                <label class="mb-0.5 block text-xs text-sky-900/80" for="gumroad-product-id">{{
+                <label class="mb-0.5 block text-xs text-neutral-500" for="gumroad-product-id">{{
                   $t("views.compose.gumroadProductId")
                 }}</label>
                 <input
@@ -905,11 +953,60 @@ onBeforeUnmount(() => {
                   v-model="membershipCampaignId"
                   type="text"
                   autocomplete="off"
-                  class="w-full rounded-xl border border-sky-200 bg-white px-2 py-2 text-sm text-neutral-900"
+                  class="w-full rounded-xl border border-neutral-200 bg-white px-2 py-2 text-sm text-neutral-900"
                   :placeholder="$t('views.compose.gumroadProductIdPlaceholder')"
                 />
               </div>
             </template>
+          </div>
+          <div
+            v-if="composerPaymentOpen"
+            id="composer-payment-panel"
+            class="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-3 text-sm"
+          >
+            <p class="text-xs font-medium text-neutral-700">{{ $t("views.compose.paymentTitle") }}</p>
+            <p class="mt-1 text-xs text-neutral-600">{{ $t("views.compose.paymentHint") }}</p>
+            <label class="mt-3 flex cursor-pointer items-center gap-2 text-sm text-neutral-800">
+              <input v-model="paymentUsePayPal" type="checkbox" class="h-4 w-4 rounded border-neutral-200 text-lime-600" />
+              <span>{{ $t("views.compose.paypalPaymentOpen") }}</span>
+            </label>
+            <div v-if="paymentUsePayPal" class="mt-3">
+              <label class="mb-0.5 block text-xs text-neutral-500" for="paypal-plan-id">{{
+                $t("views.compose.paypalPlanId")
+              }}</label>
+              <select
+                v-if="activePayPalPlans.length > 0"
+                id="paypal-plan-id"
+                v-model="payPalPlanId"
+                class="w-full rounded-xl border border-neutral-200 bg-white px-2 py-2 text-sm text-neutral-900"
+              >
+                <option value="">{{ $t("views.compose.paypalPlanSelectPlaceholder") }}</option>
+                <option v-for="plan in activePayPalPlans" :key="plan.id" :value="plan.plan_id">
+                  {{ plan.label || plan.plan_id }}
+                </option>
+              </select>
+              <input
+                v-else
+                id="paypal-plan-id"
+                v-model="payPalPlanId"
+                type="text"
+                autocomplete="off"
+                class="w-full rounded-xl border border-neutral-200 bg-white px-2 py-2 text-sm text-neutral-900"
+                :placeholder="$t('views.compose.paypalPlanIdPlaceholder')"
+              />
+              <p class="mt-2 text-xs text-neutral-600">
+                {{
+                  activePayPalPlans.length > 0
+                    ? $t("views.compose.paypalPlanSelectHint")
+                    : paypalPlansLoading
+                      ? $t("app.loadingShort")
+                      : $t("views.compose.paypalPlanHint")
+                }}
+                <RouterLink v-if="!paypalPlansLoading && activePayPalPlans.length === 0" to="/settings" class="font-medium text-lime-800 underline">
+                  {{ $t("views.compose.paypalPlanSettingsLink") }}
+                </RouterLink>
+              </p>
+            </div>
           </div>
         </div>
         <div v-if="previewUrls.length" class="mt-3 space-y-3">

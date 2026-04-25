@@ -522,6 +522,8 @@ func (s *Server) federatedIncomingToFeedItem(row repo.FederatedIncomingPost) fee
 		mediaURLs = append([]string(nil), row.UnlockedMediaURLs...)
 		isNSFW = row.UnlockedIsNSFW
 	}
+	avatarURL := s.federationRemoteMediaURL(row.ActorIconURL)
+	mediaURLs = s.federationRemoteMediaURLs(mediaURLs)
 	var repost *feedRepostMetaJSON
 	if fedBoost {
 		repost = &feedRepostMetaJSON{
@@ -529,7 +531,7 @@ func (s *Server) federatedIncomingToFeedItem(row repo.FederatedIncomingPost) fee
 			UserEmail:       synthEmail,
 			UserHandle:      acct,
 			UserDisplayName: disp,
-			UserAvatarURL:   strings.TrimSpace(row.ActorIconURL),
+			UserAvatarURL:   avatarURL,
 			RepostedAt:      row.PublishedAt.UTC().Format(time.RFC3339),
 		}
 		if c := strings.TrimSpace(row.RepostComment); c != "" {
@@ -541,7 +543,7 @@ func (s *Server) federatedIncomingToFeedItem(row repo.FederatedIncomingPost) fee
 		UserEmail:              synthEmail,
 		UserHandle:             acct,
 		UserDisplayName:        disp,
-		UserAvatarURL:          strings.TrimSpace(row.ActorIconURL),
+		UserAvatarURL:          avatarURL,
 		Caption:                caption,
 		MediaType:              mediaType,
 		MediaURLs:              mediaURLs,

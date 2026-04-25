@@ -55,9 +55,9 @@ func (s *Server) handlePublicFederationCustomEmojiResolve(w http.ResponseWriter,
 	// Cache hit?
 	if cached, ok := s.db.GetFederationRemoteCustomEmojiCache(r.Context(), host, ref.Name); ok {
 		writeJSON(w, http.StatusOK, map[string]any{
-			"shortcode":  repo.MakeCustomEmojiShortcode(ref.Name, "", host),
-			"image_url":  cached,
-			"cache_hit":  true,
+			"shortcode":   repo.MakeCustomEmojiShortcode(ref.Name, "", host),
+			"image_url":   s.federationRemoteMediaURL(cached),
+			"cache_hit":   true,
 			"cache_ttl_s": int(federationRemoteEmojiCacheTTL.Seconds()),
 		})
 		return
@@ -128,10 +128,9 @@ func (s *Server) handlePublicFederationCustomEmojiResolve(w http.ResponseWriter,
 	_ = s.db.UpsertFederationRemoteCustomEmojiCache(r.Context(), host, wantName, imageURL, time.Now().UTC().Add(federationRemoteEmojiCacheTTL))
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"shortcode":  repo.MakeCustomEmojiShortcode(wantName, "", host),
-		"image_url":  imageURL,
-		"cache_hit":  false,
+		"shortcode":   repo.MakeCustomEmojiShortcode(wantName, "", host),
+		"image_url":   s.federationRemoteMediaURL(imageURL),
+		"cache_hit":   false,
 		"cache_ttl_s": int(federationRemoteEmojiCacheTTL.Seconds()),
 	})
 }
-

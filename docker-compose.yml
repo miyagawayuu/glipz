@@ -52,6 +52,8 @@ services:
       SMTP_FROM_NAME: Glipz
     ports:
       - "8080:8080"
+    volumes:
+      - ./data/media:/app/data/media
     depends_on:
       postgres:
         condition: service_healthy
