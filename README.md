@@ -22,7 +22,7 @@ This repository contains the official Go implementation of the Glipz Federation 
 ### Who is Glipz for?
 
 - **Community builders** who want a private, customizable social space
-- **Creators** who want optional password- or membership-protected media on posts (Unlock; Patreon optional)
+- **Creators** who want optional password- or membership-protected media on posts (Unlock; **Patreon** OAuth or **Gumroad** product license)
 - **Developers** who need a flexible API for building custom frontends
 - **Self-hosters** who prefer running their own infrastructure
 
@@ -35,7 +35,7 @@ This repository contains the official Go implementation of the Glipz Federation 
 | Feature | Description |
 |---------|-------------|
 | **Timelines** | Home, local, and federated timelines |
-| **Posts** | Text, media, polls, scheduled publishing; optional view password or Patreon membership gate on media |
+| **Posts** | Text, media, polls, scheduled publishing; optional view password or Patreon / Gumroad membership gate on media |
 | **Replies & Threads** | Full threaded conversations |
 | **Reposts** | Share posts with optional commentary |
 | **Reactions** | Emoji reactions on posts |
@@ -68,10 +68,12 @@ This repository contains the official Go implementation of the Glipz Federation 
 - Backend media proxy for privacy
 - Post attachments: images (up to four per post), single video, or single audio; web UI uses custom video/audio players (theme-aware)
 
-### Fan club (Patreon, optional)
+### Fan club (Patreon, Gumroad; optional)
 
-- Creators can link Patreon via OAuth for membership-aware flows
-- Configure `PATREON_*` in `.env` (see [.env.example](.env.example)); callback path is documented there
+- **Patreon:** link your campaign via OAuth; configure `PATREON_*` in `.env` (see [.env.example](.env.example)); callback path is documented there.
+- **Gumroad:** lock a post to a [Gumroad](https://gumroad.com) product by ID; viewers unlock by entering a valid license key. The server verifies keys against [Gumroad’s license API](https://gumroad.com/api#licenses)—no `GUMROAD_*` secrets are required in `.env` (see comments in [.env.example](.env.example)).
+- **Federation:** remote instances cannot mint `entitlement_jwt` for Patreon- or Gumroad-locked posts (returns `501` with `federation_membership_entitlement_unsupported`); unlock those memberships on the **origin** instance or with password-based unlock when applicable.
+- Other membership platforms (e.g. SubscribeStar, Ko-fi, Fansly, Ci-en, pixiv FANBOX, Fantia) are not integrated: most lack a stable, third-party–safe API to verify a viewer’s subscription in real time, or are unsuitable for server-side checks under Glipz’s model.
 
 ### Developer Features
 
@@ -178,7 +180,8 @@ Mailpit (started with the Docker stack) is for local development. In production,
 - [ ] Database and Redis secured
 - [ ] Email provider configured (Mailgun, etc.)
 - [ ] `GLIPZ_ADMIN_USER_IDS` set if you need built-in admin UIs
-- [ ] Patreon fan club: `PATREON_CLIENT_ID`, `PATREON_CLIENT_SECRET`, and matching redirect URI
+- [ ] Patreon fan club (if used): `PATREON_CLIENT_ID`, `PATREON_CLIENT_SECRET`, and matching redirect URI
+- [ ] Gumroad (if used): no extra instance secrets—ensure creators know the product ID and that viewers use valid license keys
 
 ---
 
@@ -215,13 +218,25 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
   -d '{"password":"your-password"}'
 ```
 
+#### Local post unlock (Gumroad license)
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  https://your-instance.com/api/v1/fanclub/gumroad/entitlement \
+  -d '{"post_id":"'"$POST_ID"'","license_key":"your-gumroad-license"}'
+```
+
 #### Federated incoming post unlock (membership, one-click)
 
-If a federated incoming post is membership-locked, the web app can unlock it without a password.
+If a federated incoming post is membership-locked and the lock type supports cross-instance `entitlement_jwt` minting, the web app can unlock it without a password.
+
 Under the hood, the viewer instance does:
 
 1. `POST {unlock_url_without_suffix}/entitlement` (federation-signed) to obtain `entitlement_jwt`
 2. `POST unlock_url` with `entitlement_jwt`
+
+**Patreon and Gumroad:** the origin will respond with `501` and `federation_membership_entitlement_unsupported`—external membership must be proven on the **origin** instance (e.g. Patreon connect flow or Gumroad license verification there), not via a remote node minting JWTs.
 
 From a client, you can simply call the viewer-instance API:
 
@@ -243,7 +258,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
   -d '{"post_id":"'"$POST_ID"'","viewer_acct":"alice@viewer.example"}'
 ```
 
-Membership entitlement over Glipz federation (`POST .../federation/posts/{postID}/entitlement`) is allowed for any caller that passes `verifyFederationRequest` (valid instance discovery + signature) and whose `ViewerAcct` host matches `X-Glipz-Instance`.
+Membership entitlement over Glipz federation (`POST .../federation/posts/{postID}/entitlement`) is allowed for any caller that passes `verifyFederationRequest` (valid instance discovery + signature) and whose `ViewerAcct` host matches `X-Glipz-Instance`, **except** where the post is locked to Patreon or Gumroad (see above).
 
 ---
 
@@ -259,6 +274,7 @@ Membership entitlement over Glipz federation (`POST .../federation/posts/{postID
 | `GLIPZ_PROTOCOL_*` | Federation / discovery / media URLs | Optional |
 | `GLIPZ_ADMIN_USER_IDS` | Comma-separated user UUIDs with site admin | Optional |
 | `PATREON_*` | Patreon OAuth for fan club features | Optional |
+| (none) | Gumroad: license checks use Gumroad’s public API; no Glipz env vars | — |
 | `TURN_*` | WebRTC TURN credentials for DM calls | Optional |
 | `WEB_PUSH_VAPID_*` | Web Push (VAPID) keys | Optional |
 

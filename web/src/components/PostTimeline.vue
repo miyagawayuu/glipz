@@ -14,6 +14,7 @@ import { getAccessToken } from "../auth";
 import { api } from "../lib/api";
 import { customEmojiMap, ensureCustomEmojiCatalog, pickerCustomEmojisForHandle, unicodeReactionPickerCategories } from "../lib/customEmojis";
 import { blockFederationUser, muteFederationUser } from "../lib/federationPrivacy";
+import { requestGumroadEntitlement } from "../lib/fanclubGumroad";
 import { requestPatreonEntitlement, requestPatreonEntitlementFederated } from "../lib/fanclubPatreon";
 import { unlockTimelinePost, voteTimelinePoll } from "../lib/federationActions";
 import type { TimelinePoll, TimelinePost } from "../types/timeline";
@@ -217,6 +218,7 @@ const reportErr = ref("");
 const nsfwRevealedIds = ref(new Set<string>());
 const ageGatePostId = ref<string | null>(null);
 const unlockPwd = reactive<Record<string, string>>({});
+const unlockGumroadLicense = reactive<Record<string, string>>({});
 const unlockErr = reactive<Record<string, string>>({});
 const unlockBusy = ref<string | null>(null);
 const pollBusy = ref<string | null>(null);
@@ -739,10 +741,8 @@ async function submitUnlock(it: TimelinePost) {
   unlockErr[it.id] = "";
   try {
     let entitlementJwt: string | undefined;
-    if (
-      it.has_membership_lock &&
-      (it.membership_provider || "").toLowerCase() === "patreon"
-    ) {
+    const provider = (it.membership_provider || "").toLowerCase();
+    if (it.has_membership_lock && provider === "patreon") {
       try {
         entitlementJwt = it.is_federated
           ? await requestPatreonEntitlementFederated(token, it.id, it.remote_object_url)
@@ -756,6 +756,31 @@ async function submitUnlock(it: TimelinePost) {
               ? t("components.postTimeline.unlock.notEntitled")
               : msg === "patreon_api_error" || msg.startsWith("patreon_")
                 ? t("components.postTimeline.unlock.patreonApiError")
+                : msg || t("components.postTimeline.unlock.unlockFailed");
+        return;
+      }
+    }
+    if (it.has_membership_lock && provider === "gumroad") {
+      if (it.is_federated) {
+        unlockErr[it.id] = t("components.postTimeline.unlock.federatedMembershipUnsupported");
+        return;
+      }
+      const licenseKey = (unlockGumroadLicense[it.id] ?? "").trim();
+      if (!licenseKey) {
+        unlockErr[it.id] = t("components.postTimeline.unlock.gumroadLicenseRequired");
+        return;
+      }
+      try {
+        entitlementJwt = await requestGumroadEntitlement(token, it.id, licenseKey);
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : "";
+        unlockErr[it.id] =
+          msg === "not_entitled"
+            ? t("components.postTimeline.unlock.notEntitled")
+            : msg === "gumroad_license_required"
+              ? t("components.postTimeline.unlock.gumroadLicenseRequired")
+              : msg === "gumroad_api_error" || msg.startsWith("gumroad_")
+                ? t("components.postTimeline.unlock.gumroadApiError")
                 : msg || t("components.postTimeline.unlock.unlockFailed");
         return;
       }
@@ -785,8 +810,8 @@ async function submitUnlock(it: TimelinePost) {
           ? t("components.postTimeline.unlock.noPassword")
           : msg === "invalid_unlock"
             ? t("components.postTimeline.unlock.passwordRequired")
-            : msg === "federation_patreon_entitlement_unsupported"
-              ? t("components.postTimeline.unlock.patreonFederationUnsupported")
+            : msg === "federation_patreon_entitlement_unsupported" || msg === "federation_membership_entitlement_unsupported"
+              ? t("components.postTimeline.unlock.federatedMembershipUnsupported")
               : msg === "untrusted_instance"
                 ? t("components.postTimeline.unlock.untrustedInstance")
                 : msg;
@@ -1115,6 +1140,21 @@ async function submitUnlock(it: TimelinePost) {
           <p class="mt-1 text-xs text-sky-900/80">
             {{ $t("components.postTimeline.membershipLockedBody") }}
           </p>
+          <div v-if="(it.membership_provider || '').toLowerCase() === 'gumroad'" class="mt-3">
+            <label class="sr-only" :for="`gumroad-license-${it.id}`">{{
+              $t("components.postTimeline.unlock.gumroadLicenseLabel")
+            }}</label>
+            <input
+              :id="`gumroad-license-${it.id}`"
+              type="text"
+              autocomplete="off"
+              class="w-full rounded-xl border border-sky-300/80 bg-white px-3 py-2 text-sm text-neutral-900 outline-none ring-sky-500 focus:ring-2"
+              :placeholder="$t('components.postTimeline.unlock.gumroadLicensePlaceholder')"
+              :value="unlockGumroadLicense[it.id] ?? ''"
+              @input="unlockGumroadLicense[it.id] = ($event.target as HTMLInputElement).value"
+              @keydown.enter.prevent="submitUnlock(it)"
+            />
+          </div>
           <div class="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
             <button
               type="button"

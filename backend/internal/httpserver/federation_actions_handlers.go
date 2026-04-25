@@ -367,8 +367,9 @@ func (s *Server) handleFederatedPostUnlock(w http.ResponseWriter, r *http.Reques
 			})
 			if err != nil {
 				es := err.Error()
-				if strings.Contains(es, "federation_patreon_entitlement_unsupported") {
-					writeJSON(w, http.StatusBadGateway, map[string]string{"error": "federation_patreon_entitlement_unsupported"})
+				if strings.Contains(es, "federation_patreon_entitlement_unsupported") ||
+					strings.Contains(es, "federation_membership_entitlement_unsupported") {
+					writeJSON(w, http.StatusBadGateway, map[string]string{"error": "federation_membership_entitlement_unsupported"})
 					return
 				}
 				if strings.Contains(es, "status 403:") && strings.Contains(es, "untrusted_instance") {
@@ -388,9 +389,9 @@ func (s *Server) handleFederatedPostUnlock(w http.ResponseWriter, r *http.Reques
 	}
 
 	body, err := s.signedFederationPOSTJSON(r.Context(), unlockURL, federationUnlockRequest{
-		EventID:    federationNewEventID(),
-		ViewerAcct: actor.Acct,
-		Password:   req.Password,
+		EventID:        federationNewEventID(),
+		ViewerAcct:     actor.Acct,
+		Password:       req.Password,
 		EntitlementJWT: req.EntitlementJWT,
 	})
 	if err != nil {

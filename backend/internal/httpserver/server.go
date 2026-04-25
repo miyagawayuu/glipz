@@ -181,6 +181,7 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c *s3client
 			r.Post("/fanclub/patreon/entitlement", s.handlePatreonEntitlement)
 			r.Post("/fanclub/patreon/entitlement-federated", s.handlePatreonEntitlementFederated)
 			r.Get("/fanclub/patreon/campaigns", s.handlePatreonCampaigns)
+			r.Post("/fanclub/gumroad/entitlement", s.handleGumroadEntitlement)
 			r.Get("/me", s.handleMe)
 			r.Get("/me/custom-emojis", s.handleMeListCustomEmojis)
 			r.Post("/me/custom-emojis", s.handleMeCreateCustomEmoji)
@@ -2794,15 +2795,15 @@ func (s *Server) handleUserFollowersByHandle(w http.ResponseWriter, r *http.Requ
 			}
 			h := strings.TrimPrefix(strings.TrimSpace(disp.Acct), "@")
 			out = append(out, map[string]any{
-				"is_remote":      true,
+				"is_remote":       true,
 				"remote_actor_id": strings.TrimSpace(disp.ActorID),
-				"handle":         h,
-				"display_name":   strings.TrimSpace(disp.Name),
-				"badges":         []any{},
-				"bio":            strings.TrimSpace(disp.Summary),
-				"avatar_url":     strings.TrimSpace(disp.IconURL),
-				"followed_by_me": false,
-				"follows_you":    false,
+				"handle":          h,
+				"display_name":    strings.TrimSpace(disp.Name),
+				"badges":          []any{},
+				"bio":             strings.TrimSpace(disp.Summary),
+				"avatar_url":      strings.TrimSpace(disp.IconURL),
+				"followed_by_me":  false,
+				"follows_you":     false,
 			})
 		}
 	}
@@ -2895,15 +2896,15 @@ func (s *Server) handleUserFollowingByHandle(w http.ResponseWriter, r *http.Requ
 			}
 			h := strings.TrimPrefix(strings.TrimSpace(disp.Acct), "@")
 			out = append(out, map[string]any{
-				"is_remote":      true,
+				"is_remote":       true,
 				"remote_actor_id": strings.TrimSpace(disp.ActorID),
-				"handle":         h,
-				"display_name":   strings.TrimSpace(disp.Name),
-				"badges":         []any{},
-				"bio":            strings.TrimSpace(disp.Summary),
-				"avatar_url":     strings.TrimSpace(disp.IconURL),
-				"followed_by_me": true,
-				"follows_you":    false,
+				"handle":          h,
+				"display_name":    strings.TrimSpace(disp.Name),
+				"badges":          []any{},
+				"bio":             strings.TrimSpace(disp.Summary),
+				"avatar_url":      strings.TrimSpace(disp.IconURL),
+				"followed_by_me":  true,
+				"follows_you":     false,
 			})
 		}
 	}

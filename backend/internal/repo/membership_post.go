@@ -13,6 +13,7 @@ var (
 // AllowedMembershipProviders lists provider IDs (lowercase) that may be set on a post. Extend as new integrations ship.
 var AllowedMembershipProviders = map[string]struct{}{
 	"patreon": {},
+	"gumroad": {},
 }
 
 // NormalizePostMembership validates optional membership lock metadata for local posts.

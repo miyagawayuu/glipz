@@ -4,6 +4,7 @@ import { computed, inject, onActivated, onMounted, provide, ref } from "vue";
 import { RouterLink } from "vue-router";
 import { useI18n } from "vue-i18n";
 import DMSettingsPanel from "../components/DMSettingsPanel.vue";
+import FanclubGumroadSettings from "../components/FanclubGumroadSettings.vue";
 import FanclubPatreonSettings from "../components/FanclubPatreonSettings.vue";
 import Icon from "../components/Icon.vue";
 import SecuritySettingsPanel from "../components/SecuritySettingsPanel.vue";
@@ -129,6 +130,7 @@ onActivated(syncThemeFromStorage);
         <h2 class="text-xs font-semibold uppercase tracking-wide text-neutral-500">
           {{ $t("views.settings.sections.fanclub") }}
         </h2>
+        <FanclubGumroadSettings />
         <FanclubPatreonSettings />
       </section>
 

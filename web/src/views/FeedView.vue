@@ -183,6 +183,7 @@ const {
   patreonCampaigns,
   composerMembershipOpen,
   membershipUsePatreon,
+  membershipProvider,
   membershipCampaignId,
   membershipTierId,
   patreonConnectBusy,
@@ -1084,7 +1085,6 @@ function addPollOptionField() {
               <Icon name="lock" class="h-5 w-5" />
             </button>
             <button
-              v-if="patreonAvailable"
               type="button"
               class="rounded-full p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800"
               :class="(membershipUsePatreon || composerMembershipOpen) && 'bg-sky-50 text-sky-800'"
@@ -1331,7 +1331,26 @@ function addPollOptionField() {
           >
             <p class="text-xs font-medium text-sky-950">{{ $t("views.compose.membershipTitle") }}</p>
             <p class="mt-1 text-xs text-sky-900/80">{{ $t("views.compose.membershipHint") }}</p>
-            <div v-if="!patreonConnected" class="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+            <div class="mt-3 flex flex-wrap gap-2">
+              <button
+                v-if="patreonAvailable"
+                type="button"
+                class="rounded-full border px-3 py-1.5 text-xs font-medium"
+                :class="membershipProvider === 'patreon' ? 'border-sky-500 bg-white text-sky-900' : 'border-sky-200 text-sky-800 hover:bg-white'"
+                @click="membershipProvider = 'patreon'"
+              >
+                Patreon
+              </button>
+              <button
+                type="button"
+                class="rounded-full border px-3 py-1.5 text-xs font-medium"
+                :class="membershipProvider === 'gumroad' ? 'border-sky-500 bg-white text-sky-900' : 'border-sky-200 text-sky-800 hover:bg-white'"
+                @click="membershipProvider = 'gumroad'"
+              >
+                Gumroad
+              </button>
+            </div>
+            <div v-if="membershipProvider === 'patreon' && !patreonConnected" class="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
               <button
                 type="button"
                 :disabled="patreonConnectBusy"
@@ -1348,7 +1367,7 @@ function addPollOptionField() {
                 $t("views.compose.membershipGoSettings")
               }}</RouterLink>
             </div>
-            <template v-else>
+            <template v-else-if="membershipProvider === 'patreon'">
               <label class="mt-3 flex cursor-pointer items-center gap-2 text-sm text-sky-950">
                 <input v-model="membershipUsePatreon" type="checkbox" class="h-4 w-4 rounded border-sky-300 text-sky-600" />
                 <span>{{ $t("views.compose.membershipOpen") }}</span>
@@ -1403,6 +1422,25 @@ function addPollOptionField() {
                     />
                   </div>
                 </div>
+              </div>
+            </template>
+            <template v-else>
+              <label class="mt-3 flex cursor-pointer items-center gap-2 text-sm text-sky-950">
+                <input v-model="membershipUsePatreon" type="checkbox" class="h-4 w-4 rounded border-sky-300 text-sky-600" />
+                <span>{{ $t("views.compose.gumroadMembershipOpen") }}</span>
+              </label>
+              <div v-if="membershipUsePatreon" class="mt-3">
+                <label class="mb-0.5 block text-xs text-sky-900/80" for="feed-gumroad-product-id">{{
+                  $t("views.compose.gumroadProductId")
+                }}</label>
+                <input
+                  id="feed-gumroad-product-id"
+                  v-model="membershipCampaignId"
+                  type="text"
+                  autocomplete="off"
+                  class="w-full rounded-xl border border-sky-200 bg-white px-2 py-2 text-sm text-neutral-900"
+                  :placeholder="$t('views.compose.gumroadProductIdPlaceholder')"
+                />
               </div>
             </template>
           </div>

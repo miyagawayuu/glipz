@@ -21,6 +21,7 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 
+	"glipz.io/backend/internal/fanclub/gumroad"
 	"glipz.io/backend/internal/fanclub/patreon"
 	"glipz.io/backend/internal/repo"
 )
@@ -141,27 +142,27 @@ type federationEventPoll struct {
 }
 
 type federationEventNote struct {
-	ID                          string `json:"id"`
-	URL                         string `json:"url"`
-	Title                       string `json:"title"`
-	BodyMd                      string `json:"body_md"`
-	Visibility                  string `json:"visibility"`
-	PublishedAt                 string `json:"published_at"`
-	UpdatedAt                   string `json:"updated_at,omitempty"`
-	HasPremium                  bool   `json:"has_premium,omitempty"`
-	PaywallProvider             string `json:"paywall_provider,omitempty"`
-	UnlockURL                   string `json:"unlock_url,omitempty"`
+	ID              string `json:"id"`
+	URL             string `json:"url"`
+	Title           string `json:"title"`
+	BodyMd          string `json:"body_md"`
+	Visibility      string `json:"visibility"`
+	PublishedAt     string `json:"published_at"`
+	UpdatedAt       string `json:"updated_at,omitempty"`
+	HasPremium      bool   `json:"has_premium,omitempty"`
+	PaywallProvider string `json:"paywall_provider,omitempty"`
+	UnlockURL       string `json:"unlock_url,omitempty"`
 }
 
 type federationEventEnvelope struct {
-	EventID string                `json:"event_id,omitempty"`
-	V       int                   `json:"v"`
-	Kind    string                `json:"kind"`
-	Author  federationEventAuthor `json:"author"`
-	Post    *federationEventPost  `json:"post,omitempty"`
-	Note    *federationEventNote  `json:"note,omitempty"`
+	EventID  string                   `json:"event_id,omitempty"`
+	V        int                      `json:"v"`
+	Kind     string                   `json:"kind"`
+	Author   federationEventAuthor    `json:"author"`
+	Post     *federationEventPost     `json:"post,omitempty"`
+	Note     *federationEventNote     `json:"note,omitempty"`
 	Reaction *federationEventReaction `json:"reaction,omitempty"`
-	DM      *federationEventDM    `json:"dm,omitempty"`
+	DM       *federationEventDM       `json:"dm,omitempty"`
 }
 
 type federationEventReaction struct {
@@ -175,27 +176,27 @@ type federationSealedBox struct {
 }
 
 type federationEventDMAttachment struct {
-	PublicURL       string             `json:"public_url"`
-	FileName        string             `json:"file_name,omitempty"`
-	ContentType     string             `json:"content_type,omitempty"`
-	SizeBytes       int64              `json:"size_bytes,omitempty"`
-	EncryptedBytes  int64              `json:"encrypted_bytes,omitempty"`
-	FileIV          string             `json:"file_iv"`
+	PublicURL       string              `json:"public_url"`
+	FileName        string              `json:"file_name,omitempty"`
+	ContentType     string              `json:"content_type,omitempty"`
+	SizeBytes       int64               `json:"size_bytes,omitempty"`
+	EncryptedBytes  int64               `json:"encrypted_bytes,omitempty"`
+	FileIV          string              `json:"file_iv"`
 	SenderKeyBox    federationSealedBox `json:"sender_key_box,omitempty"`
 	RecipientKeyBox federationSealedBox `json:"recipient_key_box"`
 }
 
 type federationEventDM struct {
-	ThreadID         string                    `json:"thread_id"`
-	MessageID        string                    `json:"message_id,omitempty"`
-	ToAcct           string                    `json:"to_acct"`
-	FromAcct         string                    `json:"from_acct"`
-	FromKID          string                    `json:"from_kid,omitempty"`
-	Capabilities     map[string]any            `json:"capabilities,omitempty"`
-	ExpiresAt        string                    `json:"expires_at,omitempty"`
-	KeyBoxForInviter *federationSealedBox      `json:"key_box_for_inviter,omitempty"`
-	RecipientPayload *federationSealedBox      `json:"recipient_payload,omitempty"`
-	SentAt           string                    `json:"sent_at,omitempty"`
+	ThreadID         string                        `json:"thread_id"`
+	MessageID        string                        `json:"message_id,omitempty"`
+	ToAcct           string                        `json:"to_acct"`
+	FromAcct         string                        `json:"from_acct"`
+	FromKID          string                        `json:"from_kid,omitempty"`
+	Capabilities     map[string]any                `json:"capabilities,omitempty"`
+	ExpiresAt        string                        `json:"expires_at,omitempty"`
+	KeyBoxForInviter *federationSealedBox          `json:"key_box_for_inviter,omitempty"`
+	RecipientPayload *federationSealedBox          `json:"recipient_payload,omitempty"`
+	SentAt           string                        `json:"sent_at,omitempty"`
 	Attachments      []federationEventDMAttachment `json:"attachments,omitempty"`
 }
 
@@ -855,10 +856,11 @@ func (s *Server) handleFederationPostEntitlementInbound(w http.ResponseWriter, r
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "not_membership_locked"})
 		return
 	}
-	if strings.EqualFold(strings.TrimSpace(row.MembershipProvider), patreon.ProviderID) {
-		// Remote instances cannot prove a viewer's Patreon tier to this node; minting here would bypass paywalls.
+	if strings.EqualFold(strings.TrimSpace(row.MembershipProvider), patreon.ProviderID) ||
+		strings.EqualFold(strings.TrimSpace(row.MembershipProvider), gumroad.ProviderID) {
+		// Remote instances cannot prove external membership to this node; minting here would bypass paywalls.
 		// Use 501 (not 403): consumers must not treat this as federation trust / "untrusted_instance".
-		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "federation_patreon_entitlement_unsupported"})
+		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "federation_membership_entitlement_unsupported"})
 		return
 	}
 	jws, err := s.mintFederationEntitlementJWT(r.Context(), viewerAcct, row, postID, nil)
@@ -973,7 +975,7 @@ type federationEntitlementJWTClaims struct {
 // federationEntitlementMintOpts configures entitlement JWTs minted on the viewer's home instance for unlock on a remote origin.
 type federationEntitlementMintOpts struct {
 	AudienceTargets []string // hosts/or origins accepted by verify on the post author's instance
-	PostURLOverride string     // canonical post object IRI when unlocking a remote post
+	PostURLOverride string   // canonical post object IRI when unlocking a remote post
 }
 
 func (s *Server) mintFederationEntitlementJWT(ctx context.Context, viewerAcct string, row repo.PostSensitive, postID uuid.UUID, opts *federationEntitlementMintOpts) (string, error) {
@@ -1385,12 +1387,12 @@ func (s *Server) handleFederationEventInbound(w http.ResponseWriter, r *http.Req
 	hasLocalPost := false
 	if hasPost {
 		if postID := strings.TrimSpace(ev.Post.ID); postID != "" {
-		if parsed, err := uuid.Parse(postID); err == nil {
-			if ok, err := s.db.PostExists(r.Context(), parsed); err == nil && ok {
-				localPostID = parsed
-				hasLocalPost = true
+			if parsed, err := uuid.Parse(postID); err == nil {
+				if ok, err := s.db.PostExists(r.Context(), parsed); err == nil && ok {
+					localPostID = parsed
+					hasLocalPost = true
+				}
 			}
-		}
 		}
 	}
 	if !hasLocalPost {
@@ -1679,4 +1681,3 @@ func (s *Server) handleFederationEventInbound(w http.ResponseWriter, r *http.Req
 	_ = s.rememberFederationEventID(r.Context(), verified, eventID)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
-

@@ -4,6 +4,7 @@ import { fetchPatreonCampaigns, fetchPatreonStatus, startPatreonOAuth, type Patr
 export const patreonSettingsPath = "/settings";
 
 type Translate = (key: string) => string;
+type MembershipProvider = "patreon" | "gumroad";
 
 export function usePatreonComposer(opts: {
   viewPassword: Ref<string>;
@@ -15,6 +16,7 @@ export function usePatreonComposer(opts: {
   const patreonCampaigns = ref<PatreonCampaignRow[]>([]);
   const composerMembershipOpen = ref(false);
   const membershipUsePatreon = ref(false);
+  const membershipProvider = ref<MembershipProvider>("gumroad");
   const membershipCampaignId = ref("");
   const membershipTierId = ref("");
   const patreonConnectBusy = ref(false);
@@ -43,6 +45,11 @@ export function usePatreonComposer(opts: {
     membershipTierId.value = "";
   });
 
+  watch(membershipProvider, () => {
+    membershipCampaignId.value = "";
+    membershipTierId.value = "";
+  });
+
   async function loadPatreon(token: string) {
     try {
       const s = await fetchPatreonStatus(token);
@@ -68,6 +75,7 @@ export function usePatreonComposer(opts: {
   function resetPatreonComposerState() {
     composerMembershipOpen.value = false;
     membershipUsePatreon.value = false;
+    membershipProvider.value = "gumroad";
     membershipCampaignId.value = "";
     membershipTierId.value = "";
   }
@@ -77,10 +85,13 @@ export function usePatreonComposer(opts: {
     if (membershipUsePatreon.value && (pw.trim() || pw2.trim())) {
       return t("views.compose.errors.membershipWithPassword");
     }
-    if (membershipUsePatreon.value) {
+    if (membershipUsePatreon.value && membershipProvider.value === "patreon") {
       if (!membershipCampaignId.value.trim() || !membershipTierId.value.trim()) {
         return t("views.compose.errors.membershipIdsRequired");
       }
+    }
+    if (membershipUsePatreon.value && membershipProvider.value === "gumroad" && !membershipCampaignId.value.trim()) {
+      return t("views.compose.errors.gumroadProductRequired");
     }
     return null;
   }
@@ -88,9 +99,9 @@ export function usePatreonComposer(opts: {
   function applyMembershipToBody(body: Record<string, unknown>) {
     if (!membershipUsePatreon.value) return;
     body.membership = {
-      provider: "patreon",
+      provider: membershipProvider.value,
       creator_id: membershipCampaignId.value.trim(),
-      tier_id: membershipTierId.value.trim(),
+      tier_id: membershipProvider.value === "gumroad" ? "license" : membershipTierId.value.trim(),
     };
   }
 
@@ -113,6 +124,7 @@ export function usePatreonComposer(opts: {
     patreonCampaigns,
     composerMembershipOpen,
     membershipUsePatreon,
+    membershipProvider,
     membershipCampaignId,
     membershipTierId,
     patreonConnectBusy,
