@@ -131,24 +131,41 @@ export const router = createRouter({
       meta: { requiresAuth: true, titleKey: "routes.oauthAuthorize" },
     },
     {
-      path: "/admin/federation",
-      component: () => import("../views/FederationAdminView.vue"),
-      meta: { requiresAuth: true, titleKey: "routes.federationAdmin" },
-    },
-    {
-      path: "/admin/reports",
-      component: () => import("../views/AdminReportsView.vue"),
-      meta: { requiresAuth: true, titleKey: "routes.adminReports" },
-    },
-    {
-      path: "/admin/user-badges",
-      component: () => import("../views/AdminUserBadgesView.vue"),
-      meta: { requiresAuth: true, titleKey: "routes.adminUserBadges" },
-    },
-    {
-      path: "/admin/custom-emojis",
-      component: () => import("../views/AdminCustomEmojiView.vue"),
-      meta: { requiresAuth: true, titleKey: "routes.adminCustomEmojis" },
+      path: "/admin",
+      component: () => import("../components/admin/AdminLayout.vue"),
+      meta: { requiresAuth: true, requiresAdmin: true, adminShell: true, titleKey: "routes.admin" },
+      children: [
+        {
+          path: "",
+          component: () => import("../views/AdminDashboardView.vue"),
+          meta: { requiresAuth: true, requiresAdmin: true, adminShell: true, titleKey: "routes.admin" },
+        },
+        {
+          path: "users",
+          component: () => import("../views/AdminUsersView.vue"),
+          meta: { requiresAuth: true, requiresAdmin: true, adminShell: true, titleKey: "routes.adminUsers" },
+        },
+        {
+          path: "reports",
+          component: () => import("../views/AdminReportsView.vue"),
+          meta: { requiresAuth: true, requiresAdmin: true, adminShell: true, titleKey: "routes.adminReports" },
+        },
+        {
+          path: "federation",
+          component: () => import("../views/FederationAdminView.vue"),
+          meta: { requiresAuth: true, requiresAdmin: true, adminShell: true, titleKey: "routes.federationAdmin" },
+        },
+        {
+          path: "custom-emojis",
+          component: () => import("../views/AdminCustomEmojiView.vue"),
+          meta: { requiresAuth: true, requiresAdmin: true, adminShell: true, titleKey: "routes.adminCustomEmojis" },
+        },
+        {
+          path: "instance-settings",
+          component: () => import("../views/AdminInstanceSettingsView.vue"),
+          meta: { requiresAuth: true, requiresAdmin: true, adminShell: true, titleKey: "routes.adminInstanceSettings" },
+        },
+      ],
     },
     {
       path: "/legal/terms",

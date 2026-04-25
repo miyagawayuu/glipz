@@ -150,7 +150,7 @@ MAIL_FROM_NAME=Glipz
 | `GLIPZ_PROTOCOL_MEDIA_PUBLIC_BASE` | Media proxy URL for federation |
 | `GLIPZ_STORAGE_MODE` | `local` stores media on the server; `s3` uses S3-compatible storage |
 | `GLIPZ_LOCAL_STORAGE_PATH` | Local media directory; back it up if using `GLIPZ_STORAGE_MODE=local` |
-| `GLIPZ_ADMIN_USER_IDS` | Built-in moderation / admin API access |
+| `GLIPZ_ADMIN_USER_IDS` | Built-in moderation / admin API access and `/admin` control panel access |
 | `LEGAL_DOCS_DIR` | Optional directory for editable `terms.md`, `privacy.md`, and `nsfw-guidelines.md` |
 | `PATREON_ENABLED` | Enables Patreon UI/routes; defaults to disabled |
 | `PATREON_*` | Patreon OAuth credentials; required when Patreon is enabled, and redirect URI must match your public API origin |
@@ -194,6 +194,9 @@ docker run -d \
 For editable legal pages, set `LEGAL_DOCS_DIR=/var/lib/glipz/legal-docs` and
 place `terms.md`, `privacy.md`, and `nsfw-guidelines.md` in that directory.
 Locale-specific files such as `terms.ja.md` or `terms.en.md` take precedence.
+
+The `/admin` control panel stores runtime instance settings in Postgres. Back up
+the database before changing registration policy or operator announcements there.
 
 ---
 

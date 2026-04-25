@@ -69,6 +69,9 @@ func main() {
 	if err := migrate.RunModeration(ctx, pool); err != nil {
 		log.Fatalf("migrate moderation: %v", err)
 	}
+	if err := migrate.RunSiteSettings(ctx, pool); err != nil {
+		log.Fatalf("migrate site settings: %v", err)
+	}
 	if err := migrate.RunSearchTags(ctx, pool); err != nil {
 		log.Fatalf("migrate search tags: %v", err)
 	}

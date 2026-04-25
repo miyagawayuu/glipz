@@ -79,6 +79,10 @@ Comma-separated user UUIDs for built-in admin and moderation UIs:
 GLIPZ_ADMIN_USER_IDS=
 ```
 
+Users listed here can open `/admin`. Runtime instance settings edited in that
+panel are stored in the database; environment variables such as
+`FEDERATION_POLICY_SUMMARY` still provide the initial/default value.
+
 ### Federation (Optional)
 
 ```env

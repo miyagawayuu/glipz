@@ -235,31 +235,10 @@ onActivated(syncThemeFromStorage);
         </h2>
         <div class="mt-3 divide-y divide-neutral-200 overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm">
           <RouterLink
-            to="/admin/reports"
+            to="/admin"
             class="flex items-center justify-between gap-3 px-4 py-3.5 text-sm text-neutral-900 transition-colors hover:bg-lime-50"
           >
-            <span class="font-medium">{{ $t("views.settings.items.adminReports") }}</span>
-            <Icon name="chevronDown" class="h-4 w-4 shrink-0 -rotate-90 text-neutral-400" decorative />
-          </RouterLink>
-          <RouterLink
-            to="/admin/federation"
-            class="flex items-center justify-between gap-3 px-4 py-3.5 text-sm text-neutral-900 transition-colors hover:bg-lime-50"
-          >
-            <span class="font-medium">{{ $t("views.settings.items.adminFederation") }}</span>
-            <Icon name="chevronDown" class="h-4 w-4 shrink-0 -rotate-90 text-neutral-400" decorative />
-          </RouterLink>
-          <RouterLink
-            to="/admin/user-badges"
-            class="flex items-center justify-between gap-3 px-4 py-3.5 text-sm text-neutral-900 transition-colors hover:bg-lime-50"
-          >
-            <span class="font-medium">{{ $t("views.settings.items.adminUserBadges") }}</span>
-            <Icon name="chevronDown" class="h-4 w-4 shrink-0 -rotate-90 text-neutral-400" decorative />
-          </RouterLink>
-          <RouterLink
-            to="/admin/custom-emojis"
-            class="flex items-center justify-between gap-3 px-4 py-3.5 text-sm text-neutral-900 transition-colors hover:bg-lime-50"
-          >
-            <span class="font-medium">{{ $t("views.settings.items.adminCustomEmojis") }}</span>
+            <span class="font-medium">{{ $t("views.settings.items.adminControlPanel") }}</span>
             <Icon name="chevronDown" class="h-4 w-4 shrink-0 -rotate-90 text-neutral-400" decorative />
           </RouterLink>
         </div>

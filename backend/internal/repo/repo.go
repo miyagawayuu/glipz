@@ -1467,21 +1467,6 @@ func (p *Pool) ListUserPosts(ctx context.Context, viewerID, authorID uuid.UUID, 
 		limit = 50
 	}
 	rows, err := p.db.Query(ctx, `
-		WITH candidate AS (
-			SELECT p.id
-			FROM posts p
-			WHERE p.reply_to_id IS NULL
-			  AND COALESCE(btrim(p.reply_to_remote_object_iri), '') = ''
-			  AND p.visible_at <= NOW()
-			  AND p.group_id IS NULL
-			  AND EXISTS (
-				SELECT 1 FROM user_follows f
-				WHERE f.follower_id = $1 AND f.followee_id = p.user_id
-			  )
-			  AND `+postReadableByViewerSQL("p", "$1")+`
-			ORDER BY p.visible_at DESC, p.id DESC
-			LIMIT $2
-		)
 		SELECT p.id, p.user_id, u.email, u.handle, u.display_name, u.avatar_object_key, p.caption, p.media_type, p.object_keys,
 			p.is_nsfw,
 			`+postVisibilityExpr("p")+`,

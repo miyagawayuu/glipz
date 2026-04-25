@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { RouterLink } from "vue-router";
 import { formatDateTime } from "../i18n";
 import { api, clearStoredApiBase, readStoredApiBase, writeStoredApiBase } from "../lib/api";
+import { fetchPublicInstanceSettings } from "../lib/instanceSettings";
+import { legalDocumentLink, type LegalDocumentKey, type LegalDocumentURLSettings } from "../lib/legalDocumentLinks";
 import { isNativeApp } from "../lib/runtime";
 
 const { t } = useI18n();
@@ -22,6 +24,7 @@ const submitted = ref(false);
 const expiresAt = ref("");
 const handleTouched = ref(false);
 const handleBusy = ref(false);
+const legalDocumentUrls = ref<LegalDocumentURLSettings>({});
 const handleAvailability = ref<null | { available: boolean; reason: string; normalized: string }>(null);
 let handleTimer: ReturnType<typeof setTimeout> | null = null;
 /** Monotonic validation generation used to discard stale fetch results from blur, debounce, or delayed typing responses. */
@@ -97,6 +100,18 @@ function resetApiBase() {
   apiBaseInput.value = "";
 }
 
+function legalLink(key: LegalDocumentKey): { href: string; external: boolean } {
+  return legalDocumentLink(legalDocumentUrls.value, key);
+}
+
+async function loadLegalDocumentUrls() {
+  try {
+    legalDocumentUrls.value = await fetchPublicInstanceSettings();
+  } catch {
+    legalDocumentUrls.value = {};
+  }
+}
+
 async function checkHandleAvailability() {
   handleTouched.value = true;
   const wave = ++handleCheckRun;
@@ -143,6 +158,10 @@ onBeforeUnmount(() => {
   if (handleTimer) clearTimeout(handleTimer);
 });
 
+onMounted(() => {
+  void loadLegalDocumentUrls();
+});
+
 function messageForError(error: unknown): string {
   if (!(error instanceof Error)) {
     return t("auth.register.errors.registerFailed");
@@ -166,6 +185,8 @@ function messageForError(error: unknown): string {
       return t("auth.register.errors.underAge");
     case "terms_not_agreed":
       return t("auth.register.errors.termsNotAgreed");
+    case "registrations_disabled":
+      return t("auth.register.errors.registrationsDisabled");
     default:
       return t("auth.register.errors.registerFailed");
   }
@@ -330,11 +351,29 @@ async function submit() {
       <div class="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-3 text-sm text-neutral-700">
         <p class="leading-relaxed">
           {{ $t("auth.register.preface") }}
-          <RouterLink to="/legal/terms" class="font-medium text-lime-700 hover:text-lime-800">
+          <a
+            v-if="legalLink('terms').external"
+            :href="legalLink('terms').href"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="font-medium text-lime-700 hover:text-lime-800"
+          >
+            {{ $t("app.links.terms") }}
+          </a>
+          <RouterLink v-else :to="legalLink('terms').href" class="font-medium text-lime-700 hover:text-lime-800">
             {{ $t("app.links.terms") }}
           </RouterLink>
           /
-          <RouterLink to="/legal/privacy" class="font-medium text-lime-700 hover:text-lime-800">
+          <a
+            v-if="legalLink('privacy').external"
+            :href="legalLink('privacy').href"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="font-medium text-lime-700 hover:text-lime-800"
+          >
+            {{ $t("app.links.privacy") }}
+          </a>
+          <RouterLink v-else :to="legalLink('privacy').href" class="font-medium text-lime-700 hover:text-lime-800">
             {{ $t("app.links.privacy") }}
           </RouterLink>
           /

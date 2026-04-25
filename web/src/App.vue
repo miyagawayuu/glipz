@@ -32,10 +32,12 @@ import {
   unreadDMCount,
 } from "./dmHub";
 import { getOperatorAnnouncements } from "./data/operatorAnnouncements";
+import { fetchPublicInstanceSettings, type OperatorAnnouncement } from "./lib/instanceSettings";
+import { legalDocumentLink, type LegalDocumentKey, type LegalDocumentURLSettings } from "./lib/legalDocumentLinks";
 
 const route = useRoute();
 const router = useRouter();
-const { t, tm } = useI18n();
+const { t } = useI18n();
 const authed = ref(!!getAccessToken());
 const me = ref<{
   id: string;
@@ -66,7 +68,24 @@ function setThemePreferenceSilent(next: ThemePreference) {
 }
 provide("setThemePreferenceSilent", setThemePreferenceSilent);
 
-const operatorAnnouncements = computed(() => tm("data.operatorAnnouncements") as ReturnType<typeof getOperatorAnnouncements>);
+const operatorAnnouncements = ref<OperatorAnnouncement[]>(getOperatorAnnouncements());
+const legalDocumentUrls = ref<LegalDocumentURLSettings>({});
+
+async function loadOperatorAnnouncements() {
+  try {
+    const settings = await fetchPublicInstanceSettings();
+    legalDocumentUrls.value = settings;
+    operatorAnnouncements.value = settings.operator_announcements.length
+      ? settings.operator_announcements
+      : getOperatorAnnouncements();
+  } catch {
+    operatorAnnouncements.value = getOperatorAnnouncements();
+  }
+}
+
+function legalLink(key: LegalDocumentKey): { href: string; external: boolean } {
+  return legalDocumentLink(legalDocumentUrls.value, key);
+}
 
 function currentDomain(): string {
   return displayInstanceDomain();
@@ -166,8 +185,10 @@ const hideRightAside = computed(() => route.meta.hideRightAside === true);
 const wideMain = computed(() => route.meta.wideMain === true);
 const mobileEdgeToEdge = computed(() => route.meta.mobileEdgeToEdge === true);
 const hideMobileChrome = computed(() => route.meta.hideMobileChrome === true);
-const useViewportScroll = computed(() => authed.value && !usesGuestSimpleLayout.value && !wideMain.value && !hideRightAside.value);
+const isAdminShell = computed(() => route.meta.adminShell === true);
+const useViewportScroll = computed(() => authed.value && !isAdminShell.value && !usesGuestSimpleLayout.value && !wideMain.value && !hideRightAside.value);
 const appRootClass = computed(() => {
+  if (isAdminShell.value) return "min-h-screen";
   const base = useViewportScroll.value ? "min-h-screen" : authed.value ? "h-[100dvh] max-h-[100dvh]" : "min-h-screen";
   /** Reserve the top safe area at the root level when the header is hidden. */
   const topSafe =
@@ -179,11 +200,13 @@ const appRootClass = computed(() => {
   return [base, topSafe].filter(Boolean).join(" ");
 });
 const headerContainerClass = computed(() => {
+  if (isAdminShell.value) return "max-w-none";
   if (wideMain.value) return "max-w-none";
   if (!authed.value) return "max-w-[598px]";
   return "max-w-[min(100%,92rem)]";
 });
 const shellClass = computed(() => {
+  if (isAdminShell.value) return "max-w-none flex-col";
   if (usesGuestSimpleLayout.value) return "max-w-none flex-col py-8";
   if (wideMain.value) {
     return authed.value
@@ -203,9 +226,10 @@ const mainFooterNavItems = computed(() => [
   { to: "/messages", label: t("app.nav.messages"), icon: "message" as const },
 ]);
 const mobileFooterPaddingClass = computed(() =>
-  usesGuestSimpleLayout.value || hideMobileChrome.value ? "" : "max-lg:pb-[calc(4.5rem+env(safe-area-inset-bottom))]",
+  isAdminShell.value || usesGuestSimpleLayout.value || hideMobileChrome.value ? "" : "max-lg:pb-[calc(4.5rem+env(safe-area-inset-bottom))]",
 );
 const mainClass = computed(() => {
+  if (isAdminShell.value) return "min-h-screen w-full bg-white";
   if (usesGuestSimpleLayout.value) return "w-full";
   if (wideMain.value) {
     return authed.value
@@ -219,7 +243,7 @@ const mainClass = computed(() => {
   return `flex h-full min-h-0 min-w-0 max-w-[598px] flex-[0_1_598px] flex-col overflow-y-auto border-x border-neutral-200 bg-white ${mobileFooterPaddingClass.value}`.trim();
 });
 const shellPaddingClass = computed(() =>
-  mobileEdgeToEdge.value ? "px-0 sm:px-[20px]" : "px-[20px]",
+  isAdminShell.value ? "px-0" : mobileEdgeToEdge.value ? "px-0 sm:px-[20px]" : "px-[20px]",
 );
 const isFeedRoute = computed(() => route.path === "/feed" || route.path === "/feed/scheduled");
 const isSearchRoute = computed(() => route.path === "/search");
@@ -459,6 +483,7 @@ onMounted(() => {
     if (appHeaderEl.value) appHeaderResizeObserver.observe(appHeaderEl.value);
   }
   window.addEventListener("resize", syncAppHeaderOffset);
+  void loadOperatorAnnouncements();
 });
 
 onBeforeUnmount(() => {
@@ -509,7 +534,7 @@ function avatarInitials(email: string): string {
     </div>
     <header
       ref="appHeaderEl"
-      v-if="!usesGuestSimpleLayout"
+      v-if="!usesGuestSimpleLayout && !isAdminShell"
       class="sticky top-0 z-10 shrink-0 border-b border-lime-200 bg-white/90 pt-[env(safe-area-inset-top,0px)] backdrop-blur"
       :class="hideMobileChrome ? 'max-lg:hidden' : ''"
     >
@@ -647,13 +672,13 @@ function avatarInitials(email: string): string {
       :class="[shellClass, shellPaddingClass]"
     >
       <div
-        v-if="authed && !usesGuestSimpleLayout && mobileNavOpen"
+        v-if="authed && !usesGuestSimpleLayout && !isAdminShell && mobileNavOpen"
         class="fixed inset-x-0 bottom-0 top-[var(--app-header-offset,56px)] z-30 bg-black/40 lg:hidden"
         aria-hidden="true"
         @click="closeMobileNav"
       />
       <aside
-        v-if="authed && !usesGuestSimpleLayout"
+        v-if="authed && !usesGuestSimpleLayout && !isAdminShell"
         id="app-sidebar"
         class="flex min-h-0 w-60 max-w-[min(100vw-2rem,16rem)] shrink-0 flex-col self-stretch bg-white px-3 py-6 max-lg:fixed max-lg:bottom-0 max-lg:left-0 max-lg:top-[var(--app-header-offset,56px)] max-lg:z-40 max-lg:overflow-y-auto max-lg:transition-transform max-lg:duration-200 max-lg:ease-out"
         :class="[
@@ -804,6 +829,15 @@ function avatarInitials(email: string): string {
             >
               {{ $t("app.nav.settings") }}
             </RouterLink>
+            <RouterLink
+              v-if="me?.is_site_admin"
+              to="/admin"
+              role="menuitem"
+              class="block border-t border-neutral-200 px-4 py-2.5 text-sm text-neutral-800 hover:bg-lime-50"
+              @click="closeProfileMenu"
+            >
+              {{ $t("app.nav.adminControlPanel") }}
+            </RouterLink>
             <button
               type="button"
               role="menuitem"
@@ -822,7 +856,7 @@ function avatarInitials(email: string): string {
         <RouterView />
       </main>
       <aside
-        v-if="authed && !usesGuestSimpleLayout && !hideRightAside"
+        v-if="authed && !usesGuestSimpleLayout && !isAdminShell && !hideRightAside"
         class="hidden min-h-0 w-[350px] shrink-0 flex-col gap-6 overflow-y-auto bg-white px-3 py-6 lg:flex"
         :class="useViewportScroll ? 'lg:sticky lg:self-start' : ''"
         :style="useViewportScroll ? { top: appHeaderOffset, maxHeight: `calc(100dvh - ${appHeaderOffset})` } : undefined"
@@ -845,20 +879,50 @@ function avatarInitials(email: string): string {
         </section>
         <nav class="border-t border-neutral-200 pt-4 text-sm" :aria-label="$t('app.menu.policyLinks')">
           <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">{{ $t("app.links.heading") }}</p>
+          <a
+            v-if="legalLink('terms').external"
+            :href="legalLink('terms').href"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="block rounded-lg px-2 py-2 text-neutral-700 hover:bg-lime-50 hover:text-lime-900"
+          >
+            {{ $t("app.links.terms") }}
+          </a>
           <RouterLink
-            to="/legal/terms"
+            v-else
+            :to="legalLink('terms').href"
             class="block rounded-lg px-2 py-2 text-neutral-700 hover:bg-lime-50 hover:text-lime-900"
           >
             {{ $t("app.links.terms") }}
           </RouterLink>
+          <a
+            v-if="legalLink('privacy').external"
+            :href="legalLink('privacy').href"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="block rounded-lg px-2 py-2 text-neutral-700 hover:bg-lime-50 hover:text-lime-900"
+          >
+            {{ $t("app.links.privacy") }}
+          </a>
           <RouterLink
-            to="/legal/privacy"
+            v-else
+            :to="legalLink('privacy').href"
             class="block rounded-lg px-2 py-2 text-neutral-700 hover:bg-lime-50 hover:text-lime-900"
           >
             {{ $t("app.links.privacy") }}
           </RouterLink>
+          <a
+            v-if="legalLink('nsfw').external"
+            :href="legalLink('nsfw').href"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="block rounded-lg px-2 py-2 text-neutral-700 hover:bg-lime-50 hover:text-lime-900"
+          >
+            {{ $t("app.links.nsfw") }}
+          </a>
           <RouterLink
-            to="/legal/nsfw-guidelines"
+            v-else
+            :to="legalLink('nsfw').href"
             class="block rounded-lg px-2 py-2 text-neutral-700 hover:bg-lime-50 hover:text-lime-900"
           >
             {{ $t("app.links.nsfw") }}
@@ -879,7 +943,7 @@ function avatarInitials(email: string): string {
       </aside>
     </div>
     <nav
-      v-if="authed && !usesGuestSimpleLayout && !hideMobileChrome"
+      v-if="authed && !usesGuestSimpleLayout && !isAdminShell && !hideMobileChrome"
       class="fixed inset-x-0 bottom-0 z-20 border-t border-neutral-200 bg-white/95 pl-[env(safe-area-inset-left,0px)] pr-[env(safe-area-inset-right,0px)] pb-[env(safe-area-inset-bottom,0px)] backdrop-blur supports-[backdrop-filter]:bg-white/90 lg:hidden"
       :aria-label="$t('app.menu.mobileFooter')"
     >

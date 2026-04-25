@@ -6,6 +6,8 @@ import PostTimeline from "../components/PostTimeline.vue";
 import { getOperatorAnnouncements } from "../data/operatorAnnouncements";
 import { APP_VERSION, FEDERATION_PROTOCOL_VERSION } from "../lib/appInfo";
 import { connectFeedStream, fetchFeedItem, fetchPublicFeedItems, type FeedPubPayload } from "../lib/feedStream";
+import { fetchPublicInstanceSettings, type OperatorAnnouncement } from "../lib/instanceSettings";
+import { legalDocumentLink, type LegalDocumentURLSettings } from "../lib/legalDocumentLinks";
 import type { TimelinePost } from "../types/timeline";
 
 const router = useRouter();
@@ -24,8 +26,37 @@ const trustPoints = computed(() => {
       .replace(FEDERATION_PROTOCOL_VERSION, FEDERATION_PROTOCOL_VERSION),
   );
 });
-const quickLinks = computed(() => tm("about.quickLinks") as Array<{ to: string; title: string; body: string }>);
-const operatorAnnouncements = computed(() => getOperatorAnnouncements());
+const legalDocumentUrls = ref<LegalDocumentURLSettings>({});
+const quickLinks = computed(() =>
+  (tm("about.quickLinks") as Array<{ to: string; title: string; body: string }>).map((item) => {
+    if (item.to === "/legal/terms") {
+      const link = legalDocumentLink(legalDocumentUrls.value, "terms");
+      return { ...item, to: link.href, external: link.external };
+    }
+    if (item.to === "/legal/privacy") {
+      const link = legalDocumentLink(legalDocumentUrls.value, "privacy");
+      return { ...item, to: link.href, external: link.external };
+    }
+    if (item.to === "/legal/nsfw-guidelines") {
+      const link = legalDocumentLink(legalDocumentUrls.value, "nsfw");
+      return { ...item, to: link.href, external: link.external };
+    }
+    return { ...item, external: false };
+  }),
+);
+const operatorAnnouncements = ref<OperatorAnnouncement[]>(getOperatorAnnouncements());
+
+async function loadOperatorAnnouncements() {
+  try {
+    const settings = await fetchPublicInstanceSettings();
+    legalDocumentUrls.value = settings;
+    operatorAnnouncements.value = settings.operator_announcements.length
+      ? settings.operator_announcements
+      : getOperatorAnnouncements();
+  } catch {
+    operatorAnnouncements.value = getOperatorAnnouncements();
+  }
+}
 
 async function loadPublicTimeline() {
   publicTimelineLoading.value = true;
@@ -79,6 +110,7 @@ function goLogin() {
 }
 
 onMounted(async () => {
+  await loadOperatorAnnouncements();
   await loadPublicTimeline();
   startPublicTimelineStream();
 });
@@ -212,15 +244,26 @@ onBeforeUnmount(() => {
             </div>
           </div>
           <div class="mt-5 grid gap-3">
-            <RouterLink
-              v-for="item in quickLinks"
-              :key="item.to"
-              :to="item.to"
-              class="rounded-2xl border border-neutral-200 px-4 py-4 transition hover:border-lime-300 hover:bg-lime-50/60"
-            >
-              <p class="text-sm font-semibold text-neutral-900">{{ item.title }}</p>
-              <p class="mt-1 text-sm leading-6 text-neutral-600">{{ item.body }}</p>
-            </RouterLink>
+            <template v-for="item in quickLinks" :key="item.to">
+              <a
+                v-if="item.external"
+                :href="item.to"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="rounded-2xl border border-neutral-200 px-4 py-4 transition hover:border-lime-300 hover:bg-lime-50/60"
+              >
+                <p class="text-sm font-semibold text-neutral-900">{{ item.title }}</p>
+                <p class="mt-1 text-sm leading-6 text-neutral-600">{{ item.body }}</p>
+              </a>
+              <RouterLink
+                v-else
+                :to="item.to"
+                class="rounded-2xl border border-neutral-200 px-4 py-4 transition hover:border-lime-300 hover:bg-lime-50/60"
+              >
+                <p class="text-sm font-semibold text-neutral-900">{{ item.title }}</p>
+                <p class="mt-1 text-sm leading-6 text-neutral-600">{{ item.body }}</p>
+              </RouterLink>
+            </template>
           </div>
         </article>
 

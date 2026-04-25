@@ -8,6 +8,8 @@ declare module "vue-router" {
     mobileEdgeToEdge?: boolean;
     hideMobileChrome?: boolean;
     guestSimpleLayout?: boolean;
+    adminShell?: boolean;
+    requiresAdmin?: boolean;
     mobileOnly?: boolean;
     titleKey?: string;
   }

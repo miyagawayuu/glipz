@@ -44,7 +44,11 @@ export async function addTimelineReaction(token: string, it: TimelinePost, emoji
 
 export async function removeTimelineReaction(token: string, it: TimelinePost, emoji: string): Promise<TimelinePost> {
   const encodedEmoji = encodeURIComponent(emoji);
-  const path = `${federationActionPath(it, "reactions")}/${encodedEmoji}`;
+  const reactionsPath = federationActionPath(it, "reactions");
+  const queryStart = reactionsPath.indexOf("?");
+  const path = queryStart >= 0
+    ? `${reactionsPath.slice(0, queryStart)}/${encodedEmoji}${reactionsPath.slice(queryStart)}`
+    : `${reactionsPath}/${encodedEmoji}`;
   const res = await api<{ item: Record<string, unknown> }>(path, {
     method: "DELETE",
     token,

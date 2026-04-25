@@ -136,6 +136,7 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c s3client.
 		r.Post("/auth/mfa/verify", s.handleMFAVerify)
 		r.Post("/oauth/token", s.handleOAuthToken)
 		r.Get("/custom-emojis", s.handleListEnabledCustomEmojis)
+		r.Get("/instance-settings", s.handlePublicInstanceSettings)
 		r.Get("/public/posts/feed", s.handlePublicFeed)
 		r.Get("/public/posts/feed/stream", s.handlePublicFeedStream)
 		r.Get("/public/federation/profile", s.handlePublicRemoteProfile)
@@ -168,6 +169,12 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c s3client.
 		r.Group(func(r chi.Router) {
 			r.Use(s.authMiddleware(authjwt.PurposeAccess))
 			r.Use(s.requireSiteAdmin)
+			r.Get("/admin/overview", s.handleAdminOverview)
+			r.Get("/admin/users", s.handleAdminUsersList)
+			r.Get("/admin/users/{userID}", s.handleAdminUserGet)
+			r.Patch("/admin/users/{userID}/suspension", s.handleAdminUserSuspensionPatch)
+			r.Get("/admin/instance-settings", s.handleAdminInstanceSettingsGet)
+			r.Patch("/admin/instance-settings", s.handleAdminInstanceSettingsPatch)
 			r.Get("/admin/federation/deliveries", s.handleAdminFederationDeliveries)
 			r.Get("/admin/federation/delivery-counts", s.handleAdminFederationDeliveryCounts)
 			r.Get("/admin/federation/domain-blocks", s.handleAdminFederationDomainBlocksList)
@@ -422,6 +429,15 @@ type registerReq struct {
 }
 
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
+	siteSettings, err := s.db.GetSiteSettings(r.Context())
+	if err != nil {
+		writeServerError(w, "register GetSiteSettings", err)
+		return
+	}
+	if !siteSettings.RegistrationsEnabled {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "registrations_disabled"})
+		return
+	}
 	var req registerReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_json"})
