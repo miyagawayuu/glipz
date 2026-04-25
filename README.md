@@ -11,18 +11,18 @@
 
 Glipz is a **self-hosted social platform** and a **high-performance federation protocol** (glipz-federation/2). 
 
-Unlike generic protocols, Glipz is designed for speed, security (Ed25519), and advanced content control (Unlock feature). It serves as both a full-featured social network and a reference implementation for the Glipz Federation Protocol.
+Unlike generic protocols, Glipz is designed for speed, security (Ed25519), and optional gated post media (Unlock). It serves as both a full-featured social network and a reference implementation for the Glipz Federation Protocol.
 
 ### The Glipz Federation Protocol
 This repository contains the official Go implementation of the Glipz Federation Protocol. Key features include:
 - **High-Speed Sync:** Event-driven architecture for near-instant data propagation.
 - **Strong Security:** Ed25519 signatures and mandatory nonce-based replay protection.
-- **Content Monetization:** Built-in "Unlock" flow for password-protected or gated content.
+- **Gated post media:** Optional view password or membership-based unlock over federation.
 
 ### Who is Glipz for?
 
 - **Community builders** who want a private, customizable social space
-- **Creators** who want to monetize content with password-protected or gated content (Unlock)
+- **Creators** who want optional password- or membership-protected media on posts (Unlock; Patreon optional)
 - **Developers** who need a flexible API for building custom frontends
 - **Self-hosters** who prefer running their own infrastructure
 
@@ -35,18 +35,12 @@ This repository contains the official Go implementation of the Glipz Federation 
 | Feature | Description |
 |---------|-------------|
 | **Timelines** | Home, local, and federated timelines |
-| **Posts** | Create posts with text, media, polls, and scheduled publishing |
+| **Posts** | Text, media, polls, scheduled publishing; optional view password or Patreon membership gate on media |
 | **Replies & Threads** | Full threaded conversations |
 | **Reposts** | Share posts with optional commentary |
 | **Reactions** | Emoji reactions on posts |
 | **Bookmarks** | Save posts for later |
 | **Visibility** | Public, logged-in-only, followers-only, and private posts |
-
-### Notes (Premium Content)
-
-- Create exclusive content for supporters
-- Password-protected access control via the built-in Unlock flow
-- Public / follower-only / private visibility
 
 ### Direct Messages
 
@@ -205,9 +199,9 @@ curl -H "Authorization: Bearer $TOKEN" \
   https://your-instance.com/api/v1/posts/feed/home
 ```
 
-### Example: Unlock (password / membership entitlement)
+### Example: Post unlock (password / membership entitlement)
 
-Glipz supports "Unlock" for protected content:
+Posts can carry a view password and/or a membership lock. **Unlock** reveals protected media/caption for that post:
 
 - **Password unlock**: viewer enters a password.
 - **Membership unlock (federation)**: viewer requests a short-lived, verifiable `entitlement_jwt` (JWS) from the origin instance and uses it to unlock.
