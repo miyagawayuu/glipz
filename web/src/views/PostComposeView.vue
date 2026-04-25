@@ -69,6 +69,9 @@ const pollDurationHours = ref(24);
 const scheduleLocal = ref("");
 const composerScheduleOpen = ref(false);
 const composerVisibilityOpen = ref(false);
+const fanclubPatreonEnabled = ref(false);
+const fanclubGumroadEnabled = ref(false);
+const paymentPayPalEnabled = ref(false);
 
 const attachmentKind = computed(() =>
   selectedImages.value.length ? inferPostMediaType(selectedImages.value) : "none",
@@ -97,7 +100,13 @@ const {
   validateMembershipForSubmit,
   applyMembershipToBody,
   connectPatreonOAuth,
-} = usePatreonComposer({ viewPassword, viewPasswordConfirm, composerPasswordOpen });
+} = usePatreonComposer({
+  viewPassword,
+  viewPasswordConfirm,
+  composerPasswordOpen,
+  patreonEnabled: fanclubPatreonEnabled,
+  gumroadEnabled: fanclubGumroadEnabled,
+});
 
 const {
   composerPaymentOpen,
@@ -106,14 +115,25 @@ const {
   resetPaymentComposerState,
   validatePaymentForSubmit,
   applyPaymentToBody,
-} = usePaymentComposer({ viewPassword, viewPasswordConfirm, composerPasswordOpen, membershipUsePatreon });
+} = usePaymentComposer({
+  viewPassword,
+  viewPasswordConfirm,
+  composerPasswordOpen,
+  membershipUsePatreon,
+  paypalEnabled: paymentPayPalEnabled,
+});
 
 const patreonSettingsHref = patreonSettingsPath;
 const paypalPlans = ref<PayPalPlanRow[]>([]);
 const paypalPlansLoading = ref(false);
 const activePayPalPlans = computed(() => paypalPlans.value.filter((plan) => plan.active !== false));
+const fanclubComposerEnabled = computed(() => fanclubGumroadEnabled.value || patreonAvailable.value);
 
 async function loadPayPalPlans(token: string) {
+  if (!paymentPayPalEnabled.value) {
+    paypalPlans.value = [];
+    return;
+  }
   paypalPlansLoading.value = true;
   try {
     paypalPlans.value = await listPayPalPlans(token);
@@ -149,10 +169,20 @@ async function loadMe() {
     return;
   }
   try {
-    const u = await api<{ email: string; handle?: string; avatar_url?: string | null }>("/api/v1/me", { method: "GET", token });
+    const u = await api<{
+      email: string;
+      handle?: string;
+      avatar_url?: string | null;
+      fanclub_patreon_enabled?: boolean;
+      fanclub_gumroad_enabled?: boolean;
+      payment_paypal_enabled?: boolean;
+    }>("/api/v1/me", { method: "GET", token });
     myEmail.value = u.email;
     myHandle.value = typeof u.handle === "string" ? u.handle : null;
     myAvatarUrl.value = u.avatar_url && String(u.avatar_url).trim() !== "" ? String(u.avatar_url) : null;
+    fanclubPatreonEnabled.value = !!u.fanclub_patreon_enabled;
+    fanclubGumroadEnabled.value = !!u.fanclub_gumroad_enabled;
+    paymentPayPalEnabled.value = !!u.payment_paypal_enabled;
     composerAvatarImgFailed.value = false;
     void loadPatreon(token);
     void loadPayPalPlans(token);
@@ -160,6 +190,9 @@ async function loadMe() {
     myEmail.value = null;
     myHandle.value = null;
     myAvatarUrl.value = null;
+    fanclubPatreonEnabled.value = false;
+    fanclubGumroadEnabled.value = false;
+    paymentPayPalEnabled.value = false;
     composerAvatarImgFailed.value = false;
   }
 }
@@ -585,6 +618,7 @@ onBeforeUnmount(() => {
               <Icon name="lock" class="h-5 w-5" />
             </button>
             <button
+              v-if="fanclubComposerEnabled"
               type="button"
               class="rounded-full p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800"
               :class="(membershipUsePatreon || composerMembershipOpen) && 'bg-sky-50 text-sky-800'"
@@ -597,6 +631,7 @@ onBeforeUnmount(() => {
               <Icon name="user" class="h-5 w-5" />
             </button>
             <button
+              v-if="paymentPayPalEnabled"
               type="button"
               class="rounded-full p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800"
               :class="(paymentUsePayPal || composerPaymentOpen) && 'bg-emerald-50 text-emerald-800'"
@@ -726,7 +761,7 @@ onBeforeUnmount(() => {
           </p>
         </div>
         <div
-          v-if="composerNsfwOpen || composerPasswordOpen || composerMembershipOpen || composerPaymentOpen"
+          v-if="composerNsfwOpen || composerPasswordOpen || (fanclubComposerEnabled && composerMembershipOpen) || (paymentPayPalEnabled && composerPaymentOpen)"
           class="mt-3 space-y-3"
         >
           <div
@@ -840,7 +875,7 @@ onBeforeUnmount(() => {
             </div>
           </div>
           <div
-            v-if="composerMembershipOpen"
+            v-if="fanclubComposerEnabled && composerMembershipOpen"
             id="composer-membership-panel"
             class="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-3 text-sm"
           >
@@ -848,7 +883,7 @@ onBeforeUnmount(() => {
             <p class="mt-1 text-xs text-neutral-600">{{ $t("views.compose.membershipHint") }}</p>
             <div class="mt-3 flex flex-wrap gap-2">
               <button
-                v-if="patreonAvailable"
+                v-if="fanclubPatreonEnabled && patreonAvailable"
                 type="button"
                 class="rounded-full border px-3 py-1.5 text-xs font-medium"
                 :class="membershipProvider === 'patreon' ? 'border-lime-500 bg-lime-50 text-lime-800' : 'border-neutral-200 text-neutral-700 hover:bg-neutral-50'"
@@ -857,6 +892,7 @@ onBeforeUnmount(() => {
                 Patreon
               </button>
               <button
+                v-if="fanclubGumroadEnabled"
                 type="button"
                 class="rounded-full border px-3 py-1.5 text-xs font-medium"
                 :class="membershipProvider === 'gumroad' ? 'border-lime-500 bg-lime-50 text-lime-800' : 'border-neutral-200 text-neutral-700 hover:bg-neutral-50'"
@@ -960,7 +996,7 @@ onBeforeUnmount(() => {
             </template>
           </div>
           <div
-            v-if="composerPaymentOpen"
+            v-if="paymentPayPalEnabled && composerPaymentOpen"
             id="composer-payment-panel"
             class="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-3 text-sm"
           >

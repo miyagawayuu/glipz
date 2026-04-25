@@ -44,28 +44,25 @@ type Config struct {
 	// Comma-separated site admin user IDs. Admin federation APIs stay unavailable when empty.
 	AdminUserIDs []uuid.UUID
 	// Time-to-live for email verification links.
-	RegistrationVerifyTTL time.Duration
-	MailgunDomain         string
-	MailgunAPIKey         string
-	MailgunAPIBase        string
-	MailFromEmail         string
-	MailFromName          string
-	// TURN (coturn shared-secret / time-limited credentials).
-	// When set, DM calls can use TURN.
-	TurnHost               string
-	TurnPort               int
-	TurnsPort              int
-	TurnSharedSecret       string
-	TurnTTLSeconds         int
+	RegistrationVerifyTTL  time.Duration
+	MailgunDomain          string
+	MailgunAPIKey          string
+	MailgunAPIBase         string
+	MailFromEmail          string
+	MailFromName           string
 	WebPushVAPIDPublicKey  string
 	WebPushVAPIDPrivateKey string
 	WebPushVAPIDSubject    string
-	// Patreon (fan club). Optional. When PatreonClientID is empty, Patreon API routes are unavailable.
+	// Patreon (fan club). Disabled by default; requires PatreonEnabled and OAuth credentials.
+	PatreonEnabled      bool
 	PatreonClientID     string
 	PatreonClientSecret string
 	// Optional override. Default: {GLIPZ_PROTOCOL_PUBLIC_ORIGIN}/api/v1/fanclub/patreon/callback
 	PatreonRedirectURI string
-	// PayPal (payment). Optional. When PayPalClientID is empty, PayPal payment routes are unavailable.
+	// Gumroad (fan club). Disabled by default; uses Gumroad's public license verification endpoint.
+	GumroadEnabled bool
+	// PayPal (payment). Disabled by default; requires PayPalEnabled and API credentials.
+	PayPalEnabled      bool
 	PayPalClientID     string
 	PayPalClientSecret string
 	PayPalWebhookID    string
@@ -188,32 +185,15 @@ func Load() (Config, error) {
 	c.MailgunAPIBase = strings.TrimSpace(os.Getenv("MAILGUN_API_BASE"))
 	c.MailFromEmail = strings.TrimSpace(os.Getenv("MAIL_FROM_EMAIL"))
 	c.MailFromName = strings.TrimSpace(os.Getenv("MAIL_FROM_NAME"))
-	c.TurnHost = strings.TrimSpace(os.Getenv("TURN_HOST"))
-	c.TurnPort = 3478
-	if raw := strings.TrimSpace(os.Getenv("TURN_PORT")); raw != "" {
-		if v, err := strconv.Atoi(raw); err == nil && v > 0 && v <= 65535 {
-			c.TurnPort = v
-		}
-	}
-	c.TurnsPort = 443
-	if raw := strings.TrimSpace(os.Getenv("TURNS_PORT")); raw != "" {
-		if v, err := strconv.Atoi(raw); err == nil && v > 0 && v <= 65535 {
-			c.TurnsPort = v
-		}
-	}
-	c.TurnSharedSecret = strings.TrimSpace(os.Getenv("TURN_SHARED_SECRET"))
-	c.TurnTTLSeconds = 600
-	if raw := strings.TrimSpace(os.Getenv("TURN_TTL_SECONDS")); raw != "" {
-		if v, err := strconv.Atoi(raw); err == nil && v > 0 {
-			c.TurnTTLSeconds = v
-		}
-	}
 	c.WebPushVAPIDPublicKey = strings.TrimSpace(os.Getenv("WEB_PUSH_VAPID_PUBLIC_KEY"))
 	c.WebPushVAPIDPrivateKey = strings.TrimSpace(os.Getenv("WEB_PUSH_VAPID_PRIVATE_KEY"))
 	c.WebPushVAPIDSubject = strings.TrimSpace(os.Getenv("WEB_PUSH_VAPID_SUBJECT"))
+	c.PatreonEnabled, _ = strconv.ParseBool(getEnv("PATREON_ENABLED", "false"))
 	c.PatreonClientID = strings.TrimSpace(os.Getenv("PATREON_CLIENT_ID"))
 	c.PatreonClientSecret = strings.TrimSpace(os.Getenv("PATREON_CLIENT_SECRET"))
 	c.PatreonRedirectURI = strings.TrimSpace(os.Getenv("PATREON_REDIRECT_URI"))
+	c.GumroadEnabled, _ = strconv.ParseBool(getEnv("GUMROAD_ENABLED", "false"))
+	c.PayPalEnabled, _ = strconv.ParseBool(getEnv("PAYPAL_ENABLED", "false"))
 	c.PayPalClientID = strings.TrimSpace(os.Getenv("PAYPAL_CLIENT_ID"))
 	c.PayPalClientSecret = strings.TrimSpace(os.Getenv("PAYPAL_CLIENT_SECRET"))
 	c.PayPalWebhookID = strings.TrimSpace(os.Getenv("PAYPAL_WEBHOOK_ID"))

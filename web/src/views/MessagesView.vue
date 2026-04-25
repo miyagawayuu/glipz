@@ -10,21 +10,15 @@ import { formatDateTime } from "../i18n";
 import { api, apiBase } from "../lib/api";
 import {
   assertDMIdentityMatchesServer,
-  cancelDMCall,
   createDMThread,
   inviteDMPeer,
-  endDMCall,
   fetchDMIdentity,
   fetchDMThread,
-  inviteDMCall,
-  issueDMCallToken,
-  listDMCallHistory,
   listDMMessages,
   listDMThreads,
   saveDMIdentity,
   sendDMMessage,
   uploadDMFile,
-  type DMCallEvent,
   type DMAttachment,
   type DMIdentityResponse,
   type DMMessage,
@@ -46,7 +40,6 @@ import {
   getRememberedUnlockedIdentity,
   rememberUnlockedIdentity,
 } from "../lib/dmUnlockMemory";
-import { createOutgoingCallTone } from "../lib/callTones";
 
 type ResolvedDMMessage = DMMessage & {
   decrypted_text: string;
@@ -73,19 +66,12 @@ type FederationDMMessage = {
 };
 
 type DMTimelineItem =
-  | {
+  {
     kind: "message";
     id: string;
     created_at: string;
     sent_by_me: boolean;
     message: ResolvedDMMessage;
-  }
-  | {
-    kind: "call";
-    id: string;
-    created_at: string;
-    sent_by_me: boolean;
-    call: DMCallEvent;
   };
 
 const { t } = useI18n();
@@ -96,10 +82,6 @@ let desktopMediaQuery: MediaQueryList | null = null;
 
 const threadId = computed(() => String(route.params.threadId ?? "").trim());
 const handleQuery = computed(() => String(route.query.with ?? "").replace(/^@/, "").trim());
-const requestedCallMode = computed(() => {
-  const mode = String(route.query.call ?? "").trim().toLowerCase();
-  return mode === "video" ? "video" : mode === "audio" ? "audio" : "";
-});
 
 const meHandle = ref("");
 const remoteIdentity = ref<DMIdentityResponse | null>(null);
@@ -112,7 +94,6 @@ const threadSearchQuery = ref("");
 const threads = ref<DMThread[]>([]);
 const activeThread = ref<DMThread | null>(null);
 const messages = ref<ResolvedDMMessage[]>([]);
-const callHistory = ref<DMCallEvent[]>([]);
 const loading = ref(true);
 const loadingMessages = ref(false);
 const threadBusy = ref(false);
@@ -137,6 +118,7 @@ const fedComposerText = ref("");
 const fedSendBusy = ref(false);
 const fedPendingFiles = ref<File[]>([]);
 const fedFileInput = ref<HTMLInputElement | null>(null);
+const notice = ref("");
 let threadListInFlight: Promise<void> | null = null;
 let threadRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -165,41 +147,15 @@ const pendingFiles = ref<File[]>([]);
 const attachmentBusyKey = ref("");
 const fileInput = ref<HTMLInputElement | null>(null);
 
-const callBusy = ref("");
-
 function stringsTrim(s: unknown): string {
   return String(s ?? "").trim();
 }
-const callError = ref("");
-const callNotice = ref("");
-const callConnected = ref(false);
-const localVideoEl = ref<HTMLVideoElement | null>(null);
-const remoteVideoEl = ref<HTMLVideoElement | null>(null);
-const remoteAudioRoot = ref<HTMLDivElement | null>(null);
-const attachedPublications = new Set<string>();
-const remoteAudioElements = new Set<HTMLAudioElement>();
-const remoteParticipantJoined = ref(false);
-const activeCallMode = ref<"audio" | "video" | "">("");
-const outgoingInvitePending = ref(false);
-const micMuted = ref(false);
-const speakerMuted = ref(false);
-
-let callPC: RTCPeerConnection | null = null;
-let callWS: WebSocket | null = null;
-let localStream: MediaStream | null = null;
-let remoteStream: MediaStream | null = null;
-const outgoingCallTone = createOutgoingCallTone();
 
 const activeThreadTitle = computed(() =>
   activeThread.value ? activeThread.value.peer_display_name || `@${activeThread.value.peer_handle}` : "",
 );
 const identityConfigured = computed(() => remoteIdentity.value?.configured === true);
 const identityUnlocked = computed(() => !!identity.value);
-const showCallPanel = computed(() => callConnected.value || !!callError.value || !!callNotice.value);
-const showCallMedia = computed(() => callConnected.value || !!callBusy.value || outgoingInvitePending.value);
-const showAudioCallLayout = computed(() =>
-  showCallMedia.value && activeCallMode.value === "audio",
-);
 const showThreadListPane = computed(() =>
   isDesktop.value || (!threadId.value && identityUnlocked.value),
 );
@@ -220,13 +176,6 @@ const filteredThreads = computed(() => {
 });
 const timelineItems = computed<DMTimelineItem[]>(() => {
   const items: DMTimelineItem[] = [
-    ...callHistory.value.map((call) => ({
-      kind: "call" as const,
-      id: `call:${call.id}`,
-      created_at: call.created_at,
-      sent_by_me: call.sent_by_me,
-      call,
-    })),
     ...messages.value.map((message) => ({
       kind: "message" as const,
       id: `message:${message.id}`,
@@ -253,28 +202,6 @@ function formatBytes(value: number): string {
     idx += 1;
   }
   return `${size >= 10 || idx === 0 ? size.toFixed(0) : size.toFixed(1)} ${units[idx]}`;
-}
-
-function formatCallHistoryLabel(event: DMCallEvent): string {
-  const mode = event.call_mode === "video" ? t("views.messages.callModeVideo") : t("views.messages.callModeAudio");
-  switch (event.event_type) {
-    case "invite":
-      return event.sent_by_me
-        ? t("views.messages.callHistoryInviteOut", { mode })
-        : t("views.messages.callHistoryInviteIn", { mode });
-    case "cancel":
-      return event.sent_by_me
-        ? t("views.messages.callHistoryCancelOut", { mode })
-        : t("views.messages.callHistoryCancelIn", { mode });
-    case "end":
-      return event.sent_by_me ? t("views.messages.callHistoryEndOut", { mode }) : t("views.messages.callHistoryEndIn", { mode });
-    case "missed":
-      return event.sent_by_me
-        ? t("views.messages.callHistoryMissedOut", { mode })
-        : t("views.messages.callHistoryMissedIn", { mode });
-    default:
-      return mode;
-  }
 }
 
 function triggerFilePicker() {
@@ -361,7 +288,7 @@ async function resolveThreadFromQuery() {
           await router.replace({ path: `/messages/${thread.id}` });
           return;
         }
-        callNotice.value =
+        notice.value =
           st === "invited_auto" ? t("views.messages.peerDmInviteSentAuto") : t("views.messages.peerDmInviteSent");
       } catch {
         error.value = t("views.messages.errors.inviteDmFailed");
@@ -397,7 +324,6 @@ async function loadActiveThreadAndMessages() {
   if (!threadId.value) {
     activeThread.value = null;
     messages.value = [];
-    callHistory.value = [];
     await refreshUnreadDMCount();
     return;
   }
@@ -406,12 +332,8 @@ async function loadActiveThreadAndMessages() {
   try {
     const thread = await fetchDMThread(threadId.value);
     activeThread.value = thread;
-    const [rows, calls] = await Promise.all([
-      listDMMessages(thread.id),
-      listDMCallHistory(thread.id),
-    ]);
+    const rows = await listDMMessages(thread.id);
     messages.value = await decryptMessages(rows.reverse(), thread);
-    callHistory.value = calls.reverse();
     await refreshUnreadDMCount();
     await loadThreadsOnly();
   } catch (e: unknown) {
@@ -830,278 +752,6 @@ async function saveFederationAttachment(message: { id: string; sent_by_me: boole
   }
 }
 
-function resetCallMedia() {
-  attachedPublications.clear();
-  if (localVideoEl.value) {
-    localVideoEl.value.pause();
-    localVideoEl.value.removeAttribute("src");
-    localVideoEl.value.load();
-  }
-  if (remoteVideoEl.value) {
-    remoteVideoEl.value.pause();
-    remoteVideoEl.value.removeAttribute("src");
-    remoteVideoEl.value.load();
-  }
-  remoteAudioElements.forEach((audio) => {
-    audio.pause();
-    audio.removeAttribute("src");
-    audio.load();
-  });
-  remoteAudioElements.clear();
-  if (remoteAudioRoot.value) {
-    remoteAudioRoot.value.replaceChildren();
-  }
-}
-
-function applyMicMuteState() {
-  const track = localStream?.getAudioTracks?.()?.[0];
-  if (track) track.enabled = !micMuted.value;
-}
-
-function applySpeakerMuteState() {
-  remoteAudioElements.forEach((audio) => {
-    audio.muted = speakerMuted.value;
-  });
-}
-
-async function disconnectCall() {
-  outgoingCallTone.stop();
-  resetCallMedia();
-  try {
-    callWS?.close();
-  } catch {
-    // ignore
-  }
-  callWS = null;
-  try {
-    callPC?.close();
-  } catch {
-    // ignore
-  }
-  callPC = null;
-  if (localStream) {
-    localStream.getTracks().forEach((t) => t.stop());
-  }
-  localStream = null;
-  remoteStream = null;
-  callConnected.value = false;
-  remoteParticipantJoined.value = false;
-  outgoingInvitePending.value = false;
-  activeCallMode.value = "";
-  micMuted.value = false;
-  speakerMuted.value = false;
-}
-
-async function connectCall(mode: "audio" | "video") {
-  if (!activeThread.value || callBusy.value) return;
-  callBusy.value = mode;
-  callError.value = "";
-  callNotice.value = "";
-  activeCallMode.value = mode;
-  try {
-    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
-      throw new Error("media_devices_unavailable");
-    }
-    const auth = await issueDMCallToken(activeThread.value.id, mode);
-
-    const pc = new RTCPeerConnection({ iceServers: auth.ice_servers });
-    callPC = pc;
-    remoteStream = new MediaStream();
-
-    pc.ontrack = (ev) => {
-      remoteParticipantJoined.value = true;
-      outgoingInvitePending.value = false;
-      outgoingCallTone.stop();
-      ev.streams[0]?.getTracks().forEach((t) => remoteStream?.addTrack(t));
-      if (remoteVideoEl.value) {
-        remoteVideoEl.value.srcObject = remoteStream;
-        remoteVideoEl.value.playsInline = true;
-        void remoteVideoEl.value.play().catch(() => undefined);
-      }
-      if (remoteAudioRoot.value) {
-        const audio = document.createElement("audio");
-        audio.autoplay = true;
-        audio.controls = false;
-        audio.className = "hidden";
-        audio.muted = speakerMuted.value;
-        audio.srcObject = remoteStream;
-        remoteAudioElements.add(audio);
-        remoteAudioRoot.value.appendChild(audio);
-        void audio.play().catch(() => undefined);
-      }
-    };
-
-    pc.onicecandidate = (ev) => {
-      if (!ev.candidate || !callWS) return;
-      callWS.send(JSON.stringify({ type: "ice_candidate", candidate: ev.candidate }));
-    };
-
-    const constraints: MediaStreamConstraints =
-      mode === "audio"
-        ? { audio: true, video: false }
-        : { audio: true, video: { width: { ideal: 1280 }, height: { ideal: 720 } } };
-
-    localStream = await navigator.mediaDevices.getUserMedia(constraints);
-    localStream.getTracks().forEach((t) => pc.addTrack(t, localStream!));
-    applyMicMuteState();
-
-    if (mode === "video" && localVideoEl.value) {
-      localVideoEl.value.srcObject = localStream;
-      localVideoEl.value.muted = true;
-      localVideoEl.value.playsInline = true;
-      await localVideoEl.value.play().catch(() => undefined);
-    }
-
-    const wsURL = (() => {
-      const base = new URL(apiBase());
-      base.protocol = base.protocol === "https:" ? "wss:" : "ws:";
-      base.pathname = auth.signaling_url;
-      base.searchParams.set("token", auth.ws_token);
-      return base.toString();
-    })();
-
-    callWS = new WebSocket(wsURL);
-    callWS.onmessage = async (ev) => {
-      const data = String(ev.data ?? "");
-      let msg: any = null;
-      try {
-        msg = JSON.parse(data);
-      } catch {
-        return;
-      }
-      if (!msg?.type) return;
-      if (msg.type === "offer" && msg.sdp && auth.role === "callee") {
-        await pc.setRemoteDescription({ type: "offer", sdp: String(msg.sdp) });
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        callWS?.send(JSON.stringify({ type: "answer", sdp: answer.sdp }));
-      } else if (msg.type === "answer" && msg.sdp && auth.role === "caller") {
-        await pc.setRemoteDescription({ type: "answer", sdp: String(msg.sdp) });
-      } else if (msg.type === "ice_candidate" && msg.candidate) {
-        try {
-          await pc.addIceCandidate(msg.candidate);
-        } catch {}
-      } else if (msg.type === "hangup") {
-        callNotice.value = t("views.messages.callNoticeEnd", { name: activeThreadTitle.value });
-        await disconnectCall();
-      }
-    };
-
-    await new Promise<void>((resolve, reject) => {
-      if (!callWS) return reject(new Error("ws_unavailable"));
-      callWS.onopen = () => resolve();
-      callWS.onerror = () => reject(new Error("ws_connect_failed"));
-    });
-
-    if (auth.role === "caller") {
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      callWS.send(JSON.stringify({ type: "offer", sdp: offer.sdp }));
-    }
-
-    applySpeakerMuteState();
-    callConnected.value = true;
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : "";
-    callError.value =
-      msg === "media_devices_unavailable"
-        ? "この環境ではカメラ/マイクにアクセスできません（navigator.mediaDevices が利用できません）。ネイティブビルドで権限設定を確認するか、HTTPS 環境で実行してください。"
-        : msg || t("views.messages.errors.callConnectFailed");
-    await disconnectCall();
-  } finally {
-    callBusy.value = "";
-  }
-}
-
-async function startOutgoingCall(mode: "audio" | "video") {
-  if (!activeThread.value || callBusy.value) return;
-  callError.value = "";
-  callNotice.value = "";
-  outgoingCallTone.stop();
-  try {
-    await inviteDMCall(activeThread.value.id, mode);
-    outgoingInvitePending.value = true;
-    void outgoingCallTone.start();
-  } catch (e: unknown) {
-    callError.value = e instanceof Error ? e.message : t("views.messages.errors.callInviteFailed");
-    outgoingCallTone.stop();
-    return;
-  }
-  await connectCall(mode);
-}
-
-async function hangupCall() {
-  if (!activeThread.value || !activeCallMode.value) {
-    await disconnectCall();
-    return;
-  }
-  const mode = activeCallMode.value;
-  try {
-    if (outgoingInvitePending.value && !remoteParticipantJoined.value) {
-      await cancelDMCall(activeThread.value.id, mode);
-    } else {
-      await endDMCall(activeThread.value.id, mode);
-    }
-  } catch {
-    // ignore signalling failures
-  }
-  await disconnectCall();
-  await loadActiveThreadAndMessages();
-}
-
-function toggleMicMute() {
-  micMuted.value = !micMuted.value;
-  applyMicMuteState();
-}
-
-function toggleSpeakerMute() {
-  speakerMuted.value = !speakerMuted.value;
-  applySpeakerMuteState();
-}
-
-async function maybeAutoConnectCall() {
-  if (!activeThread.value || !identityUnlocked.value || !requestedCallMode.value || callConnected.value || callBusy.value) return;
-  // Security/UX: for incoming links, show UI only (require explicit accept).
-  if (String(route.query.incoming ?? "").trim() === "1") {
-    const name = activeThreadTitle.value;
-    const callType = requestedCallMode.value === "video" ? t("views.messages.callTypeVideo") : t("views.messages.callTypeAudio");
-    callNotice.value = t("views.messages.callNoticeIncoming", { name, type: callType });
-    return;
-  }
-  const mode = requestedCallMode.value as "audio" | "video";
-  await connectCall(mode);
-  const nextQuery = { ...route.query };
-  delete nextQuery.call;
-  delete nextQuery.incoming;
-  await router.replace({ path: route.path, query: nextQuery });
-}
-
-async function syncCallStateFromEvent() {
-  const event = latestDMEvent.value;
-  if (!event || !activeThread.value || event.thread_id !== activeThread.value.id) return;
-  if (event.kind === "call_cancel") {
-    const name = event.sender_display_name || `@${event.sender_handle}`;
-    callNotice.value = t("views.messages.callNoticeCancel", { name });
-    if (callConnected.value || !!activeCallMode.value || !!callBusy.value || outgoingInvitePending.value) {
-      await disconnectCall();
-    }
-  } else if (event.kind === "call_end") {
-    const name = event.sender_display_name || `@${event.sender_handle}`;
-    callNotice.value = t("views.messages.callNoticeEnd", { name });
-    if (callConnected.value || !!activeCallMode.value || !!callBusy.value || outgoingInvitePending.value) {
-      await disconnectCall();
-    }
-  } else if (event.kind === "call_missed") {
-    const name = event.sender_display_name || `@${event.sender_handle}`;
-    callNotice.value = t("views.messages.callNoticeNoAnswer", { name });
-  } else if (event.kind === "call_invite") {
-    const name = event.sender_display_name || `@${event.sender_handle}`;
-    const callType = event.call_mode === "video" ? t("views.messages.callTypeVideo") : t("views.messages.callTypeAudio");
-    callNotice.value = t("views.messages.callNoticeIncoming", { name, type: callType });
-  }
-  await loadActiveThreadAndMessages();
-}
-
 async function syncFederationDMStateFromEvent() {
   const event = latestDMEvent.value;
   if (!event) return;
@@ -1124,10 +774,8 @@ async function syncFederationDMStateFromEvent() {
 watch(
   () => threadId.value,
   async () => {
-    await disconnectCall();
     if (!loading.value && identityUnlocked.value) {
       await loadActiveThreadAndMessages();
-      await maybeAutoConnectCall();
     }
   },
 );
@@ -1159,20 +807,9 @@ watch(unreadDMCount, () => {
 
 watch(dmReceivedTick, () => {
   if (identityUnlocked.value) {
-    void syncCallStateFromEvent();
     void syncFederationDMStateFromEvent();
   }
 });
-
-watch(
-  () => [identityUnlocked.value, activeThread.value?.id ?? "", requestedCallMode.value] as const,
-  () => {
-    if (!loading.value) {
-      void maybeAutoConnectCall();
-    }
-  },
-  { immediate: true },
-);
 
 onMounted(() => {
   syncDesktopLayout();
@@ -1184,14 +821,12 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
-  outgoingCallTone.stop();
   if (threadRefreshTimer) {
     clearTimeout(threadRefreshTimer);
     threadRefreshTimer = null;
   }
   desktopMediaQuery?.removeEventListener("change", syncDesktopLayout);
   desktopMediaQuery = null;
-  void disconnectCall();
 });
 </script>
 
@@ -1479,48 +1114,13 @@ onBeforeUnmount(() => {
                 <p class="text-sm text-neutral-500">@{{ activeThread.peer_handle }}</p>
               </div>
             </div>
-            <div class="flex flex-wrap items-center gap-2">
-              <template v-if="activeThread.can_call">
-              <button
-                type="button"
-                class="flex h-10 w-10 items-center justify-center rounded-full border border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
-                :disabled="!!callBusy || callConnected"
-                :aria-label="$t('views.messages.audioCallAria')"
-                :title="callBusy === 'audio' ? $t('views.messages.audioCallDialingTitle') : $t('views.messages.audioCallAria')"
-                @click="startOutgoingCall('audio')"
-              >
-                <Icon name="phone" class="h-5 w-5" />
-              </button>
-              <button
-                type="button"
-                class="flex h-10 w-10 items-center justify-center rounded-full border border-lime-600 bg-lime-600 text-white hover:bg-lime-700 disabled:opacity-50"
-                :disabled="!!callBusy || callConnected"
-                :aria-label="$t('views.messages.videoCallAria')"
-                :title="callBusy === 'video' ? $t('views.messages.videoCallDialingTitle') : $t('views.messages.videoCallAria')"
-                @click="startOutgoingCall('video')"
-              >
-                <Icon name="video" class="h-5 w-5" />
-              </button>
-              </template>
-              <button
-                v-if="callConnected && activeCallMode !== 'audio'"
-                type="button"
-                class="rounded-full border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50"
-                @click="hangupCall"
-              >
-                {{ outgoingInvitePending && !remoteParticipantJoined ? $t("views.messages.hangupCancel") : $t("views.messages.hangupEnd") }}
-              </button>
-            </div>
           </header>
 
           <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
             <div v-if="loadingMessages" class="px-5 py-4 text-sm text-neutral-500">{{ $t("views.messages.loadingMessages") }}</div>
             <div v-else class="relative flex min-h-0 flex-1 flex-col">
-              <div v-if="callError && !showCallMedia" class="border-b border-red-200 bg-red-50 px-5 py-3 text-sm text-red-700">
-                {{ callError }}
-              </div>
-              <div v-else-if="callNotice && !showCallMedia" class="border-b border-neutral-200 bg-white px-5 py-3 text-sm text-neutral-600">
-                {{ callNotice }}
+              <div v-if="notice" class="border-b border-neutral-200 bg-white px-5 py-3 text-sm text-neutral-600">
+                {{ notice }}
               </div>
               <div class="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-4">
               <div v-if="!timelineItems.length" class="mx-auto mt-10 max-w-md rounded-2xl border border-dashed border-neutral-200 bg-white px-6 py-5 text-center text-sm text-neutral-500">
@@ -1537,32 +1137,11 @@ onBeforeUnmount(() => {
                     class="max-w-[min(100%,42rem)] rounded-2xl px-4 py-3 shadow-sm"
                     :class="item.sent_by_me ? 'bg-lime-600 text-white' : 'border border-neutral-200 bg-white text-neutral-900'"
                   >
-                    <template v-if="item.kind === 'message'">
-                      <p class="mb-1 text-[11px]" :class="item.sent_by_me ? 'text-lime-100' : 'text-neutral-400'">
-                        {{ item.message.sender_display_name }} · {{ formatDateTime(item.message.created_at, { dateStyle: "short", timeStyle: "short" }) }}
-                      </p>
-                      <UserBadges :badges="item.message.sender_badges" size="xs" />
-                      <p class="whitespace-pre-wrap break-words text-sm leading-6">{{ item.message.decrypted_text }}</p>
-                    </template>
-                    <template v-else>
-                      <div class="flex items-start justify-between gap-3">
-                        <div class="min-w-0">
-                          <p class="text-sm font-medium">{{ formatCallHistoryLabel(item.call) }}</p>
-                          <p class="mt-1 text-[11px]" :class="item.sent_by_me ? 'text-lime-100' : 'text-neutral-500'">
-                            {{ item.call.actor_display_name }} · {{ formatDateTime(item.call.created_at, { dateStyle: "short", timeStyle: "short" }) }}
-                          </p>
-                          <UserBadges :badges="item.call.actor_badges" size="xs" />
-                        </div>
-                        <span
-                          class="shrink-0 rounded-full px-2 py-1 text-[11px] font-semibold"
-                          :class="item.sent_by_me
-                            ? 'bg-white/15 text-white'
-                            : (item.call.event_type === 'missed' ? 'bg-red-100 text-red-700' : 'bg-neutral-100 text-neutral-700')"
-                        >
-                          {{ item.call.call_mode === "video" ? "VIDEO" : "AUDIO" }}
-                        </span>
-                      </div>
-                    </template>
+                    <p class="mb-1 text-[11px]" :class="item.sent_by_me ? 'text-lime-100' : 'text-neutral-400'">
+                      {{ item.message.sender_display_name }} · {{ formatDateTime(item.message.created_at, { dateStyle: "short", timeStyle: "short" }) }}
+                    </p>
+                    <UserBadges :badges="item.message.sender_badges" size="xs" />
+                    <p class="whitespace-pre-wrap break-words text-sm leading-6">{{ item.message.decrypted_text }}</p>
                     <div v-if="item.kind === 'message' && item.message.attachments.length" class="mt-3 space-y-2">
                       <div
                         v-for="(attachment, index) in item.message.attachments"
@@ -1588,89 +1167,6 @@ onBeforeUnmount(() => {
                   </div>
                 </div>
               </div>
-              </div>
-              <div
-                v-if="showCallMedia"
-                class="absolute inset-0 z-20 flex min-h-0 flex-col bg-white/95 backdrop-blur-sm"
-              >
-                <div class="px-5 pt-4">
-                  <p v-if="callError" class="text-sm text-red-600">{{ callError }}</p>
-                  <p v-else-if="callNotice" class="text-sm text-neutral-600">{{ callNotice }}</p>
-                </div>
-                <div
-                  v-if="showAudioCallLayout"
-                  class="flex min-h-0 flex-1 flex-col justify-between px-6 py-8"
-                >
-                  <div class="flex flex-1 flex-col items-center justify-center text-center">
-                    <div
-                      v-if="activeThread?.peer_avatar_url"
-                      class="mb-4 h-28 w-28 overflow-hidden rounded-full border border-neutral-200 bg-white shadow-sm"
-                    >
-                      <img
-                        :src="activeThread.peer_avatar_url"
-                        :alt="activeThreadTitle"
-                        class="h-full w-full object-cover"
-                      />
-                    </div>
-                    <div
-                      v-else
-                      class="mb-4 flex h-28 w-28 items-center justify-center rounded-full bg-lime-500 text-3xl font-semibold text-white shadow-sm"
-                    >
-                      {{ (activeThreadTitle || activeThread?.peer_handle || "?").slice(0, 1).toUpperCase() }}
-                    </div>
-                    <div class="flex flex-wrap items-center justify-center gap-2">
-                      <p class="text-xl font-semibold text-neutral-900">{{ activeThreadTitle }}</p>
-                      <UserBadges :badges="activeThread?.peer_badges" />
-                    </div>
-                    <p class="mt-2 text-sm text-neutral-500">@{{ activeThread?.peer_handle }}</p>
-                  </div>
-                  <div class="flex items-center justify-center gap-3">
-                    <button
-                      type="button"
-                      class="flex h-12 w-12 items-center justify-center rounded-full border transition"
-                      :class="micMuted
-                        ? 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'
-                        : 'border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50'"
-                      :aria-label="micMuted ? $t('views.messages.micUnmuteAria') : $t('views.messages.micMuteAria')"
-                      :title="micMuted ? $t('views.messages.micOffTitle') : $t('views.messages.micOnTitle')"
-                      @click="toggleMicMute"
-                    >
-                      <Icon :name="micMuted ? 'micOff' : 'mic'" class="h-5 w-5" />
-                    </button>
-                    <button
-                      type="button"
-                      class="flex h-12 w-12 items-center justify-center rounded-full border transition"
-                      :class="speakerMuted
-                        ? 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'
-                        : 'border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50'"
-                      :aria-label="speakerMuted ? $t('views.messages.speakerUnmuteAria') : $t('views.messages.speakerMuteAria')"
-                      :title="speakerMuted ? $t('views.messages.speakerOffTitle') : $t('views.messages.speakerOnTitle')"
-                      @click="toggleSpeakerMute"
-                    >
-                      <Icon :name="speakerMuted ? 'speakerOff' : 'speaker'" class="h-5 w-5" />
-                    </button>
-                    <button
-                      type="button"
-                      class="flex h-12 w-12 items-center justify-center rounded-full border border-red-300 bg-white text-red-700 transition hover:bg-red-50"
-                      :aria-label="$t('views.messages.hangupAria')"
-                      :title="outgoingInvitePending && !remoteParticipantJoined ? $t('views.messages.hangupTitleCancel') : $t('views.messages.hangupTitleEnd')"
-                      @click="hangupCall"
-                    >
-                      <Icon name="phoneHangup" class="h-5 w-5" />
-                    </button>
-                  </div>
-                </div>
-                <div v-else class="flex min-h-0 flex-1 flex-col gap-4 px-5 py-4 lg:grid lg:grid-cols-2">
-                  <div class="rounded-2xl border border-neutral-200 bg-neutral-950 p-3">
-                    <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-300">{{ $t("views.messages.selfLabel") }}</p>
-                    <video ref="localVideoEl" class="aspect-video w-full rounded-xl bg-black object-cover" autoplay muted playsinline />
-                  </div>
-                  <div class="rounded-2xl border border-neutral-200 bg-white p-3">
-                    <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">{{ $t("views.messages.peerLabel") }}</p>
-                    <video ref="remoteVideoEl" class="aspect-video w-full rounded-xl bg-neutral-100 object-cover" autoplay playsinline />
-                  </div>
-                </div>
-                <div ref="remoteAudioRoot" class="hidden" />
               </div>
             </div>
 

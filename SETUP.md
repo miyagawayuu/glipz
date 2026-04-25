@@ -90,12 +90,35 @@ GLIPZ_PROTOCOL_MEDIA_PUBLIC_BASE=http://localhost:8080/api/v1/media/object
 
 ### Patreon fan club (Optional)
 
-Register an API client at Patreon and set (redirect URI must match your deployment; see comments in [.env.example](.env.example)):
+Patreon is disabled by default. Register an API client at Patreon, then enable it explicitly (redirect URI must match your deployment; see comments in [.env.example](.env.example)):
 
 ```env
+PATREON_ENABLED=true
 PATREON_CLIENT_ID=
 PATREON_CLIENT_SECRET=
 # PATREON_REDIRECT_URI=http://localhost:8080/api/v1/fanclub/patreon/callback
+```
+
+### Gumroad fan club locks (Optional)
+
+Gumroad is disabled by default. It uses Gumroad's public license verification endpoint, so no API secret is required:
+
+```env
+GUMROAD_ENABLED=true
+```
+
+Creators enter their Gumroad Membership `product_id` in the composer; viewers enter a valid license key to unlock.
+
+### PayPal subscriptions (Optional)
+
+PayPal payment paywalls are disabled by default. Create a REST app in the PayPal Developer Dashboard, configure the webhook URLs shown in [.env.example](.env.example), then enable it explicitly:
+
+```env
+PAYPAL_ENABLED=true
+PAYPAL_CLIENT_ID=
+PAYPAL_CLIENT_SECRET=
+PAYPAL_WEBHOOK_ID=
+PAYPAL_ENV=sandbox
 ```
 
 ### Production web build
@@ -219,10 +242,11 @@ These are disabled unless configured:
 
 | Feature | Environment Variables |
 |---------|----------------------|
-| **TURN (calls)** | `TURN_HOST`, `TURN_SHARED_SECRET`, `TURN_TTL_SECONDS`, ports |
 | **Web Push** | `WEB_PUSH_VAPID_*` |
 | **Federation** | `GLIPZ_PROTOCOL_*`, optional `FEDERATION_POLICY_SUMMARY` |
-| **Patreon** | `PATREON_CLIENT_ID`, `PATREON_CLIENT_SECRET`, optional `PATREON_REDIRECT_URI` |
+| **Patreon** | `PATREON_ENABLED=true`, `PATREON_CLIENT_ID`, `PATREON_CLIENT_SECRET`, optional `PATREON_REDIRECT_URI` |
+| **Gumroad** | `GUMROAD_ENABLED=true` |
+| **PayPal** | `PAYPAL_ENABLED=true`, `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID`, `PAYPAL_ENV` |
 
 See [.env.example](.env.example) for all options.
 
@@ -258,8 +282,15 @@ See [.env.example](.env.example) for all options.
 
 ### Patreon OAuth errors after deploy
 
+- `PATREON_ENABLED=true` is set
 - Redirect URI in the Patreon developer console exactly matches `PATREON_REDIRECT_URI` or `{GLIPZ_PROTOCOL_PUBLIC_ORIGIN}/api/v1/fanclub/patreon/callback`
 - `GLIPZ_PROTOCOL_PUBLIC_ORIGIN` uses HTTPS in production
+
+### Patreon / Gumroad / PayPal UI is missing
+
+- The related provider flag is enabled: `PATREON_ENABLED=true`, `GUMROAD_ENABLED=true`, or `PAYPAL_ENABLED=true`
+- Credential-backed providers also have credentials set (`PATREON_*` or `PAYPAL_*`)
+- Restart the backend after changing `.env`, then reload the frontend
 
 ### Emails not sending
 
@@ -279,6 +310,7 @@ Before going live:
 - [ ] `GLIPZ_PROTOCOL_PUBLIC_ORIGIN` set (if using federation)
 - [ ] Database and Redis secured
 - [ ] Real email provider configured (Mailgun, etc.)
+- [ ] Optional providers explicitly enabled only when configured (`PATREON_ENABLED`, `GUMROAD_ENABLED`, `PAYPAL_ENABLED`)
 - [ ] License file added (see LICENSE)
 
 ---

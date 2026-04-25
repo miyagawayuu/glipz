@@ -47,7 +47,6 @@ This repository contains the official Go implementation of the Glipz Federation 
 
 - End-to-end encrypted identity setup
 - File and media sharing
-- Voice and video calls (P2P WebRTC with TURN)
 
 ### Customization
 
@@ -71,16 +70,18 @@ This repository contains the official Go implementation of the Glipz Federation 
 
 ### Fan club (Patreon, Gumroad; optional)
 
-- **Patreon:** link your campaign via OAuth; configure `PATREON_*` in `.env` (see [.env.example](.env.example)); callback path is documented there.
-- **Gumroad:** lock a post to a [Gumroad](https://gumroad.com) product by ID; viewers unlock by entering a valid license key. The server verifies keys against [Gumroad’s license API](https://gumroad.com/api#licenses)—no `GUMROAD_*` secrets are required in `.env` (see comments in [.env.example](.env.example)).
+- **Disabled by default:** set `PATREON_ENABLED=true` and/or `GUMROAD_ENABLED=true` to expose the related UI and API behavior. Disabled providers are hidden in settings/composer/unlock UI and rejected server-side.
+- **Patreon:** link your campaign via OAuth; configure `PATREON_ENABLED=true` plus `PATREON_CLIENT_ID` / `PATREON_CLIENT_SECRET` in `.env` (see [.env.example](.env.example)); callback path is documented there.
+- **Gumroad:** lock a post to a [Gumroad](https://gumroad.com) product by ID; viewers unlock by entering a valid license key. Enable with `GUMROAD_ENABLED=true`; the server verifies keys against [Gumroad’s license API](https://gumroad.com/api#licenses), so no Gumroad API secret is required in `.env`.
 - **Federation:** remote instances cannot mint `entitlement_jwt` for Patreon- or Gumroad-locked posts (returns `501` with `federation_membership_entitlement_unsupported`); unlock those memberships on the **origin** instance or with password-based unlock when applicable.
 - Other membership platforms (e.g. SubscribeStar, Ko-fi, Fansly, Ci-en, pixiv FANBOX, Fantia) are not integrated: most lack a stable, third-party–safe API to verify a viewer’s subscription in real time, or are unsuitable for server-side checks under Glipz’s model.
 
 ### Payments (PayPal subscriptions; optional)
 
+- **Disabled by default:** set `PAYPAL_ENABLED=true` to expose PayPal payment UI and routes. When disabled, PayPal paywall creation/unlock UI is hidden and server handlers return unavailable/not implemented responses.
 - Glipz also supports **user-to-user (non-custodial) paywalls** under `internal/payment/…`.
 - **PayPal (subscriptions):** creators register a PayPal `plan_id` (created on PayPal) and can lock posts behind an active subscription. The server validates PayPal webhooks and mints short-lived unlock entitlements for viewers.
-- Configure `PAYPAL_*` in `.env` (see [.env.example](.env.example)). PayPal approvals return through `{GLIPZ_PROTOCOL_PUBLIC_ORIGIN}/api/v1/payment/paypal/subscription/return`; webhooks use `{GLIPZ_PROTOCOL_PUBLIC_ORIGIN}/api/v1/payment/paypal/webhook`.
+- Configure `PAYPAL_ENABLED=true` plus `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID`, and `PAYPAL_ENV` in `.env` (see [.env.example](.env.example)). PayPal approvals return through `{GLIPZ_PROTOCOL_PUBLIC_ORIGIN}/api/v1/payment/paypal/subscription/return`; webhooks use `{GLIPZ_PROTOCOL_PUBLIC_ORIGIN}/api/v1/payment/paypal/webhook`.
 
 ### Developer Features
 
@@ -201,9 +202,9 @@ Mailpit (started with the Docker stack) is for local development. In production,
 - [ ] Database and Redis secured
 - [ ] Email provider configured (Mailgun, etc.)
 - [ ] `GLIPZ_ADMIN_USER_IDS` set if you need built-in admin UIs
-- [ ] Patreon fan club (if used): `PATREON_CLIENT_ID`, `PATREON_CLIENT_SECRET`, and matching redirect URI
-- [ ] Gumroad (if used): no extra instance secrets—ensure creators know the product ID and that viewers use valid license keys
-- [ ] PayPal payments (if used): `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID`, and `PAYPAL_ENV`
+- [ ] Patreon fan club (if used): `PATREON_ENABLED=true`, `PATREON_CLIENT_ID`, `PATREON_CLIENT_SECRET`, and matching redirect URI
+- [ ] Gumroad (if used): `GUMROAD_ENABLED=true`; no extra instance secrets are required
+- [ ] PayPal payments (if used): `PAYPAL_ENABLED=true`, `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID`, and `PAYPAL_ENV`
 
 ---
 
@@ -303,10 +304,11 @@ Membership entitlement over Glipz federation (`POST .../federation/posts/{postID
 | `GLIPZ_MEDIA_PROXY_MODE` | `proxy` streams media through the API; `direct` redirects to configured public media URLs | Optional |
 | `GLIPZ_FEDERATION_DELIVERY_*` | Batch size, concurrency, and tick interval for outbound federation delivery | Optional |
 | `GLIPZ_ADMIN_USER_IDS` | Comma-separated user UUIDs with site admin | Optional |
-| `PATREON_*` | Patreon OAuth for fan club features | Optional |
-| (none) | Gumroad: license checks use Gumroad’s public API; no Glipz env vars | — |
-| `PAYPAL_*` | PayPal subscriptions for payment paywalls | Optional |
-| `TURN_*` | WebRTC TURN credentials for DM calls | Optional |
+| `PATREON_ENABLED` | Enables Patreon UI/routes; defaults to disabled | Optional |
+| `PATREON_*` | Patreon OAuth credentials for fan club features | Required when Patreon is enabled |
+| `GUMROAD_ENABLED` | Enables Gumroad UI/routes; defaults to disabled. License checks use Gumroad’s public API; no secret is required | Optional |
+| `PAYPAL_ENABLED` | Enables PayPal UI/routes; defaults to disabled | Optional |
+| `PAYPAL_*` | PayPal subscriptions for payment paywalls | Required when PayPal is enabled |
 | `WEB_PUSH_VAPID_*` | Web Push (VAPID) keys | Optional |
 
 See [.env.example](.env.example) for every variable, including legacy aliases and mail (`MAILGUN_*`, `SMTP_*`).

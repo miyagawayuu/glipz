@@ -22,7 +22,6 @@ func RunDirectMessages(ctx context.Context, pool *pgxpool.Pool) error {
 	}
 
 	steps := []string{
-		`ALTER TABLE users ADD COLUMN IF NOT EXISTS dm_call_timeout_seconds INTEGER NOT NULL DEFAULT 30`,
 		`CREATE TABLE IF NOT EXISTS user_dm_identity_keys (
 			user_id UUID PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
 			algorithm TEXT NOT NULL DEFAULT 'ECDH-P256',
@@ -58,17 +57,6 @@ func RunDirectMessages(ctx context.Context, pool *pgxpool.Pool) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_dm_messages_thread_created_at ON dm_messages (thread_id, created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_dm_messages_sender_created_at ON dm_messages (sender_id, created_at DESC)`,
-		`CREATE TABLE IF NOT EXISTS dm_call_events (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			thread_id UUID NOT NULL REFERENCES dm_threads (id) ON DELETE CASCADE,
-			actor_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
-			event_type TEXT NOT NULL,
-			call_mode TEXT NOT NULL,
-			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			CONSTRAINT dm_call_events_type_check CHECK (event_type IN ('invite', 'cancel', 'end', 'missed')),
-			CONSTRAINT dm_call_events_mode_check CHECK (call_mode IN ('audio', 'video'))
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_dm_call_events_thread_created_at ON dm_call_events (thread_id, created_at DESC)`,
 		`ALTER TABLE users ADD COLUMN IF NOT EXISTS dm_invite_auto_accept BOOLEAN NOT NULL DEFAULT false`,
 		`CREATE TABLE IF NOT EXISTS dm_auto_accept_pending_invites (
 			inviter_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,

@@ -63,26 +63,6 @@ type CreatedDMMessage struct {
 	CreatedAt   time.Time
 }
 
-type DMCallEvent struct {
-	ID               uuid.UUID
-	EventType        string
-	CallMode         string
-	SentByMe         bool
-	ActorID          uuid.UUID
-	ActorHandle      string
-	ActorDisplayName string
-	ActorAvatarKey   *string
-	CreatedAt        time.Time
-}
-
-type CreatedDMCallEvent struct {
-	ID          uuid.UUID
-	RecipientID uuid.UUID
-	EventType   string
-	CallMode    string
-	CreatedAt   time.Time
-}
-
 func canonicalDMUsers(a, b uuid.UUID) (uuid.UUID, uuid.UUID) {
 	if strings.Compare(a.String(), b.String()) <= 0 {
 		return a, b
@@ -433,116 +413,6 @@ func (p *Pool) DMMessageByIDForViewer(ctx context.Context, userID, messageID uui
 	return row, err
 }
 
-func normalizeDMCallMode(mode string) string {
-	if strings.TrimSpace(strings.ToLower(mode)) == "video" {
-		return "video"
-	}
-	return "audio"
-}
-
-func normalizeDMCallEventType(eventType string) string {
-	switch strings.TrimSpace(strings.ToLower(eventType)) {
-	case "cancel", "end", "missed":
-		return strings.TrimSpace(strings.ToLower(eventType))
-	default:
-		return "invite"
-	}
-}
-
-func (p *Pool) CreateDMCallEvent(ctx context.Context, threadID, actorID uuid.UUID, eventType, callMode string) (CreatedDMCallEvent, error) {
-	tx, err := p.db.Begin(ctx)
-	if err != nil {
-		return CreatedDMCallEvent{}, err
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	var low, high uuid.UUID
-	err = tx.QueryRow(ctx, `
-		SELECT user_low_id, user_high_id
-		FROM dm_threads
-		WHERE id = $1
-	`, threadID).Scan(&low, &high)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return CreatedDMCallEvent{}, ErrNotFound
-	}
-	if err != nil {
-		return CreatedDMCallEvent{}, err
-	}
-	if actorID != low && actorID != high {
-		return CreatedDMCallEvent{}, ErrForbidden
-	}
-	recipientID := high
-	if actorID == high {
-		recipientID = low
-	}
-	var out CreatedDMCallEvent
-	out.EventType = normalizeDMCallEventType(eventType)
-	out.CallMode = normalizeDMCallMode(callMode)
-	err = tx.QueryRow(ctx, `
-		INSERT INTO dm_call_events (thread_id, actor_id, event_type, call_mode)
-		VALUES ($1, $2, $3, $4)
-		RETURNING id, created_at
-	`, threadID, actorID, out.EventType, out.CallMode).Scan(&out.ID, &out.CreatedAt)
-	if err != nil {
-		return CreatedDMCallEvent{}, err
-	}
-	if _, err := tx.Exec(ctx, `UPDATE dm_threads SET updated_at = NOW() WHERE id = $1`, threadID); err != nil {
-		return CreatedDMCallEvent{}, err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return CreatedDMCallEvent{}, err
-	}
-	out.RecipientID = recipientID
-	return out, nil
-}
-
-func (p *Pool) ListDMCallEvents(ctx context.Context, userID, threadID uuid.UUID, limit int) ([]DMCallEvent, error) {
-	if limit <= 0 || limit > 100 {
-		limit = 30
-	}
-	rows, err := p.db.Query(ctx, `
-		SELECT e.id,
-			e.event_type,
-			e.call_mode,
-			(e.actor_id = $2) AS sent_by_me,
-			e.actor_id,
-			u.handle,
-			COALESCE(NULLIF(trim(u.display_name), ''), trim(split_part(u.email, '@', 1))),
-			u.avatar_object_key,
-			e.created_at
-		FROM dm_call_events e
-		JOIN dm_threads t ON t.id = e.thread_id
-		JOIN users u ON u.id = e.actor_id
-		WHERE e.thread_id = $1
-			AND ($2 = t.user_low_id OR $2 = t.user_high_id)
-		ORDER BY e.created_at DESC
-		LIMIT $3
-	`, threadID, userID, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := make([]DMCallEvent, 0, limit)
-	for rows.Next() {
-		var row DMCallEvent
-		if err := rows.Scan(
-			&row.ID,
-			&row.EventType,
-			&row.CallMode,
-			&row.SentByMe,
-			&row.ActorID,
-			&row.ActorHandle,
-			&row.ActorDisplayName,
-			&row.ActorAvatarKey,
-			&row.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		out = append(out, row)
-	}
-	return out, rows.Err()
-}
-
 func (p *Pool) CreateDMMessage(ctx context.Context, in CreateDMMessageInput) (CreatedDMMessage, error) {
 	tx, err := p.db.Begin(ctx)
 	if err != nil {
@@ -683,49 +553,6 @@ func (p *Pool) DMStreamEventForRecipient(ctx context.Context, recipientID, messa
 		"sender_handle":       senderHandle,
 		"sender_display_name": senderDisplay,
 		"sender_badges":       NormalizeUserBadges(senderBadges),
-		"created_at":          createdAt.UTC().Format(time.RFC3339),
-	}, nil
-}
-
-func (p *Pool) DMCallEventStreamForRecipient(ctx context.Context, recipientID, eventID uuid.UUID) (map[string]any, error) {
-	var threadID uuid.UUID
-	var actorID uuid.UUID
-	var eventType, callMode, senderHandle, senderDisplay string
-	var senderBadges []string
-	var createdAt time.Time
-	err := p.db.QueryRow(ctx, `
-		SELECT e.thread_id,
-			e.actor_id,
-			e.event_type,
-			e.call_mode,
-			u.handle,
-			COALESCE(NULLIF(trim(u.display_name), ''), trim(split_part(u.email, '@', 1))),
-			COALESCE(u.badges, '{}'::text[]),
-			e.created_at
-		FROM dm_call_events e
-		JOIN dm_threads t ON t.id = e.thread_id
-		JOIN users u ON u.id = e.actor_id
-		WHERE e.id = $1
-			AND (
-				(t.user_low_id = $2 AND e.actor_id <> t.user_low_id) OR
-				(t.user_high_id = $2 AND e.actor_id <> t.user_high_id)
-			)
-	`, eventID, recipientID).Scan(&threadID, &actorID, &eventType, &callMode, &senderHandle, &senderDisplay, &senderBadges, &createdAt)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, ErrNotFound
-	}
-	if err != nil {
-		return nil, err
-	}
-	return map[string]any{
-		"v":                   1,
-		"kind":                "call_" + normalizeDMCallEventType(eventType),
-		"thread_id":           threadID.String(),
-		"sender_user_id":      actorID.String(),
-		"sender_handle":       senderHandle,
-		"sender_display_name": senderDisplay,
-		"sender_badges":       NormalizeUserBadges(senderBadges),
-		"call_mode":           normalizeDMCallMode(callMode),
 		"created_at":          createdAt.UTC().Format(time.RFC3339),
 	}, nil
 }

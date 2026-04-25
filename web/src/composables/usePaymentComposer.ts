@@ -7,6 +7,7 @@ export function usePaymentComposer(opts: {
   viewPasswordConfirm: Ref<string>;
   composerPasswordOpen: Ref<boolean>;
   membershipUsePatreon: Ref<boolean>;
+  paypalEnabled: Ref<boolean>;
 }) {
   const composerPaymentOpen = ref(false);
   const paymentUsePayPal = ref(false);
@@ -25,6 +26,13 @@ export function usePaymentComposer(opts: {
     }
   });
 
+  watch(opts.paypalEnabled, (v) => {
+    if (!v) {
+      paymentUsePayPal.value = false;
+      payPalPlanId.value = "";
+    }
+  });
+
   function resetPaymentComposerState() {
     composerPaymentOpen.value = false;
     paymentUsePayPal.value = false;
@@ -32,6 +40,9 @@ export function usePaymentComposer(opts: {
   }
 
   function validatePaymentForSubmit(t: Translate): string | null {
+    if (paymentUsePayPal.value && !opts.paypalEnabled.value) {
+      return t("views.compose.errors.paypalPlanRequired");
+    }
     if (opts.membershipUsePatreon.value && paymentUsePayPal.value) {
       return t("views.compose.errors.paymentWithMembership");
     }

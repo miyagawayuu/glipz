@@ -104,6 +104,8 @@ SSE endpoints set `X-Accel-Buffering: no`; make sure your reverse proxy also dis
 - `/api/v1/dm/stream`
 - `/api/v1/public/federation/incoming/stream`
 
+DM realtime traffic is message and invite notification traffic only. WebRTC audio/video calls and TURN relay support have been removed, so there is no media relay bandwidth to size for in the backend.
+
 Watch `glipz_sse_active` and Redis client count. If SSE connections grow into the thousands, split stream-serving instances from general API instances.
 
 ## Load Test

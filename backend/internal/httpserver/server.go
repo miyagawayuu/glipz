@@ -220,15 +220,8 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c s3client.
 			r.Post("/dm/upload", s.handleDMUpload)
 			r.Get("/dm/threads/{threadID}", s.handleGetDMThread)
 			r.Get("/dm/threads/{threadID}/messages", s.handleListDMMessages)
-			r.Get("/dm/threads/{threadID}/call-history", s.handleListDMCallHistory)
 			r.Post("/dm/threads/{threadID}/messages", s.handleCreateDMMessage)
 			r.Post("/dm/threads/{threadID}/read", s.handleMarkDMThreadRead)
-			r.Post("/dm/threads/{threadID}/call-token", s.handleIssueDMCallToken)
-			r.Post("/dm/threads/{threadID}/call-invite", s.handleInviteDMCall)
-			r.Post("/dm/threads/{threadID}/call-cancel", s.handleCancelDMCall)
-			r.Post("/dm/threads/{threadID}/call-end", s.handleEndDMCall)
-			r.Post("/dm/threads/{threadID}/call-missed", s.handleMissedDMCall)
-			r.Get("/dm/calls/{callID}/signaling", s.handleDMCallSignalingWS)
 			r.Post("/auth/mfa/setup", s.handleMFASetup)
 			r.Post("/auth/mfa/enable", s.handleMFAEnable)
 			r.Post("/media/presign", s.handlePresign)
@@ -657,18 +650,17 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := map[string]any{
-		"id":                       u.ID.String(),
-		"email":                    u.Email,
-		"handle":                   u.Handle,
-		"display_name":             resolvedDisplayName(u.DisplayName, u.Email),
-		"badges":                   userBadgesJSON(s.visibleUserBadges(u.ID, u.Badges)),
-		"bio":                      u.Bio,
-		"totp_enabled":             u.TOTPEnabled,
-		"dm_call_timeout_seconds":  u.DMCallTimeoutSeconds,
-		"dm_call_enabled":          u.DMCallEnabled,
-		"dm_call_scope":            u.DMCallScope,
-		"dm_call_allowed_user_ids": u.DMCallAllowedUserIDs,
-		"dm_invite_auto_accept":    u.DMInviteAutoAccept,
+		"id":                      u.ID.String(),
+		"email":                   u.Email,
+		"handle":                  u.Handle,
+		"display_name":            resolvedDisplayName(u.DisplayName, u.Email),
+		"badges":                  userBadgesJSON(s.visibleUserBadges(u.ID, u.Badges)),
+		"bio":                     u.Bio,
+		"totp_enabled":            u.TOTPEnabled,
+		"dm_invite_auto_accept":   u.DMInviteAutoAccept,
+		"fanclub_patreon_enabled": s.patreonIntegrationAvailable(),
+		"fanclub_gumroad_enabled": s.gumroadFeatureEnabled(),
+		"payment_paypal_enabled":  s.paypalIntegrationAvailable(),
 	}
 	if u.AvatarObjectKey != nil && *u.AvatarObjectKey != "" {
 		out["avatar_url"] = s.glipzProtocolPublicMediaURL(*u.AvatarObjectKey)
@@ -1190,6 +1182,10 @@ func (s *Server) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if p != "" {
+			if !s.membershipProviderEnabled(p) {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "membership_provider_disabled"})
+				return
+			}
 			if viewHash != nil {
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "membership_with_password"})
 				return
@@ -1210,6 +1206,10 @@ func (s *Server) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 			// Phase 1: only PayPal subscriptions.
 			if prov != "paypal" {
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_payment"})
+				return
+			}
+			if !s.paymentProviderEnabled(prov) {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "payment_provider_disabled"})
 				return
 			}
 			if mProv != "" {
@@ -2276,6 +2276,10 @@ func (s *Server) handlePatchPost(w http.ResponseWriter, r *http.Request) {
 		}
 		memUpdate = &repo.PostMembershipUpdate{Provider: p, CreatorID: c, TierID: t}
 		if p != "" {
+			if !s.membershipProviderEnabled(p) {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "membership_provider_disabled"})
+				return
+			}
 			req.ClearViewPassword = true
 			newPW = nil
 		}
@@ -2289,6 +2293,10 @@ func (s *Server) handlePatchPost(w http.ResponseWriter, r *http.Request) {
 		if prov != "" {
 			if prov != "paypal" || planID == "" {
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_payment"})
+				return
+			}
+			if !s.paymentProviderEnabled(prov) {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "payment_provider_disabled"})
 				return
 			}
 			payUpdate = &repo.PostPaymentUpdate{
@@ -3379,11 +3387,7 @@ type patchProfileReq struct {
 }
 
 type patchMeDMSettingsReq struct {
-	CallTimeoutSeconds int         `json:"call_timeout_seconds"`
-	CallEnabled        bool        `json:"call_enabled"`
-	CallScope          string      `json:"call_scope"`
-	AllowedUserIDs     []uuid.UUID `json:"allowed_user_ids"`
-	DmInviteAutoAccept *bool       `json:"dm_invite_auto_accept"`
+	DmInviteAutoAccept *bool `json:"dm_invite_auto_accept"`
 }
 
 func (s *Server) handlePatchMeProfile(w http.ResponseWriter, r *http.Request) {
@@ -3475,18 +3479,6 @@ func (s *Server) handlePatchMeDMSettings(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_json"})
 		return
 	}
-	if req.CallTimeoutSeconds < 5 || req.CallTimeoutSeconds > 300 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_call_timeout_seconds"})
-		return
-	}
-	if err := s.db.SetDMCallTimeoutSeconds(r.Context(), uid, req.CallTimeoutSeconds); err != nil {
-		writeServerError(w, "SetDMCallTimeoutSeconds", err)
-		return
-	}
-	if err := s.db.SetDMCallPolicy(r.Context(), uid, req.CallEnabled, req.CallScope, req.AllowedUserIDs); err != nil {
-		writeServerError(w, "SetDMCallPolicy", err)
-		return
-	}
 	dmInviteAuto := false
 	if req.DmInviteAutoAccept != nil {
 		dmInviteAuto = *req.DmInviteAutoAccept
@@ -3504,10 +3496,6 @@ func (s *Server) handlePatchMeDMSettings(w http.ResponseWriter, r *http.Request)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":                "ok",
-		"call_timeout_seconds":  req.CallTimeoutSeconds,
-		"call_enabled":          req.CallEnabled,
-		"call_scope":            req.CallScope,
-		"allowed_user_ids":      req.AllowedUserIDs,
 		"dm_invite_auto_accept": dmInviteAuto,
 	})
 }

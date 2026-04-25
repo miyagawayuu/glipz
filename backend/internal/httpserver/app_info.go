@@ -65,3 +65,41 @@ func parseFederationProtocolVersion(raw string) (string, int, bool) {
 	}
 	return strings.TrimSpace(parts[0]), major, true
 }
+
+func (s *Server) patreonFeatureEnabled() bool {
+	return s.cfg.PatreonEnabled
+}
+
+func (s *Server) gumroadFeatureEnabled() bool {
+	return s.cfg.GumroadEnabled
+}
+
+func (s *Server) paypalFeatureEnabled() bool {
+	return s.cfg.PayPalEnabled
+}
+
+func (s *Server) paypalIntegrationAvailable() bool {
+	return s.paypalFeatureEnabled() &&
+		strings.TrimSpace(s.cfg.PayPalClientID) != "" &&
+		strings.TrimSpace(s.cfg.PayPalClientSecret) != ""
+}
+
+func (s *Server) paymentProviderEnabled(provider string) bool {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "paypal":
+		return s.paypalIntegrationAvailable()
+	default:
+		return false
+	}
+}
+
+func (s *Server) membershipProviderEnabled(provider string) bool {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "patreon":
+		return s.patreonIntegrationAvailable()
+	case "gumroad":
+		return s.gumroadFeatureEnabled()
+	default:
+		return false
+	}
+}

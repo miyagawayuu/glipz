@@ -15,7 +15,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
-	"glipz.io/backend/internal/authjwt"
 	"glipz.io/backend/internal/repo"
 )
 
@@ -35,14 +34,6 @@ type createDMMessageReq struct {
 	SenderPayload    json.RawMessage `json:"sender_payload"`
 	RecipientPayload json.RawMessage `json:"recipient_payload"`
 	Attachments      json.RawMessage `json:"attachments"`
-}
-
-type dmCallInviteReq struct {
-	Mode string `json:"mode"`
-}
-
-type dmCallHistoryReq struct {
-	Mode string `json:"mode"`
 }
 
 type dmAttachmentRow struct {
@@ -86,31 +77,6 @@ func (s *Server) publishDMUserEvent(ctx context.Context, recipientID, messageID 
 	}
 }
 
-func (s *Server) publishDMCallEvent(ctx context.Context, recipientID, eventID uuid.UUID) {
-	m, err := s.db.DMCallEventStreamForRecipient(ctx, recipientID, eventID)
-	if err != nil {
-		log.Printf("DMCallEventStreamForRecipient: %v", err)
-		return
-	}
-	if rawID, _ := m["sender_user_id"].(string); rawID != "" {
-		if senderID, err := uuid.Parse(rawID); err == nil {
-			m["sender_badges"] = userBadgesJSON(s.visibleUserBadges(senderID, toStringSlice(m["sender_badges"])))
-		}
-	}
-	delete(m, "sender_user_id")
-	b, err := json.Marshal(m)
-	if err != nil {
-		return
-	}
-	ch := redisDMUserChannel(recipientID)
-	if err := s.rdb.Publish(ctx, ch, string(b)).Err(); err != nil {
-		log.Printf("redis dm call Publish %s: %v", ch, err)
-	}
-	if payload, ok := s.webPushNotificationFromDM(m); ok {
-		s.queueWebPush(recipientID, payload)
-	}
-}
-
 func dmAvatarURL(srv *Server, objectKey *string) any {
 	if objectKey == nil || strings.TrimSpace(*objectKey) == "" {
 		return nil
@@ -129,7 +95,7 @@ func decodeJSONValue(raw []byte) any {
 	return v
 }
 
-func (s *Server) dmThreadToJSON(row repo.DMThreadSummary, canCall bool, badges []string) map[string]any {
+func (s *Server) dmThreadToJSON(row repo.DMThreadSummary, badges []string) map[string]any {
 	out := map[string]any{
 		"id":                row.ID.String(),
 		"peer_id":           row.PeerID.String(),
@@ -143,7 +109,6 @@ func (s *Server) dmThreadToJSON(row repo.DMThreadSummary, canCall bool, badges [
 		"created_at":        row.CreatedAt.UTC().Format(time.RFC3339),
 		"updated_at":        row.UpdatedAt.UTC().Format(time.RFC3339),
 		"last_message_at":   nil,
-		"can_call":          canCall,
 	}
 	if row.LastMessageAt != nil {
 		out["last_message_at"] = row.LastMessageAt.UTC().Format(time.RFC3339)
@@ -162,20 +127,6 @@ func (s *Server) dmMessageToJSON(row repo.DMMessageViewer, badges []string) map[
 		"ciphertext":          decodeJSONValue(row.Ciphertext),
 		"attachments":         decodeJSONValue(row.Attachments),
 		"created_at":          row.CreatedAt.UTC().Format(time.RFC3339),
-	}
-}
-
-func (s *Server) dmCallEventToJSON(row repo.DMCallEvent, badges []string) map[string]any {
-	return map[string]any{
-		"id":                 row.ID.String(),
-		"event_type":         row.EventType,
-		"call_mode":          row.CallMode,
-		"sent_by_me":         row.SentByMe,
-		"actor_handle":       row.ActorHandle,
-		"actor_display_name": row.ActorDisplayName,
-		"actor_badges":       userBadgesJSON(badges),
-		"actor_avatar_url":   dmAvatarURL(s, row.ActorAvatarKey),
-		"created_at":         row.CreatedAt.UTC().Format(time.RFC3339),
 	}
 }
 
@@ -308,11 +259,7 @@ func (s *Server) handleListDMThreads(w http.ResponseWriter, r *http.Request) {
 			return nil, fmt.Errorf("ListUserBadgesByIDs dm threads: %w", err)
 		}
 		for _, it := range items {
-			canCall, err := s.canReceiveDMCall(r.Context(), uid, it.PeerID)
-			if err != nil {
-				return nil, fmt.Errorf("canReceiveDMCall list: %w", err)
-			}
-			out = append(out, s.dmThreadToJSON(it, canCall, badgeMap[it.PeerID]))
+			out = append(out, s.dmThreadToJSON(it, badgeMap[it.PeerID]))
 		}
 		return json.Marshal(map[string]any{"items": out})
 	})
@@ -382,17 +329,12 @@ func (s *Server) handleCreateDMThread(w http.ResponseWriter, r *http.Request) {
 		writeServerError(w, "EnsureDMThread", err)
 		return
 	}
-	canCall, err := s.canReceiveDMCall(r.Context(), uid, peer.UserID)
-	if err != nil {
-		writeServerError(w, "canReceiveDMCall create", err)
-		return
-	}
 	badgeMap, err := s.userBadgeMap(r.Context(), []uuid.UUID{row.PeerID})
 	if err != nil {
 		writeServerError(w, "ListUserBadgesByIDs dm thread create", err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"thread": s.dmThreadToJSON(row, canCall, badgeMap[row.PeerID])})
+	writeJSON(w, http.StatusCreated, map[string]any{"thread": s.dmThreadToJSON(row, badgeMap[row.PeerID])})
 }
 
 // handleInviteDMPeer sends a "join DM" notification when the peer has not set up DM keys yet.
@@ -484,17 +426,12 @@ func (s *Server) handleGetDMThread(w http.ResponseWriter, r *http.Request) {
 		writeServerError(w, "DMThreadByIDForUser", err)
 		return
 	}
-	canCall, err := s.canReceiveDMCall(r.Context(), uid, row.PeerID)
-	if err != nil {
-		writeServerError(w, "canReceiveDMCall get", err)
-		return
-	}
 	badgeMap, err := s.userBadgeMap(r.Context(), []uuid.UUID{row.PeerID})
 	if err != nil {
 		writeServerError(w, "ListUserBadgesByIDs dm thread get", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"thread": s.dmThreadToJSON(row, canCall, badgeMap[row.PeerID])})
+	writeJSON(w, http.StatusOK, map[string]any{"thread": s.dmThreadToJSON(row, badgeMap[row.PeerID])})
 }
 
 func (s *Server) handleListDMMessages(w http.ResponseWriter, r *http.Request) {
@@ -541,40 +478,6 @@ func (s *Server) handleListDMMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, it := range items {
 		out = append(out, s.dmMessageToJSON(it, badgeMap[it.SenderID]))
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": out})
-}
-
-func (s *Server) handleListDMCallHistory(w http.ResponseWriter, r *http.Request) {
-	uid, ok := userIDFrom(r.Context())
-	if !ok {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
-		return
-	}
-	threadID, err := uuid.Parse(strings.TrimSpace(chi.URLParam(r, "threadID")))
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_thread_id"})
-		return
-	}
-	items, err := s.db.ListDMCallEvents(r.Context(), uid, threadID, 30)
-	if err != nil {
-		writeServerError(w, "ListDMCallEvents", err)
-		return
-	}
-	out := make([]map[string]any, 0, len(items))
-	badgeMap, err := s.userBadgeMap(r.Context(), func() []uuid.UUID {
-		ids := make([]uuid.UUID, 0, len(items))
-		for _, it := range items {
-			ids = append(ids, it.ActorID)
-		}
-		return ids
-	}())
-	if err != nil {
-		writeServerError(w, "ListUserBadgesByIDs dm call history", err)
-		return
-	}
-	for _, it := range items {
-		out = append(out, s.dmCallEventToJSON(it, badgeMap[it.ActorID]))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": out})
 }
@@ -725,184 +628,6 @@ func (s *Server) handleDMStream(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 	}
-}
-
-func (s *Server) handleIssueDMCallToken(w http.ResponseWriter, r *http.Request) {
-	uid, ok := userIDFrom(r.Context())
-	if !ok {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
-		return
-	}
-	threadID, err := uuid.Parse(strings.TrimSpace(chi.URLParam(r, "threadID")))
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_thread_id"})
-		return
-	}
-	thread, err := s.db.DMThreadByIDForUser(r.Context(), uid, threadID)
-	if err != nil {
-		if errors.Is(err, repo.ErrNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
-			return
-		}
-		writeServerError(w, "DMThreadByIDForUser", err)
-		return
-	}
-	if !s.turnConfigured() {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "turn_not_configured"})
-		return
-	}
-	allowedOutgoing, err := s.canReceiveDMCall(r.Context(), uid, thread.PeerID)
-	if err != nil {
-		writeServerError(w, "canReceiveDMCall", err)
-		return
-	}
-	allowedIncoming, err := s.canReceiveDMCall(r.Context(), thread.PeerID, uid)
-	if err != nil {
-		writeServerError(w, "canReceiveDMCall reverse", err)
-		return
-	}
-	if !allowedOutgoing && !allowedIncoming {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "dm_call_not_allowed"})
-		return
-	}
-	mode := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("mode")))
-	if mode == "" {
-		mode = "audio"
-	}
-	if mode != "audio" && mode != "video" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_mode"})
-		return
-	}
-	sess, role, err := s.getOrCreateCallSession(r.Context(), threadID, uid, thread.PeerID, mode)
-	if err != nil {
-		writeServerError(w, "getOrCreateCallSession", err)
-		return
-	}
-	now := time.Now().UTC()
-	iceServers := s.dmCallIceServers(sess.CallID, now)
-	wsTok, err := authjwt.SignDMCallWS(s.secret, uid, time.Until(sess.ExpiresAt))
-	if err != nil {
-		writeServerError(w, "SignDMCallWS", err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"call_id":       sess.CallID,
-		"role":          role,
-		"signaling_url": "/api/v1/dm/calls/" + sess.CallID + "/signaling",
-		"ws_token":      wsTok,
-		"ice_servers":   iceServers,
-		"expires_at":    sess.ExpiresAt.UTC().Format(time.RFC3339),
-		"thread_id":     threadID.String(),
-		"peer_id":       thread.PeerID.String(),
-		"call_mode":     mode,
-	})
-}
-
-func (s *Server) handleInviteDMCall(w http.ResponseWriter, r *http.Request) {
-	uid, ok := userIDFrom(r.Context())
-	if !ok {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
-		return
-	}
-	threadID, err := uuid.Parse(strings.TrimSpace(chi.URLParam(r, "threadID")))
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_thread_id"})
-		return
-	}
-	var req dmCallInviteReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_json"})
-		return
-	}
-	mode := strings.TrimSpace(strings.ToLower(req.Mode))
-	if mode != "audio" && mode != "video" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_mode"})
-		return
-	}
-	thread, err := s.db.DMThreadByIDForUser(r.Context(), uid, threadID)
-	if err != nil {
-		if errors.Is(err, repo.ErrNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
-			return
-		}
-		writeServerError(w, "DMThreadByIDForUser", err)
-		return
-	}
-	allowed, err := s.canReceiveDMCall(r.Context(), uid, thread.PeerID)
-	if err != nil {
-		writeServerError(w, "canReceiveDMCall", err)
-		return
-	}
-	if !allowed {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "dm_call_not_allowed"})
-		return
-	}
-	created, err := s.db.CreateDMCallEvent(r.Context(), threadID, uid, "invite", mode)
-	if err != nil {
-		if errors.Is(err, repo.ErrForbidden) {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
-			return
-		}
-		writeServerError(w, "CreateDMCallEvent invite", err)
-		return
-	}
-	s.publishDMCallEvent(r.Context(), created.RecipientID, created.ID)
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-}
-
-func (s *Server) handleCancelDMCall(w http.ResponseWriter, r *http.Request) {
-	s.handleRecordDMCallEvent(w, r, "cancel")
-}
-
-func (s *Server) handleEndDMCall(w http.ResponseWriter, r *http.Request) {
-	s.handleRecordDMCallEvent(w, r, "end")
-}
-
-func (s *Server) handleMissedDMCall(w http.ResponseWriter, r *http.Request) {
-	s.handleRecordDMCallEvent(w, r, "missed")
-}
-
-func (s *Server) handleRecordDMCallEvent(w http.ResponseWriter, r *http.Request, eventType string) {
-	uid, ok := userIDFrom(r.Context())
-	if !ok {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
-		return
-	}
-	threadID, err := uuid.Parse(strings.TrimSpace(chi.URLParam(r, "threadID")))
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_thread_id"})
-		return
-	}
-	thread, err := s.db.DMThreadByIDForUser(r.Context(), uid, threadID)
-	if err != nil {
-		if errors.Is(err, repo.ErrNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
-			return
-		}
-		writeServerError(w, "DMThreadByIDForUser", err)
-		return
-	}
-	var req dmCallHistoryReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_json"})
-		return
-	}
-	mode := strings.TrimSpace(strings.ToLower(req.Mode))
-	if mode != "audio" && mode != "video" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_mode"})
-		return
-	}
-	created, err := s.db.CreateDMCallEvent(r.Context(), threadID, uid, eventType, mode)
-	if err != nil {
-		if errors.Is(err, repo.ErrForbidden) {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
-			return
-		}
-		writeServerError(w, "CreateDMCallEvent "+eventType, err)
-		return
-	}
-	s.publishDMCallEvent(r.Context(), thread.PeerID, created.ID)
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (s *Server) handleDMUpload(w http.ResponseWriter, r *http.Request) {

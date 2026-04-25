@@ -24,7 +24,6 @@ export type DMThread = {
   peer_algorithm: string;
   peer_public_jwk: JsonWebKey | null;
   unread_count: number;
-  can_call?: boolean;
   last_message_at?: string | null;
   created_at: string;
   updated_at: string;
@@ -53,79 +52,6 @@ export type DMMessage = {
   attachments: DMAttachment[];
   created_at: string;
 };
-
-export type DMCallToken = {
-  call_id: string;
-  role: "caller" | "callee";
-  signaling_url: string;
-  ws_token: string;
-  ice_servers: RTCIceServer[];
-  expires_at: string;
-  thread_id: string;
-  peer_id: string;
-  call_mode: "audio" | "video";
-};
-
-export type RTCIceServer = {
-  urls: string | string[];
-  username?: string;
-  credential?: string;
-  credentialType?: "password" | "oauth";
-};
-
-export type DMCallEvent = {
-  id: string;
-  event_type: "invite" | "cancel" | "end" | "missed";
-  call_mode: "audio" | "video";
-  sent_by_me: boolean;
-  actor_handle: string;
-  actor_display_name: string;
-  actor_badges?: string[];
-  actor_avatar_url: string | null;
-  created_at: string;
-};
-
-export async function inviteDMCall(threadId: string, mode: "audio" | "video"): Promise<void> {
-  const token = getAccessToken();
-  if (!token) throw new Error("unauthorized");
-  await api(`/api/v1/dm/threads/${encodeURIComponent(threadId)}/call-invite`, {
-    method: "POST",
-    token,
-    json: { mode },
-  });
-}
-
-async function postDMCallEvent(threadId: string, path: string, mode: "audio" | "video"): Promise<void> {
-  const token = getAccessToken();
-  if (!token) throw new Error("unauthorized");
-  await api(`/api/v1/dm/threads/${encodeURIComponent(threadId)}/${path}`, {
-    method: "POST",
-    token,
-    json: { mode },
-  });
-}
-
-export async function cancelDMCall(threadId: string, mode: "audio" | "video"): Promise<void> {
-  return postDMCallEvent(threadId, "call-cancel", mode);
-}
-
-export async function endDMCall(threadId: string, mode: "audio" | "video"): Promise<void> {
-  return postDMCallEvent(threadId, "call-end", mode);
-}
-
-export async function markDMCallMissed(threadId: string, mode: "audio" | "video"): Promise<void> {
-  return postDMCallEvent(threadId, "call-missed", mode);
-}
-
-export async function listDMCallHistory(threadId: string): Promise<DMCallEvent[]> {
-  const token = getAccessToken();
-  if (!token) throw new Error("unauthorized");
-  const res = await api<{ items: DMCallEvent[] }>(`/api/v1/dm/threads/${encodeURIComponent(threadId)}/call-history`, {
-    method: "GET",
-    token,
-  });
-  return res.items ?? [];
-}
 
 export type DMUploadResponse = {
   object_key: string;
@@ -245,15 +171,6 @@ export async function fetchDMUnreadCount(): Promise<number> {
   if (!token) return 0;
   const res = await api<{ count: number }>("/api/v1/dm/unread-count", { method: "GET", token });
   return Number(res.count) || 0;
-}
-
-export async function issueDMCallToken(threadId: string, mode: "audio" | "video"): Promise<DMCallToken> {
-  const token = getAccessToken();
-  if (!token) throw new Error("unauthorized");
-  return api<DMCallToken>(`/api/v1/dm/threads/${encodeURIComponent(threadId)}/call-token?mode=${encodeURIComponent(mode)}`, {
-    method: "POST",
-    token,
-  });
 }
 
 export async function uploadDMFile(token: string, file: File): Promise<DMUploadResponse> {

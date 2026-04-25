@@ -14,7 +14,13 @@ import type { ThemePreference } from "../lib/theme";
 import { readStoredThemePreference } from "../lib/theme";
 import { setLocale, type AppLocale } from "../i18n";
 
-type AppMe = { handle: string; is_site_admin?: boolean } | null;
+type AppMe = {
+  handle: string;
+  is_site_admin?: boolean;
+  fanclub_patreon_enabled?: boolean;
+  fanclub_gumroad_enabled?: boolean;
+  payment_paypal_enabled?: boolean;
+} | null;
 
 const { t, locale } = useI18n();
 const securitySettings = useSecuritySettings();
@@ -26,6 +32,10 @@ const themePreference = ref<ThemePreference>(readStoredThemePreference());
 
 const profilePath = computed(() => (appMe?.value?.handle ? `/@${appMe.value.handle}` : "/feed"));
 const showAdmin = computed(() => Boolean(appMe?.value?.is_site_admin));
+const showFanclubGumroad = computed(() => Boolean(appMe?.value?.fanclub_gumroad_enabled));
+const showFanclubPatreon = computed(() => Boolean(appMe?.value?.fanclub_patreon_enabled));
+const showFanclub = computed(() => showFanclubGumroad.value || showFanclubPatreon.value);
+const showPayments = computed(() => Boolean(appMe?.value?.payment_paypal_enabled));
 
 const themeOptions = computed(() =>
   (["system", "light", "dark"] as const).map((value) => ({
@@ -130,15 +140,15 @@ onActivated(syncThemeFromStorage);
         </div>
       </section>
 
-      <section>
+      <section v-if="showFanclub">
         <h2 class="text-xs font-semibold uppercase tracking-wide text-neutral-500">
           {{ $t("views.settings.sections.fanclub") }}
         </h2>
-        <FanclubGumroadSettings />
-        <FanclubPatreonSettings />
+        <FanclubGumroadSettings v-if="showFanclubGumroad" />
+        <FanclubPatreonSettings v-if="showFanclubPatreon" />
       </section>
 
-      <section>
+      <section v-if="showPayments">
         <h2 class="text-xs font-semibold uppercase tracking-wide text-neutral-500">
           {{ $t("views.settings.sections.payments") }}
         </h2>

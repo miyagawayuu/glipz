@@ -17,8 +17,6 @@ import {
 } from "./lib/theme";
 import { connectNotifyStream, notifyToastMessage, type NotifyPayload } from "./lib/notifyStream";
 import { connectDMStream, type DmStreamPayload } from "./lib/dmStream";
-import { markDMCallMissed } from "./lib/dm";
-import { createIncomingCallTone } from "./lib/callTones";
 import { clearRememberedUnlockedIdentity } from "./lib/dmUnlockMemory";
 import { meHubTick } from "./meHub";
 import {
@@ -28,12 +26,9 @@ import {
   unreadNotificationCount,
 } from "./notificationHub";
 import {
-  clearIncomingDMCall,
   incrementUnreadDMCount,
-  incomingDMCall,
   pingDMReceived,
   refreshUnreadDMCount,
-  setIncomingDMCall,
   unreadDMCount,
 } from "./dmHub";
 import { getOperatorAnnouncements } from "./data/operatorAnnouncements";
@@ -49,10 +44,10 @@ const me = ref<{
   display_name: string;
   badges?: string[];
   avatar_url: string | null;
-  dm_call_timeout_seconds?: number;
-  dm_call_enabled?: boolean;
-  dm_call_scope?: string;
   is_site_admin?: boolean;
+  fanclub_patreon_enabled?: boolean;
+  fanclub_gumroad_enabled?: boolean;
+  payment_paypal_enabled?: boolean;
 } | null>(null);
 provide("appMe", me);
 /** Falls back to initials when loading an avatar URL fails. */
@@ -142,16 +137,7 @@ let disconnectNotifyStream: (() => void) | null = null;
 let disconnectDMStream: (() => void) | null = null;
 const notifyToastMessageText = ref("");
 let notifyToastTimer: ReturnType<typeof setTimeout> | null = null;
-let incomingCallTimer: ReturnType<typeof setTimeout> | null = null;
-let suppressIncomingCallMissed = false;
 let themeMediaQuery: MediaQueryList | null = null;
-const incomingCallTone = createIncomingCallTone();
-
-function incomingCallTimeoutMs(): number {
-  const seconds = me.value?.dm_call_timeout_seconds ?? 30;
-  const safeSeconds = Math.min(300, Math.max(5, Math.round(seconds)));
-  return safeSeconds * 1000;
-}
 
 function syncTheme() {
   applyTheme(themePreference.value);
@@ -268,10 +254,10 @@ async function loadMe() {
       display_name?: string;
       badges?: string[];
       avatar_url?: string | null;
-      dm_call_timeout_seconds?: number;
-      dm_call_enabled?: boolean;
-      dm_call_scope?: string;
       is_site_admin?: boolean;
+      fanclub_patreon_enabled?: boolean;
+      fanclub_gumroad_enabled?: boolean;
+      payment_paypal_enabled?: boolean;
     }>("/api/v1/me", {
       method: "GET",
       token,
@@ -284,10 +270,10 @@ async function loadMe() {
       display_name: (u.display_name ?? "").trim() || displayNameFromEmail(u.email),
       badges: Array.isArray(u.badges) ? u.badges.map((badge) => String(badge)) : [],
       avatar_url: u.avatar_url && String(u.avatar_url).trim() !== "" ? String(u.avatar_url) : null,
-      dm_call_timeout_seconds: u.dm_call_timeout_seconds ?? 30,
-      dm_call_enabled: !!u.dm_call_enabled,
-      dm_call_scope: u.dm_call_scope ?? "none",
       is_site_admin: !!u.is_site_admin,
+      fanclub_patreon_enabled: !!u.fanclub_patreon_enabled,
+      fanclub_gumroad_enabled: !!u.fanclub_gumroad_enabled,
+      payment_paypal_enabled: !!u.payment_paypal_enabled,
     };
     await refreshUnreadNotificationCount();
     await refreshUnreadDMCount();
@@ -339,52 +325,8 @@ function startDMStream() {
       pingDMReceived(p);
       if (p.kind === "message" || p.kind === "federation_dm_invite" || p.kind === "federation_dm_message") {
         incrementUnreadDMCount();
-      } else if (p.kind === "call_invite") {
-        setIncomingDMCall(p);
-      } else if (incomingDMCall.value?.thread_id === p.thread_id && (p.kind === "call_cancel" || p.kind === "call_end")) {
-        clearIncomingCallState({ suppressMissed: true });
       }
     },
-  });
-}
-
-function stopIncomingCallTimer() {
-  if (incomingCallTimer) {
-    clearTimeout(incomingCallTimer);
-    incomingCallTimer = null;
-  }
-}
-
-function clearIncomingCallState(options?: { suppressMissed?: boolean }) {
-  stopIncomingCallTimer();
-  incomingCallTone.stop();
-  suppressIncomingCallMissed = options?.suppressMissed === true;
-  clearIncomingDMCall();
-}
-
-async function markIncomingCallMissed(event: DmStreamPayload | null) {
-  if (!event) return;
-  try {
-    await markDMCallMissed(event.thread_id, event.call_mode === "video" ? "video" : "audio");
-  } catch {
-    /* ignore */
-  }
-}
-
-async function dismissIncomingCall() {
-  const event = incomingDMCall.value;
-  clearIncomingCallState({ suppressMissed: true });
-  await markIncomingCallMissed(event);
-}
-
-function acceptIncomingCall() {
-  const event = incomingDMCall.value;
-  if (!event) return;
-  const mode = event.call_mode === "video" ? "video" : "audio";
-  clearIncomingCallState({ suppressMissed: true });
-  void router.push({
-    path: `/messages/${event.thread_id}`,
-    query: { call: mode, incoming: "1" },
   });
 }
 
@@ -405,28 +347,6 @@ watch(
   },
   { immediate: true },
 );
-
-watch(incomingDMCall, (next, prev) => {
-  stopIncomingCallTimer();
-  if (prev && suppressIncomingCallMissed) {
-    suppressIncomingCallMissed = false;
-  } else if (prev && (!next || prev.thread_id !== next.thread_id || prev.created_at !== next.created_at)) {
-    void markIncomingCallMissed(prev);
-  }
-  if (!next) {
-    incomingCallTone.stop();
-    return;
-  }
-  void incomingCallTone.start();
-  incomingCallTimer = setTimeout(() => {
-    const current = incomingDMCall.value;
-    if (!current) return;
-    if (current.thread_id !== next.thread_id || current.created_at !== next.created_at) return;
-    clearIncomingCallState({ suppressMissed: true });
-    incomingCallTimer = null;
-    void markIncomingCallMissed(current);
-  }, incomingCallTimeoutMs());
-});
 
 watch(meHubTick, () => {
   if (authed.value) void loadMe();
@@ -482,7 +402,6 @@ function logout() {
   stopNotifyStream();
   stopDMStream();
   clearRememberedUnlockedIdentity();
-  clearIncomingCallState({ suppressMissed: true });
   notifyToastMessageText.value = "";
   clearTokens();
   router.push("/login");
@@ -496,7 +415,6 @@ function syncAuthStateFromStorage() {
     stopNotifyStream();
     stopDMStream();
     clearRememberedUnlockedIdentity();
-    clearIncomingCallState({ suppressMissed: true });
     if (route.meta.requiresAuth) {
       void router.replace({ path: "/login", query: { next: route.fullPath } });
     }
@@ -546,8 +464,6 @@ onMounted(() => {
 onBeforeUnmount(() => {
   stopNotifyStream();
   stopDMStream();
-  clearIncomingCallState({ suppressMissed: true });
-  incomingCallTone.stop();
   themeMediaQuery?.removeEventListener("change", onSystemThemeChange);
   document.removeEventListener("pointerdown", onDocumentPointerDown);
   document.removeEventListener("keydown", onDocumentKeydown);
@@ -590,43 +506,6 @@ function avatarInitials(email: string): string {
       role="status"
     >
       {{ notifyToastMessageText }}
-    </div>
-    <div
-      v-if="incomingDMCall"
-      class="fixed inset-0 z-[210] flex items-end justify-center bg-black/30 p-4 sm:items-center"
-    >
-      <div class="w-full max-w-md rounded-3xl border border-lime-200 bg-white p-6 shadow-2xl ring-1 ring-black/5">
-        <p class="text-xs font-semibold uppercase tracking-wide text-lime-700">{{ $t("app.call.incoming") }}</p>
-        <div class="mt-2 flex flex-wrap items-center gap-2">
-          <h2 class="text-lg font-semibold text-neutral-900">
-            {{ incomingDMCall.sender_display_name || `@${incomingDMCall.sender_handle}` }}
-          </h2>
-          <UserBadges :badges="incomingDMCall.sender_badges" />
-        </div>
-        <p class="mt-1 text-sm text-neutral-500">
-          {{
-            $t("app.call.incomingDescription", {
-              mode: incomingDMCall.call_mode === "video" ? $t("app.call.video") : $t("app.call.audio"),
-            })
-          }}
-        </p>
-        <div class="mt-5 flex items-center justify-end gap-3">
-          <button
-            type="button"
-            class="rounded-full border border-neutral-200 bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
-            @click="dismissIncomingCall"
-          >
-            {{ $t("app.call.close") }}
-          </button>
-          <button
-            type="button"
-            class="rounded-full bg-lime-600 px-4 py-2 text-sm font-semibold text-white hover:bg-lime-700"
-            @click="acceptIncomingCall"
-          >
-            {{ $t("app.call.answer") }}
-          </button>
-        </div>
-      </div>
     </div>
     <header
       ref="appHeaderEl"

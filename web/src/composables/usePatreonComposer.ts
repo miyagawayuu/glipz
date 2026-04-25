@@ -10,6 +10,8 @@ export function usePatreonComposer(opts: {
   viewPassword: Ref<string>;
   viewPasswordConfirm: Ref<string>;
   composerPasswordOpen: Ref<boolean>;
+  patreonEnabled: Ref<boolean>;
+  gumroadEnabled: Ref<boolean>;
 }) {
   const patreonAvailable = ref(false);
   const patreonConnected = ref(false);
@@ -50,7 +52,24 @@ export function usePatreonComposer(opts: {
     membershipTierId.value = "";
   });
 
+  watch([opts.patreonEnabled, opts.gumroadEnabled], () => {
+    if (!opts.patreonEnabled.value && membershipProvider.value === "patreon") {
+      membershipProvider.value = opts.gumroadEnabled.value ? "gumroad" : "patreon";
+      membershipUsePatreon.value = false;
+    }
+    if (!opts.gumroadEnabled.value && membershipProvider.value === "gumroad") {
+      membershipProvider.value = opts.patreonEnabled.value ? "patreon" : "gumroad";
+      membershipUsePatreon.value = false;
+    }
+  });
+
   async function loadPatreon(token: string) {
+    if (!opts.patreonEnabled.value) {
+      patreonAvailable.value = false;
+      patreonConnected.value = false;
+      patreonCampaigns.value = [];
+      return;
+    }
     try {
       const s = await fetchPatreonStatus(token);
       const p = s.patreon;
@@ -82,6 +101,12 @@ export function usePatreonComposer(opts: {
 
   /** Returns a translated error message, or null if validation passes. */
   function validateMembershipForSubmit(pw: string, pw2: string, t: Translate): string | null {
+    if (membershipUsePatreon.value && membershipProvider.value === "patreon" && !opts.patreonEnabled.value) {
+      return t("views.compose.errors.membershipIdsRequired");
+    }
+    if (membershipUsePatreon.value && membershipProvider.value === "gumroad" && !opts.gumroadEnabled.value) {
+      return t("views.compose.errors.gumroadProductRequired");
+    }
     if (membershipUsePatreon.value && (pw.trim() || pw2.trim())) {
       return t("views.compose.errors.membershipWithPassword");
     }

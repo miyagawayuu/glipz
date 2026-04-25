@@ -19,6 +19,10 @@ type gumroadEntitlementReq struct {
 
 // POST /api/v1/fanclub/gumroad/entitlement
 func (s *Server) handleGumroadEntitlement(w http.ResponseWriter, r *http.Request) {
+	if !s.gumroadFeatureEnabled() {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "gumroad_not_configured"})
+		return
+	}
 	uid, ok := userIDFrom(r.Context())
 	if !ok {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})

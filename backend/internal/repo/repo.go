@@ -190,23 +190,19 @@ func decodeStoredViewPasswordProtection(hasPassword bool, caption string, stored
 }
 
 type User struct {
-	ID                   uuid.UUID
-	Email                string
-	PasswordHash         string
-	Handle               string
-	DisplayName          string
-	Bio                  string
-	Badges               []string
-	SuspendedAt          *time.Time
-	DMCallTimeoutSeconds int
-	DMCallEnabled        bool
-	DMCallScope          string
-	DMCallAllowedUserIDs []uuid.UUID
-	DMInviteAutoAccept   bool
-	AvatarObjectKey      *string
-	HeaderObjectKey      *string
-	TOTPSecret           *string
-	TOTPEnabled          bool
+	ID                 uuid.UUID
+	Email              string
+	PasswordHash       string
+	Handle             string
+	DisplayName        string
+	Bio                string
+	Badges             []string
+	SuspendedAt        *time.Time
+	DMInviteAutoAccept bool
+	AvatarObjectKey    *string
+	HeaderObjectKey    *string
+	TOTPSecret         *string
+	TOTPEnabled        bool
 }
 
 // PublicProfile contains public user data without password fields.
@@ -405,22 +401,16 @@ func (p *Pool) UserByEmail(ctx context.Context, email string) (User, error) {
 	var av pgtype.Text
 	var hdr pgtype.Text
 	var suspendedAt pgtype.Timestamptz
-	var allowedUserIDs []uuid.UUID
 	var badges []string
 	err := p.db.QueryRow(ctx,
 		`SELECT id, email, password_hash, handle, display_name, bio,
 			suspended_at,
 			COALESCE(badges, '{}'::text[]),
-			COALESCE(dm_call_timeout_seconds, 30),
-			COALESCE(dm_call_enabled, false),
-			COALESCE(dm_call_scope, 'none'),
-			COALESCE(dm_call_allowed_user_ids, '{}'::uuid[]),
 			COALESCE(dm_invite_auto_accept, false),
 			avatar_object_key, header_object_key, totp_secret, totp_enabled
 		FROM users WHERE email = $1`,
 		email,
 	).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Handle, &u.DisplayName, &u.Bio, &suspendedAt, &badges,
-		&u.DMCallTimeoutSeconds, &u.DMCallEnabled, &u.DMCallScope, &allowedUserIDs,
 		&u.DMInviteAutoAccept,
 		&av, &hdr, &totp, &totpEn)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -446,7 +436,6 @@ func (p *Pool) UserByEmail(ctx context.Context, email string) (User, error) {
 		s := hdr.String
 		u.HeaderObjectKey = &s
 	}
-	u.DMCallAllowedUserIDs = allowedUserIDs
 	return u, nil
 }
 
@@ -457,22 +446,16 @@ func (p *Pool) UserByID(ctx context.Context, id uuid.UUID) (User, error) {
 	var av pgtype.Text
 	var hdr pgtype.Text
 	var suspendedAt pgtype.Timestamptz
-	var allowedUserIDs []uuid.UUID
 	var badges []string
 	err := p.db.QueryRow(ctx,
 		`SELECT id, email, password_hash, handle, display_name, bio,
 			suspended_at,
 			COALESCE(badges, '{}'::text[]),
-			COALESCE(dm_call_timeout_seconds, 30),
-			COALESCE(dm_call_enabled, false),
-			COALESCE(dm_call_scope, 'none'),
-			COALESCE(dm_call_allowed_user_ids, '{}'::uuid[]),
 			COALESCE(dm_invite_auto_accept, false),
 			avatar_object_key, header_object_key, totp_secret, totp_enabled
 		FROM users WHERE id = $1`,
 		id,
 	).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Handle, &u.DisplayName, &u.Bio, &suspendedAt, &badges,
-		&u.DMCallTimeoutSeconds, &u.DMCallEnabled, &u.DMCallScope, &allowedUserIDs,
 		&u.DMInviteAutoAccept,
 		&av, &hdr, &totp, &totpEn)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -498,7 +481,6 @@ func (p *Pool) UserByID(ctx context.Context, id uuid.UUID) (User, error) {
 		s := hdr.String
 		u.HeaderObjectKey = &s
 	}
-	u.DMCallAllowedUserIDs = allowedUserIDs
 	return u, nil
 }
 
@@ -569,44 +551,10 @@ func (p *Pool) UpdateUserProfile(ctx context.Context, userID uuid.UUID, bio, dis
 	return nil
 }
 
-func (p *Pool) SetDMCallTimeoutSeconds(ctx context.Context, userID uuid.UUID, seconds int) error {
-	if seconds < 5 || seconds > 300 {
-		return fmt.Errorf("dm call timeout out of range")
-	}
-	_, err := p.db.Exec(ctx, `
-		UPDATE users SET dm_call_timeout_seconds = $2 WHERE id = $1
-	`, userID, seconds)
-	return err
-}
-
 func (p *Pool) SetDMInviteAutoAccept(ctx context.Context, userID uuid.UUID, v bool) error {
 	_, err := p.db.Exec(ctx, `
 		UPDATE users SET dm_invite_auto_accept = $2 WHERE id = $1
 	`, userID, v)
-	return err
-}
-
-func (p *Pool) SetDMCallPolicy(ctx context.Context, userID uuid.UUID, enabled bool, scope string, allowedUserIDs []uuid.UUID) error {
-	scope = strings.TrimSpace(strings.ToLower(scope))
-	switch scope {
-	case "all", "followers", "specific_users":
-	default:
-		scope = "none"
-	}
-	if !enabled {
-		scope = "none"
-	}
-	if scope != "specific_users" {
-		allowedUserIDs = []uuid.UUID{}
-	}
-	_, err := p.db.Exec(ctx, `
-		UPDATE users
-		SET dm_call_enabled = $2,
-			dm_call_scope = $3,
-			dm_call_allowed_user_ids = $4,
-			dm_call_allowed_group_ids = '{}'::uuid[]
-		WHERE id = $1
-	`, userID, enabled, scope, allowedUserIDs)
 	return err
 }
 

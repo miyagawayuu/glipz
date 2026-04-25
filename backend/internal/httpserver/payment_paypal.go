@@ -24,6 +24,10 @@ type paypalPlanUpsertReq struct {
 
 // POST /api/v1/payment/paypal/plans
 func (s *Server) handlePayPalUpsertPlan(w http.ResponseWriter, r *http.Request) {
+	if !s.paypalIntegrationAvailable() {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "paypal_unavailable"})
+		return
+	}
 	uid, ok := userIDFrom(r.Context())
 	if !ok {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
@@ -53,6 +57,10 @@ func (s *Server) handlePayPalUpsertPlan(w http.ResponseWriter, r *http.Request) 
 
 // GET /api/v1/payment/paypal/plans
 func (s *Server) handlePayPalListPlans(w http.ResponseWriter, r *http.Request) {
+	if !s.paypalIntegrationAvailable() {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "paypal_unavailable"})
+		return
+	}
 	uid, ok := userIDFrom(r.Context())
 	if !ok {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
@@ -115,7 +123,7 @@ func (s *Server) handlePayPalSubscriptionCreate(w http.ResponseWriter, r *http.R
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		return
 	}
-	if strings.TrimSpace(s.cfg.PayPalClientID) == "" {
+	if !s.paypalIntegrationAvailable() {
 		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "paypal_unavailable"})
 		return
 	}
@@ -264,7 +272,7 @@ func (s *Server) handlePayPalSubscriptionReturn(w http.ResponseWriter, r *http.R
 
 // POST /api/v1/payment/paypal/webhook
 func (s *Server) handlePayPalWebhook(w http.ResponseWriter, r *http.Request) {
-	if strings.TrimSpace(s.cfg.PayPalClientID) == "" {
+	if !s.paypalIntegrationAvailable() {
 		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "paypal_unavailable"})
 		return
 	}
@@ -322,6 +330,10 @@ type paypalEntitlementReq struct {
 
 // POST /api/v1/payment/paypal/entitlement
 func (s *Server) handlePayPalEntitlement(w http.ResponseWriter, r *http.Request) {
+	if !s.paypalIntegrationAvailable() {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "paypal_unavailable"})
+		return
+	}
 	uid, ok := userIDFrom(r.Context())
 	if !ok {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})

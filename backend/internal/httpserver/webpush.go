@@ -181,25 +181,6 @@ func (s *Server) webPushNotificationFromDM(m map[string]any) (webPushNotificatio
 		if payload.MessageID != "" {
 			payload.Tag = "glipz-dm-message-" + payload.MessageID
 		}
-	case "call_invite":
-		mode := dmCallModeLabel(anyString(m["call_mode"]))
-		payload.Title = mode + "の着信"
-		payload.Body = name + " から" + mode + "の着信があります"
-		payload.URL = s.cfg.FrontendOrigin + "/messages/" + threadID + "?call=" + normalizeWebPushDMCallMode(anyString(m["call_mode"])) + "&incoming=1"
-		payload.Tag = "glipz-dm-call-" + threadID
-		payload.RequireInteraction = true
-	case "call_cancel":
-		payload.Title = "通話がキャンセルされました"
-		payload.Body = name + " が通話をキャンセルしました"
-		payload.Tag = "glipz-dm-call-" + threadID
-	case "call_end":
-		payload.Title = "通話が終了しました"
-		payload.Body = name + " が通話を終了しました"
-		payload.Tag = "glipz-dm-call-" + threadID
-	case "call_missed":
-		payload.Title = "不在着信"
-		payload.Body = name + " からの通話は不在着信になりました"
-		payload.Tag = "glipz-dm-call-" + threadID
 	default:
 		payload.Body = "新しいダイレクトメッセージ通知があります"
 	}
@@ -226,20 +207,6 @@ func socialNotificationURL(m map[string]any) string {
 		return "/@" + subjectAuthorHandle + "#post-" + subjectPostID
 	}
 	return "/feed"
-}
-
-func dmCallModeLabel(mode string) string {
-	if normalizeWebPushDMCallMode(mode) == "video" {
-		return "ビデオ通話"
-	}
-	return "音声通話"
-}
-
-func normalizeWebPushDMCallMode(mode string) string {
-	if strings.EqualFold(strings.TrimSpace(mode), "video") {
-		return "video"
-	}
-	return "audio"
 }
 
 func anyString(v any) string {

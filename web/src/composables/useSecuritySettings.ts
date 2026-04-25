@@ -15,21 +15,16 @@ import {
   syncExistingPushSubscription,
   type WebPushConfig,
 } from "../lib/webPush";
-import { listDMThreads, type DMThread } from "../lib/dm";
 
 export type MeResp = {
   id: string;
   email: string;
   totp_enabled: boolean;
-  dm_call_timeout_seconds?: number;
-  dm_call_enabled?: boolean;
-  dm_call_scope?: "none" | "all" | "followers" | "specific_users";
-  dm_call_allowed_user_ids?: string[];
   dm_invite_auto_accept?: boolean;
 };
 
 export function useSecuritySettings() {
-  const { t, te } = useI18n();
+  const { t } = useI18n();
   const router = useRouter();
   const route = useRoute();
   const me = ref<MeResp | null>(null);
@@ -46,27 +41,7 @@ export function useSecuritySettings() {
   const webPushBusy = ref(false);
   const webPushPermission = ref<NotificationPermission | "unsupported">("unsupported");
   const webPushBrowserSubscribed = ref(false);
-  const dmCallTimeoutSeconds = ref("30");
-  const dmCallTimeoutOptions = computed(() =>
-    (["15", "30", "45", "60", "90", "120"] as const).map((value) => ({
-      value,
-      label: t(`views.settings.security.dmCallTimeoutSeconds.${value}`),
-    })),
-  );
-  const dmCallTimeoutDirty = computed(
-    () => dmCallTimeoutSeconds.value !== String(me.value?.dm_call_timeout_seconds ?? 30),
-  );
-  const dmCallEnabled = ref(false);
-  const dmCallScope = ref<"none" | "all" | "followers" | "specific_users">("none");
-  const dmCallAllowedUserIDs = ref<string[]>([]);
-  const selectableThreads = ref<DMThread[]>([]);
   const dmInviteAutoAccept = ref(false);
-  const dmCallPolicyDirty = computed(
-    () =>
-      dmCallEnabled.value !== !!me.value?.dm_call_enabled
-      || dmCallScope.value !== (me.value?.dm_call_scope ?? "none")
-      || JSON.stringify([...dmCallAllowedUserIDs.value].sort()) !== JSON.stringify([...(me.value?.dm_call_allowed_user_ids ?? [])].sort()),
-  );
   const dmInviteAutoDirty = computed(() => dmInviteAutoAccept.value !== !!me.value?.dm_invite_auto_accept);
 
   watch(
@@ -101,13 +76,8 @@ export function useSecuritySettings() {
       token,
     });
     me.value = u;
-    dmCallTimeoutSeconds.value = String(u.dm_call_timeout_seconds ?? 30);
-    dmCallEnabled.value = !!u.dm_call_enabled;
-    dmCallScope.value = (u.dm_call_scope ?? "none") as typeof dmCallScope.value;
-    dmCallAllowedUserIDs.value = [...(u.dm_call_allowed_user_ids ?? [])];
     dmInviteAutoAccept.value = !!u.dm_invite_auto_accept;
     dmSaveMsg.value = "";
-    selectableThreads.value = await listDMThreads().catch(() => []);
     await refreshWebPushState();
   }
 
@@ -160,27 +130,18 @@ export function useSecuritySettings() {
     }
   }
 
-  async function saveDMCallSettings() {
+  async function saveDMSettings() {
     err.value = "";
     msg.value = "";
     dmSaveMsg.value = "";
     const token = getAccessToken();
     if (!token) return;
-    const seconds = Number.parseInt(dmCallTimeoutSeconds.value, 10);
-    if (!Number.isFinite(seconds) || seconds < 5 || seconds > 300) {
-      err.value = t("views.settings.security.dmCalls.timeoutInvalid");
-      return;
-    }
     loading.value = true;
     try {
       await api("/api/v1/me/dm-settings", {
         method: "PATCH",
         token,
         json: {
-          call_timeout_seconds: seconds,
-          call_enabled: dmCallEnabled.value,
-          call_scope: dmCallEnabled.value ? dmCallScope.value : "none",
-          allowed_user_ids: dmCallEnabled.value && dmCallScope.value === "specific_users" ? dmCallAllowedUserIDs.value : [],
           dm_invite_auto_accept: dmInviteAutoAccept.value,
         },
       });
@@ -188,7 +149,7 @@ export function useSecuritySettings() {
       await refresh();
       bumpMeHub();
     } catch (e: unknown) {
-      err.value = e instanceof Error ? e.message : t("views.settings.security.dmCalls.saveFailed");
+      err.value = e instanceof Error ? e.message : t("views.settings.directMessages.saveFailed");
     } finally {
       loading.value = false;
     }
@@ -283,21 +244,13 @@ export function useSecuritySettings() {
     webPushBusy,
     webPushPermission,
     webPushBrowserSubscribed,
-    dmCallTimeoutSeconds,
-    dmCallTimeoutOptions,
-    dmCallTimeoutDirty,
-    dmCallEnabled,
-    dmCallScope,
-    dmCallAllowedUserIDs,
-    selectableThreads,
-    dmCallPolicyDirty,
     dmInviteAutoAccept,
     dmInviteAutoDirty,
     webPushStatusLabel,
     refresh,
     setup,
     enable,
-    saveDMCallSettings,
+    saveDMSettings,
     enableWebPushNotifications,
     disableWebPushNotifications,
   };

@@ -108,8 +108,8 @@ func main() {
 	if err := migrate.RunFederationDM(ctx, pool); err != nil {
 		log.Fatalf("migrate federation dm: %v", err)
 	}
-	if err := migrate.RunDMCallPolicyColumns(ctx, pool); err != nil {
-		log.Fatalf("migrate dm_call_policy: %v", err)
+	if err := migrate.RunRemoveDMCallSchema(ctx, pool); err != nil {
+		log.Fatalf("migrate remove dm calls: %v", err)
 	}
 	if err := migrate.RunWebPush(ctx, pool); err != nil {
 		log.Fatalf("migrate web push: %v", err)

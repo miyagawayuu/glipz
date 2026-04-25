@@ -5,10 +5,6 @@ export type DmStreamPayload = {
   v: number;
   kind:
     | "message"
-    | "call_invite"
-    | "call_cancel"
-    | "call_end"
-    | "call_missed"
     | "federation_dm_invite"
     | "federation_dm_accept"
     | "federation_dm_reject"
@@ -18,7 +14,6 @@ export type DmStreamPayload = {
   sender_handle: string;
   sender_display_name: string;
   sender_badges?: string[];
-  call_mode?: "audio" | "video";
   created_at: string;
 };
 
@@ -38,19 +33,6 @@ function consumeSseBuffer(buf: string, onDataLine: (line: string) => void): stri
 
 export function dmToastMessage(p: DmStreamPayload): string {
   const name = p.sender_display_name || `@${p.sender_handle}`;
-  const mode = p.call_mode === "video" ? translate("app.call.video") : translate("app.call.audio");
-  if (p.kind === "call_invite") {
-    return translate("notifications.dmCallInvite", { name, mode });
-  }
-  if (p.kind === "call_cancel") {
-    return translate("notifications.dmCallCancel", { name });
-  }
-  if (p.kind === "call_end") {
-    return translate("notifications.dmCallEnd", { name });
-  }
-  if (p.kind === "call_missed") {
-    return translate("notifications.dmCallMissed", { name });
-  }
   if (p.kind === "federation_dm_invite") {
     return translate("notifications.dmInvite", { name });
   }

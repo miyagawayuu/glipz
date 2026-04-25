@@ -94,7 +94,14 @@ const viewPasswordLabels = computed<ViewPasswordScopeLabels>(() => ({
   sep: t("components.postTimeline.viewPasswordScope.sep"),
 }));
 
-const appMe = inject<Ref<{ email: string; handle?: string; is_site_admin?: boolean } | null> | null>("appMe", null);
+const appMe = inject<Ref<{
+  email: string;
+  handle?: string;
+  is_site_admin?: boolean;
+  fanclub_patreon_enabled?: boolean;
+  fanclub_gumroad_enabled?: boolean;
+  payment_paypal_enabled?: boolean;
+} | null> | null>("appMe", null);
 const effectiveViewerEmail = computed(() =>
   props.viewerEmail !== undefined ? props.viewerEmail : (appMe?.value?.email ?? null),
 );
@@ -155,6 +162,18 @@ const emit = defineEmits<{
 
 function isOwnPost(it: TimelinePost) {
   return Boolean(effectiveViewerEmail.value && it.user_email === effectiveViewerEmail.value);
+}
+
+function membershipUnlockUIEnabled(it: TimelinePost): boolean {
+	const provider = (it.membership_provider || "").toLowerCase();
+	if (provider === "patreon") return Boolean(appMe?.value?.fanclub_patreon_enabled);
+	if (provider === "gumroad") return Boolean(appMe?.value?.fanclub_gumroad_enabled);
+	return false;
+}
+
+function paymentUnlockUIEnabled(it: TimelinePost): boolean {
+	const provider = (it.payment_provider || "").toLowerCase();
+	return provider === "paypal" && Boolean(appMe?.value?.payment_paypal_enabled);
 }
 
 const openMenuId = ref<string | null>(null);
@@ -1176,7 +1195,7 @@ async function startPayPalSubscribe(it: TimelinePost) {
         </div>
 
         <div
-          v-else-if="it.content_locked && it.has_membership_lock"
+          v-else-if="it.content_locked && it.has_membership_lock && membershipUnlockUIEnabled(it)"
           class="mt-3 rounded-2xl border border-sky-200 bg-sky-50/90 p-4"
         >
           <p class="text-sm font-medium text-sky-950">{{ $t("components.postTimeline.membershipLockedTitle") }}</p>
@@ -1216,7 +1235,7 @@ async function startPayPalSubscribe(it: TimelinePost) {
         </div>
 
         <div
-          v-else-if="it.content_locked && it.has_payment_lock"
+          v-else-if="it.content_locked && it.has_payment_lock && paymentUnlockUIEnabled(it)"
           class="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50/90 p-4"
         >
           <p class="text-sm font-medium text-emerald-950">{{ $t("components.postTimeline.paymentLockedTitle") }}</p>

@@ -125,12 +125,19 @@ MAILGUN_API_KEY=key-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 MAIL_FROM_EMAIL=no-reply@your-domain.com
 MAIL_FROM_NAME=Glipz
 
-# === Optional: site admin + Patreon fan club ===
+# === Optional: site admin + provider integrations ===
 
 # GLIPZ_ADMIN_USER_IDS=uuid-of-admin-user
+# PATREON_ENABLED=true
 # PATREON_CLIENT_ID=...
 # PATREON_CLIENT_SECRET=...
 # PATREON_REDIRECT_URI=https://your-domain.com/api/v1/fanclub/patreon/callback
+# GUMROAD_ENABLED=true
+# PAYPAL_ENABLED=true
+# PAYPAL_CLIENT_ID=...
+# PAYPAL_CLIENT_SECRET=...
+# PAYPAL_WEBHOOK_ID=...
+# PAYPAL_ENV=live
 ```
 
 ### Key Configuration Notes
@@ -144,7 +151,11 @@ MAIL_FROM_NAME=Glipz
 | `GLIPZ_STORAGE_MODE` | `local` stores media on the server; `s3` uses S3-compatible storage |
 | `GLIPZ_LOCAL_STORAGE_PATH` | Local media directory; back it up if using `GLIPZ_STORAGE_MODE=local` |
 | `GLIPZ_ADMIN_USER_IDS` | Built-in moderation / admin API access |
-| `PATREON_*` | Patreon OAuth; redirect URI must match your public API origin |
+| `PATREON_ENABLED` | Enables Patreon UI/routes; defaults to disabled |
+| `PATREON_*` | Patreon OAuth credentials; required when Patreon is enabled, and redirect URI must match your public API origin |
+| `GUMROAD_ENABLED` | Enables Gumroad license-key locks; defaults to disabled and requires no server secret |
+| `PAYPAL_ENABLED` | Enables PayPal payment UI/routes; defaults to disabled |
+| `PAYPAL_*` | PayPal REST app and webhook credentials; required when PayPal is enabled |
 
 The production image is built from the **repository root** with `backend/Dockerfile` (see [docker-compose.yml](docker-compose.yml)): it runs `npm ci` / `npm run build` in `web/` on **Node 22**, then compiles the Go server with **Go 1.22**, and sets `STATIC_WEB_ROOT=/app/web/dist` by default.
 
@@ -293,9 +304,10 @@ Run these checks after deployment:
 | Feature | Enable With |
 |---------|-------------|
 | **Federation** | Set `GLIPZ_PROTOCOL_*` variables |
-| **TURN Calls** | Set `TURN_HOST`, `TURN_SHARED_SECRET`, `TURN_TTL_SECONDS` |
 | **Web Push** | Set `WEB_PUSH_VAPID_*` variables |
-| **Patreon fan club** | Set `PATREON_CLIENT_ID`, `PATREON_CLIENT_SECRET`, `PATREON_REDIRECT_URI` (or rely on default derived from `GLIPZ_PROTOCOL_PUBLIC_ORIGIN`) |
+| **Patreon fan club** | Set `PATREON_ENABLED=true`, `PATREON_CLIENT_ID`, `PATREON_CLIENT_SECRET`, and `PATREON_REDIRECT_URI` (or rely on default derived from `GLIPZ_PROTOCOL_PUBLIC_ORIGIN`) |
+| **Gumroad fan club locks** | Set `GUMROAD_ENABLED=true`; no server secret is required |
+| **PayPal subscriptions** | Set `PAYPAL_ENABLED=true`, `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID`, and `PAYPAL_ENV` |
 
 ---
 

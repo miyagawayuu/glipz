@@ -24,7 +24,9 @@ type patreonOAuthState struct {
 }
 
 func (s *Server) patreonIntegrationAvailable() bool {
-	return strings.TrimSpace(s.cfg.PatreonClientID) != "" && strings.TrimSpace(s.cfg.PatreonClientSecret) != ""
+	return s.patreonFeatureEnabled() &&
+		strings.TrimSpace(s.cfg.PatreonClientID) != "" &&
+		strings.TrimSpace(s.cfg.PatreonClientSecret) != ""
 }
 
 func (s *Server) patreonRedirectURI() (string, bool) {
@@ -444,7 +446,7 @@ func (s *Server) mintPatreonEntitlementJWTFederatedIncoming(ctx context.Context,
 	}
 	opts := &federationEntitlementMintOpts{
 		AudienceTargets: aud,
-		PostURLOverride:   oi,
+		PostURLOverride: oi,
 	}
 	return s.mintFederationEntitlementJWT(ctx, viewerAcct, synth, remotePostID, opts)
 }
