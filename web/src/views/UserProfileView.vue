@@ -1220,6 +1220,15 @@ watch(handleParam, () => void loadAll());
               class="h-full w-full object-cover"
             />
             <div
+              v-else-if="tile.media_type === 'audio' && tile.preview_url"
+              class="flex h-full w-full flex-col items-center justify-center gap-1 bg-neutral-800 px-1 text-lime-400"
+            >
+              <Icon name="note" class="h-8 w-8 opacity-90" stroke-width="1.5" />
+              <span class="text-[10px] font-medium uppercase tracking-wide text-lime-300/90">{{
+                $t("views.userProfile.mediaTileAudio")
+              }}</span>
+            </div>
+            <div
               v-else
               class="flex h-full w-full flex-col items-center justify-center gap-1 bg-neutral-200 px-1 text-center text-xs text-neutral-600"
             >

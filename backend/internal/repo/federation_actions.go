@@ -636,7 +636,7 @@ func maxInt64(v, floor int64) int64 {
 func (p *Pool) UpsertFederatedIncomingUnlock(ctx context.Context, incomingID, userID uuid.UUID, caption, mediaType string, mediaURLs []string, isNSFW bool, expiresAt time.Time) error {
 	mediaType = strings.TrimSpace(strings.ToLower(mediaType))
 	switch mediaType {
-	case "image", "video", "none":
+	case "image", "video", "audio", "none":
 	default:
 		return fmt.Errorf("invalid media_type")
 	}

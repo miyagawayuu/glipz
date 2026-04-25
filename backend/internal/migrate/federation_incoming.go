@@ -51,5 +51,14 @@ func RunFederationIncoming(ctx context.Context, pool *pgxpool.Pool) error {
 			return fmt.Errorf("migrate federation incoming step %d: %w", i+1, err)
 		}
 	}
+	// Relax media_type for inbound posts (older DBs created with image/video/none only).
+	for i, q := range []string{
+		`ALTER TABLE federation_incoming_posts DROP CONSTRAINT IF EXISTS federation_incoming_posts_media_type_check`,
+		`ALTER TABLE federation_incoming_posts ADD CONSTRAINT federation_incoming_posts_media_type_check CHECK (media_type IN ('image', 'video', 'audio', 'none'))`,
+	} {
+		if _, err := pool.Exec(ctx, q); err != nil {
+			return fmt.Errorf("migrate federation incoming media_type relax step %d: %w", i+1, err)
+		}
+	}
 	return nil
 }

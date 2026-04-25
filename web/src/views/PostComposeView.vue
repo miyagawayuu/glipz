@@ -4,8 +4,16 @@ import { useI18n } from "vue-i18n";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { getAccessToken } from "../auth";
 import ComposerEmojiPicker from "../components/ComposerEmojiPicker.vue";
+import GlipzAudioPlayer from "../components/GlipzAudioPlayer.vue";
+import GlipzVideoPlayer from "../components/GlipzVideoPlayer.vue";
 import Icon from "../components/Icon.vue";
 import { api, uploadMediaFile } from "../lib/api";
+import {
+  composerAttachmentLabel,
+  inferPostMediaType,
+  MAX_COMPOSER_IMAGE_SLOTS,
+  mergePickedComposerFiles,
+} from "../lib/composerMedia";
 import { patreonSettingsPath, usePatreonComposer } from "../composables/usePatreonComposer";
 import { avatarInitials, handleAt } from "../lib/feedDisplay";
 import { parseComposerReplyQuery, type ComposerReplyTarget } from "../lib/postComposer";
@@ -17,7 +25,7 @@ import {
 } from "../lib/viewPassword";
 import type { ViewPasswordTextRange } from "../types/timeline";
 
-const MAX_IMAGES = 4;
+const MAX_IMAGES = MAX_COMPOSER_IMAGE_SLOTS;
 
 type ComposerVisibility = "public" | "logged_in" | "followers" | "private";
 
@@ -59,6 +67,17 @@ const pollDurationHours = ref(24);
 const scheduleLocal = ref("");
 const composerScheduleOpen = ref(false);
 const composerVisibilityOpen = ref(false);
+
+const attachmentKind = computed(() =>
+  selectedImages.value.length ? inferPostMediaType(selectedImages.value) : "none",
+);
+const attachmentPickerDisabled = computed(
+  () =>
+    busy.value ||
+    attachmentKind.value === "video" ||
+    attachmentKind.value === "audio" ||
+    selectedImages.value.length >= MAX_IMAGES,
+);
 
 const {
   patreonAvailable,
@@ -124,22 +143,21 @@ function syncReplyingToFromRoute() {
 
 function onFilesSelect(e: Event) {
   const input = e.target as HTMLInputElement;
-  const incoming = Array.from(input.files ?? []).filter((f) => f.type.startsWith("image/"));
+  const incoming = Array.from(input.files ?? []);
   input.value = "";
   if (!incoming.length) return;
 
-  const remaining = MAX_IMAGES - selectedImages.value.length;
-  if (remaining <= 0) {
-    err.value = t("views.compose.errors.maxImages");
-    return;
-  }
-
-  const toAdd = incoming.slice(0, remaining);
-  selectedImages.value = [...selectedImages.value, ...toAdd];
-  if (incoming.length > remaining) {
+  const { files, replacedKind, partialImageDrop, excludedImages } = mergePickedComposerFiles(
+    selectedImages.value,
+    incoming,
+  );
+  selectedImages.value = files;
+  if (replacedKind) {
+    err.value = t("views.compose.errors.attachmentsReplaced");
+  } else if (partialImageDrop) {
     err.value = t("views.compose.errors.maxImagesPartial", {
       max: MAX_IMAGES,
-      excluded: incoming.length - remaining,
+      excluded: excludedImages,
     });
   } else {
     err.value = "";
@@ -332,7 +350,7 @@ async function submitPost() {
     }
     const body: Record<string, unknown> = {
       caption: caption.value,
-      media_type: objectKeys.length ? "image" : "none",
+      media_type: objectKeys.length ? inferPostMediaType(selectedImages.value) : "none",
       object_keys: objectKeys,
       is_nsfw: isNsfw.value,
       visibility: composerVisibility.value,
@@ -494,14 +512,14 @@ onBeforeUnmount(() => {
           <div class="flex flex-wrap items-center gap-1">
             <label
               class="inline-flex cursor-pointer items-center rounded-full p-2 text-lime-600 hover:bg-lime-50 disabled:cursor-not-allowed disabled:opacity-50"
-              :class="{ 'pointer-events-none opacity-50': busy || selectedImages.length >= MAX_IMAGES }"
+              :class="{ 'pointer-events-none opacity-50': attachmentPickerDisabled }"
             >
               <input
                 type="file"
-                accept="image/*"
+                accept="image/*,video/*,audio/*"
                 multiple
                 class="hidden"
-                :disabled="busy || selectedImages.length >= MAX_IMAGES"
+                :disabled="attachmentPickerDisabled"
                 @change="onFilesSelect"
               />
               <span class="sr-only">{{ $t("views.compose.addImages") }}</span>
@@ -580,7 +598,7 @@ onBeforeUnmount(() => {
               <span class="sr-only">{{ $t("views.compose.visibilityOpen") }}</span>
               <Icon name="eye" class="h-5 w-5" />
             </button>
-            <span class="text-xs text-neutral-500">{{ selectedImages.length }}/{{ MAX_IMAGES }}</span>
+            <span class="text-xs text-neutral-500">{{ composerAttachmentLabel(selectedImages) }}</span>
           </div>
           <button
             type="button"
@@ -856,25 +874,48 @@ onBeforeUnmount(() => {
             </template>
           </div>
         </div>
-        <div
-          v-if="previewUrls.length"
-          class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4"
-        >
-          <div
-            v-for="(url, i) in previewUrls"
-            :key="`${url}-${i}`"
-            class="relative aspect-square overflow-hidden rounded-xl border border-neutral-200 bg-neutral-100"
-          >
-            <img :src="url" :alt="$t('views.compose.selectedImageAlt', { n: i + 1 })" class="h-full w-full object-cover" />
+        <div v-if="previewUrls.length" class="mt-3 space-y-3">
+          <div v-if="attachmentKind === 'video'" class="relative">
+            <GlipzVideoPlayer :src="previewUrls[0]!" />
             <button
               type="button"
-              class="absolute right-1 top-1 flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-sm font-bold text-white hover:bg-black/80"
+              class="absolute right-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-sm font-bold text-white hover:bg-black/80"
               :disabled="busy"
-              :aria-label="$t('views.compose.removeImageAria', { n: i + 1 })"
-              @click="removeImage(i)"
+              :aria-label="$t('views.compose.removeImageAria', { n: 1 })"
+              @click="removeImage(0)"
             >
               ×
             </button>
+          </div>
+          <div v-else-if="attachmentKind === 'audio'" class="relative">
+            <GlipzAudioPlayer :src="previewUrls[0]!" />
+            <button
+              type="button"
+              class="absolute right-3 top-3 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-black/50 text-sm font-bold text-white hover:bg-black/70"
+              :disabled="busy"
+              :aria-label="$t('views.compose.removeImageAria', { n: 1 })"
+              @click="removeImage(0)"
+            >
+              ×
+            </button>
+          </div>
+          <div v-else class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div
+              v-for="(url, i) in previewUrls"
+              :key="`${url}-${i}`"
+              class="relative aspect-square overflow-hidden rounded-xl border border-neutral-200 bg-neutral-100"
+            >
+              <img :src="url" :alt="$t('views.compose.selectedImageAlt', { n: i + 1 })" class="h-full w-full object-cover" />
+              <button
+                type="button"
+                class="absolute right-1 top-1 flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-sm font-bold text-white hover:bg-black/80"
+                :disabled="busy"
+                :aria-label="$t('views.compose.removeImageAria', { n: i + 1 })"
+                @click="removeImage(i)"
+              >
+                ×
+              </button>
+            </div>
           </div>
         </div>
       </div>

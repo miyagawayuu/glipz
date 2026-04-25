@@ -4,6 +4,8 @@ import { useI18n } from "vue-i18n";
 import { RouterLink } from "vue-router";
 import EmojiInline from "./EmojiInline.vue";
 import Icon from "./Icon.vue";
+import GlipzAudioPlayer from "./GlipzAudioPlayer.vue";
+import GlipzVideoPlayer from "./GlipzVideoPlayer.vue";
 import PostRichText from "./PostRichText.vue";
 import PostThreadEmbed from "./PostThreadEmbed.vue";
 import UserBadges from "./UserBadges.vue";
@@ -1221,6 +1223,13 @@ async function submitUnlock(it: TimelinePost) {
                 <span>{{ $t("components.postTimeline.quotedVideoPost") }}</span>
               </div>
               <div
+                v-else-if="it.media_type === 'audio' && it.media_urls?.[0]"
+                class="mt-3 flex items-center gap-2 rounded-2xl border border-neutral-200 bg-neutral-100 px-3 py-3 text-sm text-neutral-700"
+              >
+                <Icon name="note" class="h-5 w-5 shrink-0 text-neutral-500" />
+                <span>{{ $t("components.postTimeline.quotedAudioPost") }}</span>
+              </div>
+              <div
                 v-else-if="it.poll"
                 class="mt-3 rounded-2xl border border-neutral-200 bg-white px-3 py-3 text-sm text-neutral-700"
               >
@@ -1371,24 +1380,33 @@ async function submitUnlock(it: TimelinePost) {
         </div>
         <div
           v-else-if="!hasCommentedRepost(it) && it.media_type === 'video' && it.media_urls?.[0]"
-          class="mt-3 overflow-hidden rounded-2xl border border-neutral-200 bg-black"
+          class="mt-3"
         >
           <button
             v-if="mediaBlockedByNsfw(it)"
             type="button"
-            class="flex max-h-[510px] min-h-[200px] w-full flex-col items-center justify-center gap-2 bg-neutral-900 p-6 text-center text-white outline-none ring-offset-2 ring-offset-white focus-visible:ring-2 focus-visible:ring-lime-500 sm:max-h-[70vh]"
+            class="flex max-h-[510px] min-h-[200px] w-full flex-col items-center justify-center gap-2 overflow-hidden rounded-2xl border border-neutral-200 bg-neutral-900 p-6 text-center text-white outline-none ring-offset-2 ring-offset-white focus-visible:ring-2 focus-visible:ring-lime-500 sm:max-h-[70vh]"
             @click="openAgeGate(it.id)"
           >
             <span class="text-xs font-semibold uppercase tracking-wide text-white/70">{{ $t("components.postTimeline.nsfwVideoBadge") }}</span>
             <span class="text-sm font-medium">{{ $t("components.postTimeline.nsfwVideoHint") }}</span>
           </button>
-          <video
-            v-else
-            :src="it.media_urls[0]"
-            class="max-h-[510px] w-full sm:max-h-[70vh]"
-            controls
-            playsinline
-          />
+          <GlipzVideoPlayer v-else :src="it.media_urls[0]" />
+        </div>
+        <div
+          v-else-if="!hasCommentedRepost(it) && it.media_type === 'audio' && it.media_urls?.[0]"
+          class="mt-3"
+        >
+          <button
+            v-if="mediaBlockedByNsfw(it)"
+            type="button"
+            class="flex min-h-[120px] w-full flex-col items-center justify-center gap-2 rounded-2xl border border-neutral-200 bg-neutral-900 px-6 py-8 text-center text-white outline-none ring-offset-2 ring-offset-white focus-visible:ring-2 focus-visible:ring-lime-500 dark:ring-offset-neutral-900"
+            @click="openAgeGate(it.id)"
+          >
+            <span class="text-xs font-semibold uppercase tracking-wide text-white/70">{{ $t("components.postTimeline.nsfwAudioBadge") }}</span>
+            <span class="text-sm font-medium">{{ $t("components.postTimeline.nsfwAudioHint") }}</span>
+          </button>
+          <GlipzAudioPlayer v-else :src="it.media_urls[0]" />
         </div>
 
         <div v-if="hasVisibleReactions(it)" class="mt-3 flex flex-wrap items-center gap-2">

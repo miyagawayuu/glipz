@@ -883,9 +883,9 @@ func (p *Pool) CreatePost(ctx context.Context, userID uuid.UUID, caption, mediaT
 		if n < 1 || n > 4 {
 			return uuid.Nil, fmt.Errorf("objectKeys: image wants 1..4, got %d", n)
 		}
-	case "video":
+	case "video", "audio":
 		if n != 1 {
-			return uuid.Nil, fmt.Errorf("objectKeys: video wants 1 key, got %d", n)
+			return uuid.Nil, fmt.Errorf("objectKeys: %s wants 1 key, got %d", mediaType, n)
 		}
 	default:
 		return uuid.Nil, fmt.Errorf("media_type: invalid %q", mediaType)

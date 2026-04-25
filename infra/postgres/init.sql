@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS posts (
     user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     reply_to_id UUID REFERENCES posts (id) ON DELETE CASCADE,
     caption TEXT,
-    media_type TEXT NOT NULL CHECK (media_type IN ('image', 'video', 'none')),
+    media_type TEXT NOT NULL CHECK (media_type IN ('image', 'video', 'audio', 'none')),
     object_keys TEXT[] NOT NULL,
     is_nsfw BOOLEAN NOT NULL DEFAULT FALSE,
     visibility TEXT NOT NULL DEFAULT 'public' CHECK (visibility IN ('public', 'logged_in', 'followers', 'private')),
@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS posts (
         (media_type = 'none' AND cardinality(object_keys) = 0)
         OR (media_type = 'image' AND cardinality(object_keys) BETWEEN 1 AND 4)
         OR (media_type = 'video' AND cardinality(object_keys) = 1)
+        OR (media_type = 'audio' AND cardinality(object_keys) = 1)
     )
 );
 

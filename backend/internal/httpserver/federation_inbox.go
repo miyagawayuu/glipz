@@ -109,6 +109,16 @@ func parseNoteObject(raw json.RawMessage) (map[string]any, error) {
 	return m, nil
 }
 
+func isFederationAudioAttachmentURL(u string) bool {
+	lu := strings.ToLower(u)
+	for _, ext := range []string{".mp3", ".m4a", ".wav", ".ogg", ".opus", ".flac", ".aac"} {
+		if strings.HasSuffix(lu, ext) {
+			return true
+		}
+	}
+	return false
+}
+
 func noteAttachmentsToMedia(note map[string]any) (mediaType string, urls []string) {
 	raw, ok := note["attachment"].([]any)
 	if !ok || len(raw) == 0 {
@@ -116,6 +126,7 @@ func noteAttachmentsToMedia(note map[string]any) (mediaType string, urls []strin
 	}
 	var imgURLs []string
 	var vidURL string
+	var audURL string
 	for _, a := range raw {
 		o, ok := a.(map[string]any)
 		if !ok {
@@ -132,18 +143,25 @@ func noteAttachmentsToMedia(note map[string]any) (mediaType string, urls []strin
 		}
 		mt, _ := o["mediaType"].(string)
 		mt = strings.ToLower(strings.TrimSpace(mt))
-		if strings.HasPrefix(mt, "video/") {
+		if strings.HasPrefix(mt, "audio/") {
+			audURL = u
+		} else if strings.HasPrefix(mt, "video/") {
 			vidURL = u
 		} else if strings.HasPrefix(mt, "image/") {
 			imgURLs = append(imgURLs, u)
 		} else if strings.HasSuffix(strings.ToLower(u), ".mp4") || strings.HasSuffix(strings.ToLower(u), ".webm") {
 			vidURL = u
+		} else if isFederationAudioAttachmentURL(u) {
+			audURL = u
 		} else {
 			imgURLs = append(imgURLs, u)
 		}
 	}
 	if vidURL != "" {
 		return "video", []string{vidURL}
+	}
+	if audURL != "" {
+		return "audio", []string{audURL}
 	}
 	if len(imgURLs) == 0 {
 		return "none", nil

@@ -90,7 +90,7 @@ func (p *Pool) InsertFederatedIncomingPost(ctx context.Context, in InsertFederat
 	}
 	mt := strings.TrimSpace(strings.ToLower(in.MediaType))
 	switch mt {
-	case "image", "video", "none":
+	case "image", "video", "audio", "none":
 	default:
 		return false, fmt.Errorf("invalid media_type")
 	}
@@ -518,7 +518,7 @@ func (p *Pool) UpdateFederatedIncomingFromNote(ctx context.Context, objectIRI, c
 	}
 	mt := strings.TrimSpace(strings.ToLower(mediaType))
 	switch mt {
-	case "image", "video", "none":
+	case "image", "video", "audio", "none":
 	default:
 		return fmt.Errorf("invalid media_type")
 	}

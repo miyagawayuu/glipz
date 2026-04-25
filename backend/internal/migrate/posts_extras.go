@@ -43,12 +43,13 @@ func RunPostsExtras(ctx context.Context, pool *pgxpool.Pool) error {
 
 		`ALTER TABLE posts DROP CONSTRAINT IF EXISTS posts_media_object_keys`,
 
-		`ALTER TABLE posts ADD CONSTRAINT posts_media_type_check CHECK (media_type IN ('image', 'video', 'none'))`,
+		`ALTER TABLE posts ADD CONSTRAINT posts_media_type_check CHECK (media_type IN ('image', 'video', 'audio', 'none'))`,
 		`ALTER TABLE posts ADD CONSTRAINT posts_visibility_check CHECK (visibility IN ('public', 'logged_in', 'followers', 'private'))`,
 		`ALTER TABLE posts ADD CONSTRAINT posts_media_object_keys CHECK (
 			(media_type = 'none' AND cardinality(object_keys) = 0)
 			OR (media_type = 'image' AND cardinality(object_keys) BETWEEN 1 AND 4)
 			OR (media_type = 'video' AND cardinality(object_keys) = 1)
+			OR (media_type = 'audio' AND cardinality(object_keys) = 1)
 		)`,
 
 		`CREATE TABLE IF NOT EXISTS post_polls (

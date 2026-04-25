@@ -142,5 +142,13 @@ func RunFederationActions(ctx context.Context, pool *pgxpool.Pool) error {
 	if _, err := pool.Exec(ctx, `ALTER TABLE glipz_protocol_outbox_deliveries ADD CONSTRAINT glipz_protocol_outbox_deliveries_kind_check CHECK (`+federationDeliveryKindsCheck+`)`); err != nil {
 		return fmt.Errorf("migrate federation actions: add kind check: %w", err)
 	}
+	for i, q := range []string{
+		`ALTER TABLE federation_incoming_post_unlocks DROP CONSTRAINT IF EXISTS federation_incoming_post_unlocks_media_type_check`,
+		`ALTER TABLE federation_incoming_post_unlocks ADD CONSTRAINT federation_incoming_post_unlocks_media_type_check CHECK (media_type IN ('image', 'video', 'audio', 'none'))`,
+	} {
+		if _, err := pool.Exec(ctx, q); err != nil {
+			return fmt.Errorf("migrate federation actions unlocks media_type step %d: %w", i+1, err)
+		}
+	}
 	return nil
 }

@@ -66,7 +66,7 @@ This repository contains the official Go implementation of the Glipz Federation 
 
 - S3-compatible storage (Wasabi, MinIO, AWS S3, etc.)
 - Backend media proxy for privacy
-- Image and video support
+- Post attachments: images (up to four per post), single video, or single audio; web UI uses custom video/audio players (theme-aware)
 
 ### Fan club (Patreon, optional)
 

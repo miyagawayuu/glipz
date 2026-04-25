@@ -87,7 +87,7 @@ func (p *Pool) ListUserPostMediaTiles(ctx context.Context, authorID, viewerID uu
 			AND p.visible_at <= NOW()
 			AND p.group_id IS NULL
 			AND `+postReadableByViewerSQL("p", "$2")+`
-			AND p.media_type IN ('image', 'video')
+			AND p.media_type IN ('image', 'video', 'audio')
 			AND cardinality(p.object_keys) > 0
 		ORDER BY p.visible_at DESC, p.id DESC
 		LIMIT $3

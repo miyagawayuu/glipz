@@ -806,7 +806,7 @@ func (s *Server) handleMediaUpload(w http.ResponseWriter, r *http.Request) {
 	if ct == "" {
 		ct = "application/octet-stream"
 	}
-	if !strings.HasPrefix(ct, "image/") && !strings.HasPrefix(ct, "video/") {
+	if !strings.HasPrefix(ct, "image/") && !strings.HasPrefix(ct, "video/") && !strings.HasPrefix(ct, "audio/") {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unsupported_type"})
 		return
 	}
@@ -959,7 +959,7 @@ func (s *Server) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case len(keys) == 0:
 		mt = "none"
-	case mt == "" || mt == "image" || mt == "video":
+	case mt == "" || mt == "image" || mt == "video" || mt == "audio":
 		if mt == "" {
 			mt = "image"
 		}
@@ -967,12 +967,12 @@ func (s *Server) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_media_type"})
 		return
 	}
-	if mt != "none" && mt != "image" && mt != "video" {
+	if mt != "none" && mt != "image" && mt != "video" && mt != "audio" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_media_type"})
 		return
 	}
-	if mt == "video" && len(keys) != 1 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "video_single_media"})
+	if (mt == "video" || mt == "audio") && len(keys) != 1 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "single_media_attachment"})
 		return
 	}
 	if len(keys) > 4 {

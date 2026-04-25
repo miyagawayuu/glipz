@@ -51,7 +51,9 @@ const currentTab = computed<SearchTab>(() => {
   const value = typeof raw === "string" ? raw : Array.isArray(raw) ? String(raw[0] ?? "") : "";
   return value === "accounts" || value === "media" ? value : "latest";
 });
-const mediaItems = computed(() => items.value.filter((item) => item.media_type === "image" || item.media_type === "video"));
+const mediaItems = computed(() =>
+  items.value.filter((item) => item.media_type === "image" || item.media_type === "video" || item.media_type === "audio"),
+);
 
 async function loadMe() {
   const token = getAccessToken();
