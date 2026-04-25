@@ -3,13 +3,15 @@ import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { RouterLink } from "vue-router";
 import { APP_VERSION } from "../lib/appInfo";
+import { useLegalMarkdownDoc } from "../lib/legalDocs";
 import { useBackLink } from "../lib/useBackLink";
-const { t, tm } = useI18n();
+const { tm } = useI18n();
 const overviewPoints = computed(() => tm("legalTerms.overviewPoints") as string[]);
 const prohibitedItems = computed(() => tm("legalTerms.prohibitedItems") as string[]);
 const sections = computed(() => tm("legalTerms.sections") as Array<{ title: string; paragraphs: string[] }>);
 const accountParagraphs = computed(() => tm("legalTerms.accountParagraphs") as string[]);
 const supplementParagraphs = computed(() => tm("legalTerms.supplementParagraphs") as string[]);
+const { customDocHtml, customDocUpdatedDate } = useLegalMarkdownDoc("terms");
 
 const backLink = useBackLink({ fallbackTo: "/register" });
 </script>
@@ -33,7 +35,7 @@ const backLink = useBackLink({ fallbackTo: "/register" });
             </p>
             <div class="mt-6 flex flex-wrap gap-2 text-xs text-neutral-600">
               <span class="rounded-full border border-neutral-200 bg-white px-3 py-1 dark:border-neutral-200 dark:bg-neutral-900">App {{ APP_VERSION }}</span>
-              <span class="rounded-full border border-neutral-200 bg-white px-3 py-1 dark:border-neutral-200 dark:bg-neutral-900">{{ $t("common.labels.updated", { date: "2026-04-19" }) }}</span>
+              <span class="rounded-full border border-neutral-200 bg-white px-3 py-1 dark:border-neutral-200 dark:bg-neutral-900">{{ $t("common.labels.updated", { date: customDocUpdatedDate || "2026-04-19" }) }}</span>
             </div>
           </div>
 
@@ -50,7 +52,8 @@ const backLink = useBackLink({ fallbackTo: "/register" });
       </section>
 
       <section class="rounded-[2rem] border border-neutral-200 bg-white px-6 py-8 dark:border-neutral-200 dark:bg-neutral-950 sm:px-8">
-        <div class="space-y-8">
+        <div v-if="customDocHtml" class="prose prose-neutral max-w-none dark:prose-invert prose-a:text-lime-700" v-html="customDocHtml" />
+        <div v-else class="space-y-8">
           <section>
             <h2 class="text-xl font-semibold text-neutral-900">{{ $t("legalTerms.prohibitedTitle") }}</h2>
             <p class="mt-3 text-sm leading-7 text-neutral-700">{{ $t("legalTerms.prohibitedIntro") }}</p>

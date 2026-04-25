@@ -50,10 +50,12 @@ services:
       SMTP_PORT: "1025"
       SMTP_FROM_EMAIL: no-reply@glipz.local
       SMTP_FROM_NAME: Glipz
+      LEGAL_DOCS_DIR: /app/data/legal-docs
     ports:
       - "8080:8080"
     volumes:
       - ./data/media:/app/data/media
+      - ./data/legal-docs:/app/data/legal-docs:ro
     depends_on:
       postgres:
         condition: service_healthy

@@ -55,6 +55,7 @@ const routes = [
   { path: "/public/federation/posts", method: "get", summary: "Remote actor posts", tag: "Public federation", security: "none" },
   { path: "/public/federation/incoming/{id}", method: "get", summary: "Public federated incoming post", tag: "Public federation", security: "none" },
   { path: "/public/federation/incoming/{id}/thread", method: "get", summary: "Public federated thread", tag: "Public federation", security: "none" },
+  { path: "/legal-docs/{doc}", method: "get", summary: "Operator Markdown legal document", tag: "Public", security: "none" },
   { path: "/media/object/{objectKey}", method: "get", summary: "Fetch media object by key", tag: "Media", security: "none" },
   { path: "/media/object/{objectKey}", method: "head", summary: "Media object metadata", tag: "Media", security: "none" },
   { path: "/link-preview", method: "get", summary: "Link preview", tag: "Public optional", security: "optional" },

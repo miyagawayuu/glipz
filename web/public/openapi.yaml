@@ -399,6 +399,23 @@ paths:
           description: Not found
         '429':
           description: Too many requests
+  /legal-docs/{doc}:
+    get:
+      tags:
+        - Public
+      summary: Operator Markdown legal document
+      security: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
   /media/object/{objectKey}:
     get:
       tags:

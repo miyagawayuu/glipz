@@ -219,6 +219,22 @@ Instead of running the dev server, serve the built frontend directly:
 
 ---
 
+## Optional: Customize Legal Documents
+
+To let the server operator update public policy pages without rebuilding the
+frontend, set a Markdown document directory:
+
+```env
+LEGAL_DOCS_DIR=./data/legal-docs
+```
+
+Supported files are `terms.md`, `privacy.md`, and `nsfw-guidelines.md`.
+Locale-specific files such as `terms.ja.md` or `terms.en.md` take precedence.
+Use `legal-docs.example/` as starter content. Missing files fall back to the
+built-in Glipz policy text.
+
+---
+
 ## Running Backend Without Docker
 
 If you have PostgreSQL and Redis already running:
@@ -244,6 +260,7 @@ These are disabled unless configured:
 |---------|----------------------|
 | **Web Push** | `WEB_PUSH_VAPID_*` |
 | **Federation** | `GLIPZ_PROTOCOL_*`, optional `FEDERATION_POLICY_SUMMARY` |
+| **Legal documents** | `LEGAL_DOCS_DIR` |
 | **Patreon** | `PATREON_ENABLED=true`, `PATREON_CLIENT_ID`, `PATREON_CLIENT_SECRET`, optional `PATREON_REDIRECT_URI` |
 | **Gumroad** | `GUMROAD_ENABLED=true` |
 | **PayPal** | `PAYPAL_ENABLED=true`, `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID`, `PAYPAL_ENV` |

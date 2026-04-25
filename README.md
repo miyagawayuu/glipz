@@ -61,6 +61,7 @@ This repository contains the official Go implementation of the Glipz Federation 
 - Inbound federation timeline and federated direct messages (instance-to-instance)
 - Delivery workers for reliable delivery
 - Optional instance policy summary for operators (`FEDERATION_POLICY_SUMMARY`)
+- Operator-editable Markdown legal pages (`LEGAL_DOCS_DIR`)
 
 ### Media
 
@@ -334,6 +335,12 @@ npm run build
 ### Serve built frontend from backend
 
 Set `STATIC_WEB_ROOT=../web/dist` in your environment and restart the backend.
+
+### Customize legal documents
+
+Set `LEGAL_DOCS_DIR` to a directory containing `terms.md`, `privacy.md`, and
+`nsfw-guidelines.md`. Locale-specific files such as `terms.ja.md` or
+`terms.en.md` are used first. See `legal-docs.example/` for starter files.
 
 ---
 

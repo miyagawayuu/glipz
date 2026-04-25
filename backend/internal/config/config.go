@@ -37,6 +37,8 @@ type Config struct {
 	GlipzProtocolMediaPublicBase string
 	// Vue build output directory containing index.html. When set and present, serve static files and the SPA on :PORT.
 	StaticWebRoot string
+	// Optional directory containing operator-editable Markdown legal documents.
+	LegalDocsDir string
 	// Software version label exposed in NodeInfo and similar outputs. Defaults to "dev".
 	GlipzVersion string
 	// Optional short federation policy summary exposed in nodeinfo.metadata.
@@ -124,6 +126,7 @@ func Load() (Config, error) {
 		c.S3UsePathStyle, _ = strconv.ParseBool(v)
 	}
 	c.StaticWebRoot = strings.TrimSpace(os.Getenv("STATIC_WEB_ROOT"))
+	c.LegalDocsDir = strings.TrimSpace(os.Getenv("LEGAL_DOCS_DIR"))
 	fe := strings.TrimSpace(os.Getenv("FRONTEND_ORIGIN"))
 	if fe == "" {
 		if c.StaticWebRoot != "" {

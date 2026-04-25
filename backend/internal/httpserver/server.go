@@ -142,6 +142,7 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c s3client.
 		r.Get("/public/federation/posts", s.handlePublicRemoteActorPosts)
 		r.Get("/public/federation/incoming/stream", s.handlePublicFederatedIncomingStream)
 		r.Get("/public/federation/custom-emoji", s.handlePublicFederationCustomEmojiResolve)
+		r.Get("/legal-docs/{doc}", s.handleLegalDoc)
 		r.Get("/media/object/*", s.handlePublicMediaObject)
 		r.Head("/media/object/*", s.handlePublicMediaObject)
 		r.Get("/media/remote", s.handlePublicRemoteMediaProxy)
