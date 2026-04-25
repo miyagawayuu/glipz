@@ -21,10 +21,11 @@ This repository contains the official Go implementation of the Glipz Federation 
 
 ### Who is Glipz for?
 
-- **Community builders** who want a private, customizable social space
-- **Creators** who want optional password- or membership-protected media on posts (Unlock; **Patreon** OAuth or **Gumroad** product license)
-- **Developers** who need a flexible API for building custom frontends
-- **Independent operators** who want to run their own instance or managed infrastructure
+- **Independent communities** that want a customizable social space under their own domain and rules
+- **SNS operators** who want to launch a community-focused social network without depending on a centralized platform
+- **Creators and fan communities** that need optional gated posts, memberships, or subscription-based media access
+- **Developers** who want a modern Go/Vue social app with REST APIs, OAuth, PATs, and federation hooks
+- **Independent operators** who want to run a single-server instance with local media storage or scale out with S3-compatible storage/CDN delivery
 
 ---
 
