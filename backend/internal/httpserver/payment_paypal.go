@@ -98,19 +98,12 @@ func (s *Server) paypalPublicAPIOrigin(r *http.Request) string {
 	if base := strings.TrimSuffix(strings.TrimSpace(s.cfg.GlipzProtocolPublicOrigin), "/"); base != "" {
 		return base
 	}
-	proto := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto"))
-	if proto == "" {
+	host := strings.TrimSpace(r.Host)
+	if strings.HasPrefix(host, "localhost:") || strings.HasPrefix(host, "127.0.0.1:") {
+		proto := "http"
 		if r.TLS != nil {
 			proto = "https"
-		} else {
-			proto = "http"
 		}
-	}
-	host := strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
-	if host == "" {
-		host = strings.TrimSpace(r.Host)
-	}
-	if host != "" {
 		return proto + "://" + host
 	}
 	return strings.TrimSuffix(strings.TrimSpace(s.cfg.FrontendOrigin), "/")
@@ -276,7 +269,8 @@ func (s *Server) handlePayPalWebhook(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "paypal_unavailable"})
 		return
 	}
-	rawBody, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	limitRequestBody(w, r, 1<<20)
+	rawBody, err := io.ReadAll(r.Body)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_body"})
 		return

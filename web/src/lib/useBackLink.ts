@@ -1,6 +1,7 @@
 import { computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { translate } from "../i18n";
+import { safeRelativeRoute } from "./redirect";
 
 type BackLinkOptions = {
   fallbackTo: string;
@@ -15,8 +16,9 @@ export function useBackLink(options: BackLinkOptions) {
   const backPath = computed(() => {
     if (typeof window === "undefined") return "";
     const candidate = typeof window.history.state?.back === "string" ? window.history.state.back.trim() : "";
-    if (!candidate || candidate === route.fullPath) return "";
-    return candidate;
+    const safe = safeRelativeRoute(candidate, "");
+    if (!safe || safe === route.fullPath) return "";
+    return safe;
   });
 
   const label = computed(() =>

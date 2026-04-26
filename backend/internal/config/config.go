@@ -76,10 +76,28 @@ type Config struct {
 	AccessLogEnabled bool
 	// Optional slow request logging threshold in milliseconds. Zero disables slow request logs.
 	SlowRequestLogMs int
+	// Trust X-Real-IP / X-Forwarded-For from a reverse proxy. Enable only when the proxy overwrites them.
+	TrustProxyHeaders bool
+	// When true, auth rate limit backend errors reject attempts instead of failing open.
+	AuthRateLimitFailClosed bool
 	// Number of feed items returned by authenticated feed endpoints.
 	FeedPageSize int
 	// "proxy" (default) keeps serving local media through the API; "direct" redirects to S3/CDN public URLs.
 	MediaProxyMode string
+	// Maximum bytes streamed by the public remote media proxy. Defaults to 50 MiB.
+	RemoteMediaProxyMaxBytes int64
+	// Maximum public remote media proxy requests per IP per 15 minutes.
+	RemoteMediaProxyRateLimitMax int
+	// When true, remote media proxy rate limit backend errors reject requests instead of failing open.
+	RemoteMediaProxyRateLimitFailClosed bool
+	// Maximum public link-preview requests per IP/user per 15 minutes.
+	LinkPreviewRateLimitMax int
+	// When true, link-preview rate limit backend errors reject requests instead of failing open.
+	LinkPreviewRateLimitFailClosed bool
+	// When true, federation inbox rate limit backend errors reject requests instead of failing open.
+	FederationInboxRateLimitFailClosed bool
+	// Maximum bytes streamed by the federated DM attachment proxy. Defaults to 50 MiB.
+	FederationDMAttachmentMaxBytes int64
 	// Federation delivery worker tuning.
 	FederationDeliveryBatchSize   int
 	FederationDeliveryConcurrency int
@@ -107,8 +125,8 @@ func Load() (Config, error) {
 	if c.RedisURL == "" {
 		return c, fmt.Errorf("REDIS_URL is required")
 	}
-	if c.JWTSecret == "" || len(c.JWTSecret) < 16 {
-		return c, fmt.Errorf("JWT_SECRET must be set and at least 16 characters")
+	if err := validateJWTSecret(c.JWTSecret); err != nil {
+		return c, err
 	}
 	if c.StorageMode != "local" {
 		c.StorageMode = "s3"
@@ -204,6 +222,8 @@ func Load() (Config, error) {
 	c.MetricsEnabled, _ = strconv.ParseBool(getEnv("GLIPZ_METRICS_ENABLED", "false"))
 	c.AccessLogEnabled, _ = strconv.ParseBool(getEnv("GLIPZ_ACCESS_LOG_ENABLED", "false"))
 	c.SlowRequestLogMs = positiveIntEnv("GLIPZ_SLOW_REQUEST_LOG_MS", 0, 0, 600000)
+	c.TrustProxyHeaders, _ = strconv.ParseBool(getEnv("GLIPZ_TRUST_PROXY_HEADERS", "false"))
+	c.AuthRateLimitFailClosed, _ = strconv.ParseBool(getEnv("GLIPZ_AUTH_RATE_LIMIT_FAIL_CLOSED", "false"))
 	c.FeedPageSize = positiveIntEnv("GLIPZ_FEED_PAGE_SIZE", 30, 10, 100)
 	c.MediaProxyMode = strings.ToLower(strings.TrimSpace(getEnv("GLIPZ_MEDIA_PROXY_MODE", "proxy")))
 	if c.MediaProxyMode != "direct" {
@@ -212,6 +232,13 @@ func Load() (Config, error) {
 	if c.StorageMode == "local" && c.MediaProxyMode == "direct" && c.GlipzProtocolMediaPublicBase == "" {
 		c.MediaProxyMode = "proxy"
 	}
+	c.RemoteMediaProxyMaxBytes = positiveInt64Env("GLIPZ_REMOTE_MEDIA_PROXY_MAX_BYTES", 50<<20, 1<<20, 512<<20)
+	c.RemoteMediaProxyRateLimitMax = positiveIntEnv("GLIPZ_REMOTE_MEDIA_PROXY_RATE_LIMIT_MAX", 120, 10, 10000)
+	c.RemoteMediaProxyRateLimitFailClosed, _ = strconv.ParseBool(getEnv("GLIPZ_REMOTE_MEDIA_PROXY_RATE_LIMIT_FAIL_CLOSED", "false"))
+	c.LinkPreviewRateLimitMax = positiveIntEnv("GLIPZ_LINK_PREVIEW_RATE_LIMIT_MAX", 60, 10, 10000)
+	c.LinkPreviewRateLimitFailClosed, _ = strconv.ParseBool(getEnv("GLIPZ_LINK_PREVIEW_RATE_LIMIT_FAIL_CLOSED", "false"))
+	c.FederationInboxRateLimitFailClosed, _ = strconv.ParseBool(getEnv("GLIPZ_FEDERATION_INBOX_RATE_LIMIT_FAIL_CLOSED", "false"))
+	c.FederationDMAttachmentMaxBytes = positiveInt64Env("GLIPZ_FEDERATION_DM_ATTACHMENT_MAX_BYTES", 50<<20, 1<<20, 512<<20)
 	c.FederationDeliveryBatchSize = positiveIntEnv("GLIPZ_FEDERATION_DELIVERY_BATCH_SIZE", 25, 1, 200)
 	c.FederationDeliveryConcurrency = positiveIntEnv("GLIPZ_FEDERATION_DELIVERY_CONCURRENCY", 1, 1, 32)
 	c.FederationDeliveryTickSeconds = positiveIntEnv("GLIPZ_FEDERATION_DELIVERY_TICK_SECONDS", 8, 1, 300)
@@ -240,12 +267,43 @@ func getEnv(key, def string) string {
 	return def
 }
 
+func validateJWTSecret(secret string) error {
+	trimmed := strings.TrimSpace(secret)
+	if len(trimmed) < 64 {
+		return fmt.Errorf("JWT_SECRET must be set and at least 64 characters")
+	}
+	placeholder := strings.ToLower(trimmed)
+	switch placeholder {
+	case "replace-with-a-long-random-secret",
+		"your-very-long-random-secret",
+		"change-me",
+		"changeme":
+		return fmt.Errorf("JWT_SECRET must be replaced with a real random secret")
+	}
+	if strings.Contains(placeholder, "replace-with") || strings.Contains(placeholder, "your-very-long") {
+		return fmt.Errorf("JWT_SECRET must be replaced with a real random secret")
+	}
+	return nil
+}
+
 func positiveIntEnv(key string, def, min, max int) int {
 	raw := strings.TrimSpace(os.Getenv(key))
 	if raw == "" {
 		return def
 	}
 	v, err := strconv.Atoi(raw)
+	if err != nil || v < min || v > max {
+		return def
+	}
+	return v
+}
+
+func positiveInt64Env(key string, def, min, max int64) int64 {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return def
+	}
+	v, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil || v < min || v > max {
 		return def
 	}

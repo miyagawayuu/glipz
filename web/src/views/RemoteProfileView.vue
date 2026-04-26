@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import DOMPurify from "dompurify";
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { RouterLink, useRoute, useRouter } from "vue-router";
@@ -15,6 +14,8 @@ import {
 import { addTimelineReaction, removeTimelineReaction, toggleTimelineBookmark, toggleTimelineRepost } from "../lib/federationActions";
 import { mapFeedItem } from "../lib/feedStream";
 import { buildComposerReplyQuery, composeRoutePath } from "../lib/postComposer";
+import { safeHttpURL } from "../lib/redirect";
+import { sanitizeRemoteProfileSummary } from "../lib/sanitizeHtml";
 import Icon from "../components/Icon.vue";
 import PostTimeline from "../components/PostTimeline.vue";
 import type { TimelinePost } from "../types/timeline";
@@ -88,13 +89,16 @@ const actorForQuery = computed(() => {
 const profileTitle = computed(() => profile.value?.name || profile.value?.acct || t("views.remoteFederationProfile.fallbackName"));
 const viewerAuthed = computed(() => !!getAccessToken());
 const activeTab = ref<"posts">("posts");
+const safeProfileURL = computed(() => safeHttpURL(profile.value?.profile_url));
+const safeHeaderURL = computed(() => safeHttpURL(profile.value?.header_url));
+const safeIconURL = computed(() => safeHttpURL(profile.value?.icon_url));
+const safeHeaderStyle = computed(() =>
+  safeHeaderURL.value ? { backgroundImage: `url("${safeHeaderURL.value}")`, backgroundSize: "cover", backgroundPosition: "center" } : {},
+);
 const profileSummaryHtml = computed(() => {
   const raw = String(profile.value?.summary ?? "").trim();
   if (!raw) return "";
-  return DOMPurify.sanitize(raw, {
-    ALLOWED_TAGS: ["p", "br", "a", "span", "strong", "em", "b", "i", "ul", "ol", "li", "code"],
-    ALLOWED_ATTR: ["href", "target", "rel"],
-  });
+  return sanitizeRemoteProfileSummary(raw);
 });
 const followButtonLabel = computed(() => {
   if (remoteFollowState.value === "accepted") return t("views.remoteFederationProfile.following");
@@ -213,7 +217,7 @@ function startIncomingStream() {
   stopIncomingStream();
   if (!profile.value?.actor_id) return;
   const url = `${apiBase()}/api/v1/public/federation/incoming/stream?actor=${encodeURIComponent(profile.value.actor_id)}`;
-  incomingStream = new EventSource(url);
+  incomingStream = new EventSource(url, { withCredentials: true });
   incomingStream.addEventListener("federated_incoming", (ev) => {
     try {
       const payload = JSON.parse(String((ev as MessageEvent).data ?? "{}"));
@@ -520,11 +524,7 @@ watch(
       <div class="relative">
         <div
           class="relative h-36 w-full overflow-hidden bg-gradient-to-br from-lime-200 via-lime-100 to-neutral-200 sm:h-44"
-          :style="
-            profile.header_url
-              ? `background-image: url(${profile.header_url}); background-size: cover; background-position: center`
-              : ''
-          "
+          :style="safeHeaderStyle"
         />
         <div class="relative -mt-12 flex flex-col gap-3 px-4 pb-2">
           <div class="flex items-end justify-between gap-3">
@@ -532,9 +532,10 @@ watch(
               class="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-full border-4 border-white bg-lime-500 text-xl font-bold text-white shadow-sm"
             >
               <img
-                v-if="profile.icon_url"
-                :src="profile.icon_url"
+                v-if="safeIconURL"
+                :src="safeIconURL"
                 alt=""
+                referrerpolicy="no-referrer"
                 class="h-full w-full object-cover"
               />
               <span v-else>{{ avatarLetter }}</span>
@@ -550,10 +551,11 @@ watch(
                 {{ followButtonLabel }}
               </button>
               <a
-                v-if="profile.profile_url"
-                :href="profile.profile_url"
+                v-if="safeProfileURL"
+                :href="safeProfileURL"
                 target="_blank"
                 rel="noopener noreferrer"
+                referrerpolicy="no-referrer"
                 class="shrink-0 rounded-full border border-lime-600 bg-white px-4 py-1.5 text-sm font-semibold text-lime-700 hover:bg-lime-50"
               >
                 {{ t("views.remoteFederationProfile.originalProfile") }}

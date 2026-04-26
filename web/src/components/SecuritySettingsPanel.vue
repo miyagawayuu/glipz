@@ -10,6 +10,7 @@ const {
   uri,
   qrDataUrl,
   code,
+  mfaPassword,
   err,
   msg,
   loading,
@@ -67,10 +68,19 @@ const webPushSubscribedLabel = computed(() =>
           v-if="me && !me.totp_enabled"
           class="space-y-4 rounded-xl border border-lime-200 bg-lime-50/50 p-4"
         >
+          <label class="block">
+            <span class="mb-1 block text-sm font-medium text-neutral-700">{{ $t("views.settings.security.mfa.passwordLabel") }}</span>
+            <input
+              v-model="mfaPassword"
+              type="password"
+              autocomplete="current-password"
+              class="w-full rounded-md border border-lime-200 bg-white px-3 py-2 text-neutral-900 outline-none ring-lime-500 focus:ring-2"
+            />
+          </label>
           <button
             type="button"
             class="rounded-md bg-lime-500 px-3 py-2 text-sm font-medium text-white hover:bg-lime-600 disabled:opacity-50"
-            :disabled="loading"
+            :disabled="loading || !mfaPassword"
             @click="setup"
           >
             {{ $t("views.settings.security.mfa.setupButton") }}
@@ -115,7 +125,7 @@ const webPushSubscribedLabel = computed(() =>
               <button
                 type="button"
                 class="rounded-md bg-lime-600 px-3 py-2 text-sm font-medium text-white hover:bg-lime-700 disabled:opacity-50"
-                :disabled="loading || !code"
+                :disabled="loading || !code || !mfaPassword"
                 @click="enable"
               >
                 {{ $t("views.settings.security.mfa.enableButton") }}

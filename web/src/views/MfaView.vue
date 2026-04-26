@@ -26,13 +26,12 @@ async function submit() {
   }
   loading.value = true;
   try {
-    const res = await api<{ access_token: string }>("/api/v1/auth/mfa/verify", {
+    await api<{ status: string }>("/api/v1/auth/mfa/verify", {
       method: "POST",
-      token: mfa,
       json: { code: code.value },
     });
     clearTokens();
-    setAccessToken(res.access_token);
+    setAccessToken();
     await router.push("/feed");
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : "";

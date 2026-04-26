@@ -3,7 +3,6 @@ package httpserver
 import (
 	"context"
 	"encoding/json"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -13,23 +12,6 @@ import (
 )
 
 const federationRemoteEmojiCacheTTL = 24 * time.Hour
-
-func isSafeRemoteHost(host string) bool {
-	h := strings.TrimPrefix(strings.TrimPrefix(strings.TrimSpace(strings.ToLower(host)), "https://"), "http://")
-	h = strings.TrimSuffix(h, "/")
-	if h == "" {
-		return false
-	}
-	// Disallow obvious localhost.
-	if h == "localhost" || strings.HasSuffix(h, ".localhost") {
-		return false
-	}
-	// Disallow direct IPs to reduce SSRF risk.
-	if ip := net.ParseIP(h); ip != nil {
-		return false
-	}
-	return true
-}
 
 // handlePublicFederationCustomEmojiResolve resolves a remote custom emoji shortcode (e.g. :party@remote.example:)
 // into an image_url by fetching the remote instance's public custom emoji catalog, with caching.

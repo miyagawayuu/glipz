@@ -17,6 +17,7 @@ import { blockFederationUser, muteFederationUser } from "../lib/federationPrivac
 import { requestGumroadEntitlement } from "../lib/fanclubGumroad";
 import { requestPatreonEntitlement, requestPatreonEntitlementFederated } from "../lib/fanclubPatreon";
 import { createPayPalSubscription, requestPayPalEntitlement } from "../lib/paymentPayPal";
+import { redirectToAllowedExternalURL, safeHttpURL, safeMediaURL } from "../lib/redirect";
 import { unlockTimelinePost, voteTimelinePoll } from "../lib/federationActions";
 import type { TimelinePoll, TimelinePost } from "../types/timeline";
 import {
@@ -255,6 +256,18 @@ function feedRowKey(it: TimelinePost): string {
   return k && k.length > 0 ? k : it.id;
 }
 
+function safeMediaURLs(it: TimelinePost): string[] {
+	return (it.media_urls ?? []).map((url) => safeMediaURL(url)).filter(Boolean);
+}
+
+function firstSafeMediaURL(it: TimelinePost): string {
+	return safeMediaURLs(it)[0] ?? "";
+}
+
+function safeExternalURL(raw: unknown): string {
+	return safeHttpURL(raw);
+}
+
 function formatRepostedAt(iso: string): string {
   const t = Date.parse(iso);
   if (Number.isNaN(t)) return "";
@@ -275,8 +288,7 @@ function rowActorEmail(it: TimelinePost): string {
 }
 
 function rowActorAvatarUrl(it: TimelinePost): string | undefined {
-  if (hasCommentedRepost(it) && it.repost?.user_avatar_url) return it.repost.user_avatar_url;
-  return it.user_avatar_url;
+  return safeHttpURL(hasCommentedRepost(it) && it.repost?.user_avatar_url ? it.repost.user_avatar_url : it.user_avatar_url) || undefined;
 }
 
 function rowActorDisplayName(it: TimelinePost): string {
@@ -873,7 +885,9 @@ async function startPayPalSubscribe(it: TimelinePost) {
     }
     const { approval_url } = await createPayPalSubscription(token, it.id);
     if (approval_url) {
-      window.location.href = approval_url;
+      if (!redirectToAllowedExternalURL(approval_url, ["https://www.paypal.com", "https://www.sandbox.paypal.com"])) {
+        throw new Error("invalid_payment_redirect");
+      }
     }
   } catch (e: unknown) {
     unlockErr[it.id] = e instanceof Error ? e.message : t("components.postTimeline.unlock.unlockFailed");
@@ -1049,12 +1063,13 @@ async function startPayPalSubscribe(it: TimelinePost) {
                 >
                   {{ $t("components.postTimeline.postDetailLink") }}
                 </RouterLink>
-                <template v-if="showRemoteObjectLink && it.is_federated && it.remote_object_url">
+                <template v-if="showRemoteObjectLink && it.is_federated && safeExternalURL(it.remote_object_url)">
                   <span class="text-sm text-neutral-400">·</span>
                   <a
-                    :href="it.remote_object_url"
+                    :href="safeExternalURL(it.remote_object_url)"
                     target="_blank"
                     rel="noopener noreferrer"
+                    referrerpolicy="no-referrer"
                     class="shrink-0 text-sm font-medium text-violet-800 hover:text-violet-900 hover:underline"
                     @click.stop
                   >
@@ -1151,10 +1166,11 @@ async function startPayPalSubscribe(it: TimelinePost) {
             {{ $t("components.postTimeline.viewReplyParent") }}
           </RouterLink>
           <a
-            v-else-if="it.reply_to_object_url"
-            :href="it.reply_to_object_url"
+            v-else-if="safeExternalURL(it.reply_to_object_url)"
+            :href="safeExternalURL(it.reply_to_object_url)"
             target="_blank"
             rel="noopener noreferrer"
+            referrerpolicy="no-referrer"
             class="font-medium text-lime-700 hover:text-lime-800 hover:underline"
             @click.stop
           >
@@ -1274,9 +1290,10 @@ async function startPayPalSubscribe(it: TimelinePost) {
               :aria-label="$t('components.postTimeline.profileAria', { name: timelineDisplayName(it) })"
             >
               <img
-                v-if="it.user_avatar_url && !avatarLoadFailed[`quoted-${feedRowKey(it)}`]"
-                :src="it.user_avatar_url"
+                v-if="safeExternalURL(it.user_avatar_url) && !avatarLoadFailed[`quoted-${feedRowKey(it)}`]"
+                :src="safeExternalURL(it.user_avatar_url)"
                 alt=""
+                referrerpolicy="no-referrer"
                 class="h-full w-full object-cover"
                 @error="onAvatarLoadError(`quoted-${feedRowKey(it)}`)"
               />
@@ -1288,9 +1305,10 @@ async function startPayPalSubscribe(it: TimelinePost) {
               :aria-label="`${timelineDisplayName(it)}`"
             >
               <img
-                v-if="it.user_avatar_url && !avatarLoadFailed[`quoted-${feedRowKey(it)}`]"
-                :src="it.user_avatar_url"
+                v-if="safeExternalURL(it.user_avatar_url) && !avatarLoadFailed[`quoted-${feedRowKey(it)}`]"
+                :src="safeExternalURL(it.user_avatar_url)"
                 alt=""
+                referrerpolicy="no-referrer"
                 class="h-full w-full object-cover"
                 @error="onAvatarLoadError(`quoted-${feedRowKey(it)}`)"
               />
@@ -1328,31 +1346,31 @@ async function startPayPalSubscribe(it: TimelinePost) {
               </div>
               <PostRichText v-if="it.caption" :text="it.caption" :card-limit="0" class="mt-1" />
               <div
-                v-if="it.media_type === 'image' && it.media_urls?.length"
+                v-if="it.media_type === 'image' && safeMediaURLs(it).length"
                 class="mt-3 overflow-hidden rounded-2xl border border-neutral-200 bg-neutral-100"
-                :class="it.media_urls.length === 1 ? '' : 'grid grid-cols-2 gap-0.5'"
+                :class="safeMediaURLs(it).length === 1 ? '' : 'grid grid-cols-2 gap-0.5'"
               >
-                <template v-for="(cell, gi) in gridSlots(it.media_urls)" :key="`quoted-media-${feedRowKey(it)}-${gi}`">
+                <template v-for="(cell, gi) in gridSlots(safeMediaURLs(it))" :key="`quoted-media-${feedRowKey(it)}-${gi}`">
                   <img
                     v-if="cell"
                     :src="cell"
-                    :alt="it.caption || $t('components.postTimeline.imageAltNumbered', { n: mediaIndexFromGridSlot(it.media_urls, gi) + 1 })"
+                    :alt="it.caption || $t('components.postTimeline.imageAltNumbered', { n: mediaIndexFromGridSlot(safeMediaURLs(it), gi) + 1 })"
                     class="w-full object-cover"
-                    :class="it.media_urls.length === 1 ? 'max-h-64' : 'aspect-square min-h-[92px]'"
+                    :class="safeMediaURLs(it).length === 1 ? 'max-h-64' : 'aspect-square min-h-[92px]'"
                     loading="lazy"
                   />
                   <div v-else class="aspect-square min-h-[92px] bg-neutral-50" aria-hidden="true" />
                 </template>
               </div>
               <div
-                v-else-if="it.media_type === 'video' && it.media_urls?.[0]"
+                v-else-if="it.media_type === 'video' && firstSafeMediaURL(it)"
                 class="mt-3 flex items-center gap-2 rounded-2xl border border-neutral-200 bg-neutral-100 px-3 py-3 text-sm text-neutral-700"
               >
                 <Icon name="lock" class="h-5 w-5 shrink-0 text-neutral-500" />
                 <span>{{ $t("components.postTimeline.quotedVideoPost") }}</span>
               </div>
               <div
-                v-else-if="it.media_type === 'audio' && it.media_urls?.[0]"
+                v-else-if="it.media_type === 'audio' && firstSafeMediaURL(it)"
                 class="mt-3 flex items-center gap-2 rounded-2xl border border-neutral-200 bg-neutral-100 px-3 py-3 text-sm text-neutral-700"
               >
                 <Icon name="note" class="h-5 w-5 shrink-0 text-neutral-500" />
@@ -1432,20 +1450,20 @@ async function startPayPalSubscribe(it: TimelinePost) {
         >
           {{ $t("components.postTimeline.mediaPasswordProtected") }}
         </div>
-        <div v-if="!hasCommentedRepost(it) && it.media_type === 'image' && it.media_urls?.length" class="mt-3">
+        <div v-if="!hasCommentedRepost(it) && it.media_type === 'image' && safeMediaURLs(it).length" class="mt-3">
             <div
               v-if="mediaBlockedByNsfw(it)"
               class="relative overflow-hidden rounded-2xl border border-neutral-800/40 bg-neutral-900"
             >
               <div
                 class="grid gap-0.5"
-                :class="it.media_urls.length === 1 ? 'grid-cols-1' : 'grid-cols-2'"
+                :class="safeMediaURLs(it).length === 1 ? 'grid-cols-1' : 'grid-cols-2'"
               >
                 <div
-                  v-for="(url, si) in it.media_urls"
+                  v-for="(url, si) in safeMediaURLs(it)"
                   :key="`nsfw-slot-${si}`"
                   class="relative min-h-[120px] overflow-hidden bg-neutral-800 sm:min-h-[160px]"
-                  :class="it.media_urls.length === 1 ? 'max-h-[420px] sm:max-h-[60vh]' : 'aspect-square min-h-[100px] sm:min-h-[140px]'"
+                  :class="safeMediaURLs(it).length === 1 ? 'max-h-[420px] sm:max-h-[60vh]' : 'aspect-square min-h-[100px] sm:min-h-[140px]'"
                   aria-hidden="true"
                 >
                   <img
@@ -1462,37 +1480,37 @@ async function startPayPalSubscribe(it: TimelinePost) {
                 @click="openAgeGate(it.id)"
               >
                 <span class="text-xs font-semibold uppercase tracking-wide text-white/80">{{ $t("components.postTimeline.nsfwGridBadge") }}</span>
-                <span class="text-sm font-medium">{{ $t("components.postTimeline.nsfwGridHint", { count: it.media_urls.length }) }}</span>
+                <span class="text-sm font-medium">{{ $t("components.postTimeline.nsfwGridHint", { count: safeMediaURLs(it).length }) }}</span>
               </button>
             </div>
             <div
               v-else
               class="overflow-hidden rounded-2xl border border-neutral-200 bg-neutral-100"
-              :class="it.media_urls.length === 1 ? '' : 'grid grid-cols-2 gap-0.5'"
+              :class="safeMediaURLs(it).length === 1 ? '' : 'grid grid-cols-2 gap-0.5'"
             >
-              <template v-for="(cell, gi) in gridSlots(it.media_urls)" :key="gi">
+              <template v-for="(cell, gi) in gridSlots(safeMediaURLs(it))" :key="gi">
                 <button
                   v-if="cell"
                   type="button"
                   :class="[
-                    it.media_urls.length === 1
+                    safeMediaURLs(it).length === 1
                       ? 'max-h-[510px] w-full overflow-hidden sm:max-h-[70vh]'
                       : 'relative aspect-square min-h-[100px] w-full overflow-hidden sm:min-h-[140px]',
                     'block cursor-zoom-in border-0 bg-transparent p-0 text-left outline-none ring-offset-2 ring-offset-white focus-visible:ring-2 focus-visible:ring-lime-500',
                   ]"
                   :aria-label="
                     $t('components.postTimeline.imageOpenLightboxAria', {
-                      index: mediaIndexFromGridSlot(it.media_urls, gi) + 1,
-                      total: it.media_urls.length,
+                      index: mediaIndexFromGridSlot(safeMediaURLs(it), gi) + 1,
+                      total: safeMediaURLs(it).length,
                     })
                   "
-                  @click="emit('openLightbox', it.media_urls, mediaIndexFromGridSlot(it.media_urls, gi))"
+                  @click="emit('openLightbox', safeMediaURLs(it), mediaIndexFromGridSlot(safeMediaURLs(it), gi))"
                 >
                   <img
                     :src="cell"
-                    :alt="it.caption || $t('components.postTimeline.imageAltNumbered', { n: mediaIndexFromGridSlot(it.media_urls, gi) + 1 })"
+                    :alt="it.caption || $t('components.postTimeline.imageAltNumbered', { n: mediaIndexFromGridSlot(safeMediaURLs(it), gi) + 1 })"
                     :class="
-                      it.media_urls.length === 1
+                      safeMediaURLs(it).length === 1
                         ? 'pointer-events-none max-h-[510px] w-full object-contain sm:max-h-[70vh]'
                         : 'pointer-events-none h-full w-full object-cover'
                     "
@@ -1508,7 +1526,7 @@ async function startPayPalSubscribe(it: TimelinePost) {
             </div>
         </div>
         <div
-          v-else-if="!hasCommentedRepost(it) && it.media_type === 'video' && it.media_urls?.[0]"
+          v-else-if="!hasCommentedRepost(it) && it.media_type === 'video' && firstSafeMediaURL(it)"
           class="mt-3"
         >
           <button
@@ -1520,10 +1538,10 @@ async function startPayPalSubscribe(it: TimelinePost) {
             <span class="text-xs font-semibold uppercase tracking-wide text-white/70">{{ $t("components.postTimeline.nsfwVideoBadge") }}</span>
             <span class="text-sm font-medium">{{ $t("components.postTimeline.nsfwVideoHint") }}</span>
           </button>
-          <GlipzVideoPlayer v-else :src="it.media_urls[0]" />
+          <GlipzVideoPlayer v-else :src="firstSafeMediaURL(it)" />
         </div>
         <div
-          v-else-if="!hasCommentedRepost(it) && it.media_type === 'audio' && it.media_urls?.[0]"
+          v-else-if="!hasCommentedRepost(it) && it.media_type === 'audio' && firstSafeMediaURL(it)"
           class="mt-3"
         >
           <button
@@ -1535,7 +1553,7 @@ async function startPayPalSubscribe(it: TimelinePost) {
             <span class="text-xs font-semibold uppercase tracking-wide text-white/70">{{ $t("components.postTimeline.nsfwAudioBadge") }}</span>
             <span class="text-sm font-medium">{{ $t("components.postTimeline.nsfwAudioHint") }}</span>
           </button>
-          <GlipzAudioPlayer v-else :src="it.media_urls[0]" />
+          <GlipzAudioPlayer v-else :src="firstSafeMediaURL(it)" />
         </div>
 
         <div v-if="hasVisibleReactions(it)" class="mt-3 flex flex-wrap items-center gap-2">

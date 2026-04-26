@@ -26,6 +26,8 @@ var (
 
 	mediaProxyBytes = expvar.NewMap("glipz_media_proxy_bytes_total")
 
+	rateLimitErrors = expvar.NewMap("glipz_rate_limit_errors_total")
+
 	federationDeliveryTotal = expvar.NewMap("glipz_federation_delivery_total")
 )
 
@@ -132,6 +134,10 @@ func addMediaProxyBytes(kind string, n int64) {
 	if n > 0 {
 		mediaProxyBytes.Add(kind, n)
 	}
+}
+
+func addRateLimitError(kind string) {
+	rateLimitErrors.Add(kind, 1)
 }
 
 func observeFederationDelivery(status string, elapsed time.Duration) {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"expvar"
 	"fmt"
 	"io"
 	"log"
@@ -54,11 +53,15 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c s3client.
 		secret: []byte(cfg.JWTSecret),
 	}
 	r := chi.NewRouter()
-	r.Use(middleware.RequestID, middleware.RealIP)
+	r.Use(middleware.RequestID)
+	r.Use(captureDirectRemoteAddr)
+	if cfg.TrustProxyHeaders {
+		r.Use(middleware.RealIP)
+	}
 	if cfg.AccessLogEnabled {
 		r.Use(middleware.Logger)
 	}
-	r.Use(middleware.Recoverer, observeRequests(time.Duration(cfg.SlowRequestLogMs)*time.Millisecond))
+	r.Use(middleware.Recoverer, securityHeaders, observeRequests(time.Duration(cfg.SlowRequestLogMs)*time.Millisecond))
 	allowedOrigins := []string{"http://localhost:5173", "http://127.0.0.1:5173"}
 	for _, capOrigin := range []string{
 		"capacitor://localhost",
@@ -112,8 +115,8 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c s3client.
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   allowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
-		AllowCredentials: false,
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", csrfHeaderName},
+		AllowCredentials: true,
 		MaxAge:           300,
 	}))
 
@@ -122,18 +125,20 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c s3client.
 		_, _ = w.Write([]byte("ok"))
 	})
 	if cfg.MetricsEnabled {
-		r.Get("/debug/vars", expvar.Handler().ServeHTTP)
+		r.Get("/debug/vars", s.handleDebugVars)
 	}
 
 	s.mountGlipzFederation(r)
 	s.startFederationDeliveryWorker()
 
 	r.Route("/api/v1", func(r chi.Router) {
+		r.Use(limitAPIRequestBody)
 		r.Post("/auth/register", s.handleRegister)
 		r.Get("/auth/handle-availability", s.handleRegisterHandleAvailability)
 		r.Post("/auth/register/verify", s.handleRegisterVerify)
 		r.Post("/auth/login", s.handleLogin)
 		r.Post("/auth/mfa/verify", s.handleMFAVerify)
+		r.Post("/auth/logout", s.handleLogout)
 		r.Post("/oauth/token", s.handleOAuthToken)
 		r.Get("/custom-emojis", s.handleListEnabledCustomEmojis)
 		r.Get("/instance-settings", s.handlePublicInstanceSettings)
@@ -303,30 +308,98 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c s3client.
 }
 
 // principalForAccess resolves a user ID from either an access JWT or a personal access token.
-func (s *Server) principalForAccess(ctx context.Context, raw string) (uuid.UUID, bool) {
+func (s *Server) principalForAccess(ctx context.Context, raw string) (uuid.UUID, *authjwt.Claims, bool) {
 	claims, err := authjwt.Parse(s.secret, raw)
 	if err == nil && claims.Purpose == authjwt.PurposeAccess {
 		u, e := uuid.Parse(claims.Subject)
-		return u, e == nil
+		return u, claims, e == nil
 	}
 	u, err := s.db.UserIDFromPersonalAccessToken(ctx, raw)
 	if err == nil {
-		return u, true
+		return u, nil, true
 	}
-	return uuid.Nil, false
+	return uuid.Nil, nil, false
+}
+
+func oauthClaimsAllowRequest(claims *authjwt.Claims, r *http.Request) bool {
+	if claims == nil || claims.TokenUse == "" || claims.TokenUse == authjwt.TokenUseUser {
+		return true
+	}
+	if claims.TokenUse != authjwt.TokenUseOAuth {
+		return false
+	}
+	scope := map[string]bool{}
+	for _, part := range strings.Fields(strings.ToLower(claims.Scope)) {
+		scope[part] = true
+	}
+	path := r.URL.Path
+	method := r.Method
+	if scope["client_credentials"] {
+		return method == http.MethodGet && path == "/api/v1/me"
+	}
+	if scope["posts"] {
+		scope["posts:read"] = true
+		scope["posts:write"] = true
+		scope["media:write"] = true
+	}
+	if scope["posts:read"] && method == http.MethodGet {
+		switch {
+		case path == "/api/v1/me",
+			path == "/api/v1/posts/feed",
+			path == "/api/v1/posts/bookmarks",
+			path == "/api/v1/search":
+			return true
+		case strings.HasPrefix(path, "/api/v1/posts/"),
+			strings.HasPrefix(path, "/api/v1/users/by-handle/"),
+			strings.HasPrefix(path, "/api/v1/public/federation/incoming"):
+			return true
+		}
+	}
+	if scope["media:write"] {
+		switch path {
+		case "/api/v1/media/presign", "/api/v1/media/upload":
+			return method == http.MethodPost
+		}
+	}
+	if scope["posts:write"] {
+		if path == "/api/v1/posts" {
+			return method == http.MethodPost
+		}
+		if method != http.MethodPost && method != http.MethodDelete {
+			return false
+		}
+		switch {
+		case strings.HasSuffix(path, "/unlock"),
+			strings.HasSuffix(path, "/like"),
+			strings.HasSuffix(path, "/bookmark"),
+			strings.HasSuffix(path, "/repost"),
+			strings.HasSuffix(path, "/report"),
+			strings.Contains(path, "/poll/vote"),
+			strings.Contains(path, "/reactions"):
+			return strings.HasPrefix(path, "/api/v1/posts/") || strings.HasPrefix(path, "/api/v1/federation/posts/")
+		}
+	}
+	return false
 }
 
 func (s *Server) authMiddleware(requiredPurpose string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			h := r.Header.Get("Authorization")
-			if !strings.HasPrefix(h, "Bearer ") {
+			raw, fromCookie, ok := extractAccessCredential(r)
+			if !ok {
 				writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 				return
 			}
-			raw := strings.TrimSpace(strings.TrimPrefix(h, "Bearer "))
+			if fromCookie && requiresCSRFCheck(r) && !csrfValid(r) {
+				writeJSON(w, http.StatusForbidden, map[string]string{"error": "csrf_failed"})
+				return
+			}
 			if requiredPurpose == authjwt.PurposeAccess {
-				if uid, ok := s.principalForAccess(r.Context(), raw); ok {
+				if uid, claims, ok := s.principalForAccess(r.Context(), raw); ok {
+					if !oauthClaimsAllowRequest(claims, r) {
+						writeJSON(w, http.StatusForbidden, map[string]string{"error": "insufficient_scope"})
+						return
+					}
 					suspended, err := s.db.IsUserSuspended(r.Context(), uid)
 					if err != nil {
 						writeServerError(w, "auth IsUserSuspended", err)
@@ -361,13 +434,16 @@ func (s *Server) authMiddleware(requiredPurpose string) func(http.Handler) http.
 // optionalAccessMiddleware attaches the viewer user ID only when a valid access token is present.
 func (s *Server) optionalAccessMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		h := r.Header.Get("Authorization")
-		if !strings.HasPrefix(h, "Bearer ") {
+		raw, _, ok := extractAccessCredential(r)
+		if !ok {
 			next.ServeHTTP(w, r)
 			return
 		}
-		raw := strings.TrimSpace(strings.TrimPrefix(h, "Bearer "))
-		if uid, ok := s.principalForAccess(r.Context(), raw); ok {
+		if uid, claims, ok := s.principalForAccess(r.Context(), raw); ok {
+			if !oauthClaimsAllowRequest(claims, r) {
+				next.ServeHTTP(w, r)
+				return
+			}
 			suspended, err := s.db.IsUserSuspended(r.Context(), uid)
 			if err != nil {
 				log.Printf("optional access IsUserSuspended: %v", err)
@@ -438,6 +514,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "registrations_disabled"})
 		return
 	}
+	limitRequestBody(w, r, smallJSONRequestBodyMaxBytes)
 	var req registerReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_json"})
@@ -563,15 +640,21 @@ type loginReq struct {
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	limitRequestBody(w, r, smallJSONRequestBodyMaxBytes)
 	var req loginReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_json"})
 		return
 	}
 	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
+	if s.loginRateLimitExceeded(r.Context(), r, req.Email) {
+		writeLoginRateLimited(w)
+		return
+	}
 	u, err := s.db.UserByEmail(r.Context(), req.Email)
 	if err != nil {
 		if errors.Is(err, repo.ErrNotFound) {
+			s.recordLoginFailure(r.Context(), r, req.Email)
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_credentials"})
 			return
 		}
@@ -579,32 +662,55 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if u.SuspendedAt != nil {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "account_suspended"})
-		return
-	}
-	if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(req.Password)) != nil {
+		s.recordLoginFailure(r.Context(), r, req.Email)
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_credentials"})
 		return
 	}
+	if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(req.Password)) != nil {
+		s.recordLoginFailure(r.Context(), r, req.Email)
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_credentials"})
+		return
+	}
+	s.clearLoginFailures(r.Context(), r, req.Email)
 	if u.TOTPEnabled {
 		if u.TOTPSecret == nil || *u.TOTPSecret == "" {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "mfa_misconfigured"})
 			return
 		}
-		tok, err := authjwt.SignMFA(s.secret, u.ID, 5*time.Minute)
+		mfaTTL := 5 * time.Minute
+		tok, jti, err := authjwt.SignMFA(s.secret, u.ID, mfaTTL)
 		if err != nil {
 			writeServerError(w, "login SignMFA", err)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"mfa_required": true, "mfa_token": tok, "token_type": "Bearer"})
+		if err := s.storeMFAJTI(r.Context(), jti, mfaTTL); err != nil {
+			writeServerError(w, "login store MFA token", err)
+			return
+		}
+		csrfToken, err := randomHex(32)
+		if err != nil {
+			writeServerError(w, "login csrf token", err)
+			return
+		}
+		s.setMFACookie(w, r, tok, mfaTTL)
+		s.setCSRFCookie(w, r, csrfToken, mfaTTL)
+		writeJSON(w, http.StatusOK, map[string]any{"mfa_required": true})
 		return
 	}
-	tok, err := authjwt.SignAccess(s.secret, u.ID, 24*time.Hour)
+	accessTTL := 24 * time.Hour
+	tok, err := authjwt.SignAccess(s.secret, u.ID, accessTTL)
 	if err != nil {
 		writeServerError(w, "login SignAccess", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"mfa_required": false, "access_token": tok, "token_type": "Bearer"})
+	csrfToken, err := randomHex(32)
+	if err != nil {
+		writeServerError(w, "login csrf token", err)
+		return
+	}
+	s.setAccessCookie(w, r, tok, accessTTL)
+	s.setCSRFCookie(w, r, csrfToken, accessTTL)
+	writeJSON(w, http.StatusOK, map[string]any{"mfa_required": false})
 }
 
 type mfaVerifyReq struct {
@@ -612,17 +718,21 @@ type mfaVerifyReq struct {
 }
 
 func (s *Server) handleMFAVerify(w http.ResponseWriter, r *http.Request) {
-	h := r.Header.Get("Authorization")
-	if !strings.HasPrefix(h, "Bearer ") {
+	raw, fromCookie, ok := extractMFACredential(r)
+	if !ok {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "missing_mfa_token"})
 		return
 	}
-	raw := strings.TrimSpace(strings.TrimPrefix(h, "Bearer "))
+	if fromCookie && !csrfValid(r) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "csrf_failed"})
+		return
+	}
 	claims, err := authjwt.Parse(s.secret, raw)
 	if err != nil || claims.Purpose != authjwt.PurposeMFA {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_mfa_token"})
 		return
 	}
+	limitRequestBody(w, r, smallJSONRequestBodyMaxBytes)
 	var req mfaVerifyReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_json"})
@@ -634,6 +744,10 @@ func (s *Server) handleMFAVerify(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_mfa_token"})
 		return
 	}
+	if s.mfaRateLimitExceeded(r.Context(), r, uid.String()) {
+		writeMFARateLimited(w)
+		return
+	}
 	u, err := s.db.UserByID(r.Context(), uid)
 	if err != nil {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_mfa_token"})
@@ -643,16 +757,43 @@ func (s *Server) handleMFAVerify(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "account_suspended"})
 		return
 	}
-	if u.TOTPSecret == nil || !totp.Validate(req.Code, *u.TOTPSecret) {
+	if !u.TOTPEnabled || u.TOTPSecret == nil || !totp.Validate(req.Code, *u.TOTPSecret) {
+		s.recordMFAFailure(r.Context(), r, uid.String())
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_code"})
 		return
 	}
-	tok, err := authjwt.SignAccess(s.secret, uid, 24*time.Hour)
+	consumed, err := s.consumeMFAJTI(r.Context(), claims.ID)
+	if err != nil {
+		writeServerError(w, "mfa verify consume token", err)
+		return
+	}
+	if !consumed {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_mfa_token"})
+		return
+	}
+	s.clearMFAFailures(r.Context(), r, uid.String())
+	accessTTL := 24 * time.Hour
+	tok, err := authjwt.SignAccess(s.secret, uid, accessTTL)
 	if err != nil {
 		writeServerError(w, "mfa verify SignAccess", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"access_token": tok, "token_type": "Bearer"})
+	csrfToken, err := randomHex(32)
+	if err != nil {
+		writeServerError(w, "mfa verify csrf token", err)
+		return
+	}
+	s.setAccessCookie(w, r, tok, accessTTL)
+	s.setCSRFCookie(w, r, csrfToken, accessTTL)
+	expiredMFA := authCookieBase(r, authMFACookieName, "", -1, -time.Hour, s.cfg.TrustProxyHeaders, true)
+	expiredMFA.Expires = time.Unix(0, 0)
+	http.SetCookie(w, &expiredMFA)
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+}
+
+func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	s.clearAuthCookies(w, r)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
@@ -693,15 +834,34 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+type mfaSetupReq struct {
+	Password string `json:"password"`
+}
+
 func (s *Server) handleMFASetup(w http.ResponseWriter, r *http.Request) {
 	uid, ok := userIDFrom(r.Context())
 	if !ok {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		return
 	}
+	limitRequestBody(w, r, smallJSONRequestBodyMaxBytes)
+	var req mfaSetupReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_json"})
+		return
+	}
+	if s.mfaRateLimitExceeded(r.Context(), r, uid.String()) {
+		writeMFARateLimited(w)
+		return
+	}
 	u, err := s.db.UserByID(r.Context(), uid)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+		return
+	}
+	if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(req.Password)) != nil {
+		s.recordMFAFailure(r.Context(), r, uid.String())
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_password"})
 		return
 	}
 	if u.TOTPEnabled {
@@ -730,7 +890,8 @@ func (s *Server) handleMFASetup(w http.ResponseWriter, r *http.Request) {
 }
 
 type mfaEnableReq struct {
-	Code string `json:"code"`
+	Code     string `json:"code"`
+	Password string `json:"password"`
 }
 
 func (s *Server) handleMFAEnable(w http.ResponseWriter, r *http.Request) {
@@ -739,12 +900,27 @@ func (s *Server) handleMFAEnable(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		return
 	}
+	limitRequestBody(w, r, smallJSONRequestBodyMaxBytes)
 	var req mfaEnableReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_json"})
 		return
 	}
+	if s.mfaRateLimitExceeded(r.Context(), r, uid.String()) {
+		writeMFARateLimited(w)
+		return
+	}
 	req.Code = strings.TrimSpace(req.Code)
+	u, err := s.db.UserByID(r.Context(), uid)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+		return
+	}
+	if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(req.Password)) != nil {
+		s.recordMFAFailure(r.Context(), r, uid.String())
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_password"})
+		return
+	}
 	sec, err := s.rdb.Get(r.Context(), "totp_pending:"+uid.String()).Result()
 	if err == redis.Nil || sec == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "setup_required"})
@@ -761,6 +937,7 @@ func (s *Server) handleMFAEnable(w http.ResponseWriter, r *http.Request) {
 		writeServerError(w, "mfa enable SetTOTPSecret", err)
 		return
 	}
+	s.clearMFAFailures(r.Context(), r, uid.String())
 	_ = s.rdb.Del(r.Context(), "totp_pending:"+uid.String()).Err()
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }

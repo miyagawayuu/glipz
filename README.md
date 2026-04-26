@@ -121,13 +121,13 @@ This repository contains the official Go implementation of the Glipz Federation 
 
 | Layer | Technology |
 |-------|------------|
-| **Backend** | Go 1.22, Chi router, pgx, Redis |
+| **Backend** | Go 1.26.2, Chi router, pgx, Redis |
 | **Frontend** | Vue 3, TypeScript, Vite, Tailwind CSS, vue-i18n (en / ja) |
 | **Database** | PostgreSQL 16 |
 | **Cache** | Redis 7 |
 | **Storage** | Local server folder or S3-compatible storage (Cloudflare R2, Wasabi, MinIO, etc.) |
 | **Mobile (optional)** | Capacitor 7 (Android / iOS) |
-| **Deployment** | Docker, Docker Compose (image builds Node 22 + Go 1.22) |
+| **Deployment** | Docker, Docker Compose (image builds Node 22 + Go 1.26.2) |
 
 ---
 
@@ -137,7 +137,7 @@ This repository contains the official Go implementation of the Glipz Federation 
 
 - Docker & Docker Compose
 - Node.js 22+ (for frontend development; matches `web/package.json` engines)
-- Go 1.22+ (optional, for backend development outside Docker)
+- Go 1.26.2+ (optional, for backend development outside Docker)
 - Media storage: either a server-local folder or an S3-compatible bucket
 
 ### 1. Clone and configure
@@ -151,7 +151,8 @@ cp .env.example .env
 Edit `.env` with your settings. At minimum:
 
 ```env
-JWT_SECRET=your-secure-random-secret
+# Generate with: openssl rand -base64 48
+JWT_SECRET=
 
 # Simplest single-server setup:
 GLIPZ_STORAGE_MODE=local
@@ -181,6 +182,9 @@ Cloudflare R2 uses `S3_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com`, 
 docker compose up --build
 ```
 
+This compose stack is for local development only. It uses fixed development
+credentials and localhost-bound ports; use [DEPLOY.md](DEPLOY.md) for production.
+
 Services started:
 - **Backend API**: http://localhost:8080
 - **PostgreSQL**: localhost:5432
@@ -197,6 +201,9 @@ npm run dev
 
 Frontend: http://localhost:5173
 
+The Vite dev server listens on `127.0.0.1` by default. For intentional LAN
+testing, set `VITE_DEV_HOST=0.0.0.0` on a trusted network.
+
 ---
 
 ## Deployment
@@ -211,6 +218,7 @@ Mailpit (started with the Docker stack) is for local development. In production,
 - [ ] HTTPS via reverse proxy (Nginx, Caddy, Traefik)
 - [ ] Media storage configured (`GLIPZ_STORAGE_MODE=local` or S3-compatible storage)
 - [ ] `FRONTEND_ORIGIN` and (if federation) `GLIPZ_PROTOCOL_*` variables set
+- [ ] If trusting proxy headers, backend is private and proxy overwrites `X-Real-IP`, `X-Forwarded-For`, and `X-Forwarded-Proto`
 - [ ] Database and Redis secured
 - [ ] Email provider configured (Mailgun, etc.)
 - [ ] `GLIPZ_ADMIN_USER_IDS` set for site administrators who can access `/admin`
@@ -229,6 +237,8 @@ The backend exposes a REST API at `/api/v1/`. Use the in-app **API / OpenAPI** s
 - Email + password login
 - JWT-based sessions
 - Optional TOTP MFA
+
+OAuth client redirect URIs must be absolute `https://` URLs in production. `http://` is accepted only for `localhost` or loopback IPs during development. Redirect URIs may not include userinfo, fragments, spaces, or control characters.
 
 ### Example: Get home timeline
 
@@ -314,10 +324,21 @@ Membership entitlement over Glipz federation (`POST .../federation/posts/{postID
 | `GLIPZ_METRICS_ENABLED` | Exposes lightweight expvar metrics at `/debug/vars` | Optional |
 | `GLIPZ_ACCESS_LOG_ENABLED` | Enables per-request access logs; disabled by default for throughput | Optional |
 | `GLIPZ_SLOW_REQUEST_LOG_MS` | Logs HTTP requests over this threshold in ms; `0` disables slow request logs | Optional |
+| `GLIPZ_TRUST_PROXY_HEADERS` | Trusts reverse-proxy client IP / scheme headers; enable only behind a proxy that overwrites them | Optional |
+| `GLIPZ_AUTH_RATE_LIMIT_FAIL_CLOSED` | Rejects login/MFA attempts when Redis-backed auth/SSE rate limit checks fail | Optional |
 | `GLIPZ_FEED_PAGE_SIZE` | Authenticated feed items returned per request; lower values reduce payload size under load | Optional |
 | `GLIPZ_MEDIA_PROXY_MODE` | `proxy` streams media through the API; `direct` redirects to configured public media URLs | Optional |
+| `GLIPZ_REMOTE_MEDIA_PROXY_MAX_BYTES` | Maximum bytes streamed by the public remote-media proxy; default is 50 MiB | Optional |
+| `GLIPZ_REMOTE_MEDIA_PROXY_RATE_LIMIT_MAX` | Public remote-media proxy requests allowed per IP per 15 minutes; default is 120 | Optional |
+| `GLIPZ_REMOTE_MEDIA_PROXY_RATE_LIMIT_FAIL_CLOSED` | Rejects remote-media proxy requests when Redis-backed rate limit writes fail | Optional |
+| `GLIPZ_LINK_PREVIEW_RATE_LIMIT_MAX` | Public link-preview requests allowed per IP/user per 15 minutes; default is 60 | Optional |
+| `GLIPZ_LINK_PREVIEW_RATE_LIMIT_FAIL_CLOSED` | Rejects link-preview requests when Redis-backed rate limit writes fail | Optional |
+| `GLIPZ_FEDERATION_INBOX_RATE_LIMIT_FAIL_CLOSED` | Rejects federation inbox POSTs when Redis-backed rate limit writes fail | Optional |
+| `GLIPZ_FEDERATION_DM_ATTACHMENT_MAX_BYTES` | Maximum bytes streamed by the federated DM attachment proxy; default is 50 MiB | Optional |
 | `GLIPZ_FEDERATION_DELIVERY_*` | Batch size, concurrency, and tick interval for outbound federation delivery | Optional |
 | `GLIPZ_ADMIN_USER_IDS` | Comma-separated user UUIDs with site admin access to `/admin` | Optional |
+| `VITE_ALLOWED_MEDIA_BASE_URLS` | Frontend allowlist for CDN/direct media URL prefixes used in rich media rendering | Optional |
+| `VITE_ALLOWED_DM_ATTACHMENT_BASE_URLS` | Frontend allowlist for CDN/direct encrypted DM attachment URL prefixes | Optional |
 | `PATREON_ENABLED` | Enables Patreon UI/routes; defaults to disabled | Optional |
 | `PATREON_*` | Patreon OAuth credentials for fan club features | Required when Patreon is enabled |
 | `GUMROAD_ENABLED` | Enables Gumroad UI/routes; defaults to disabled. License checks use Gumroad’s public API; no secret is required | Optional |

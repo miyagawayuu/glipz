@@ -1,7 +1,7 @@
 export type VideoEmbed = {
   url: string;
   provider: "youtube" | "vimeo" | "dailymotion" | "loom" | "nicovideo" | "streamable" | "wistia" | "bilibili" | "tiktok" | "steam";
-  embedKind: "iframe" | "script";
+  embedKind: "iframe";
   embedUrl: string;
   title: string;
   layout?: "video" | "steam";
@@ -144,21 +144,9 @@ function parseLoomEmbed(url: URL, raw: string): VideoEmbed | null {
 }
 
 function parseNicovideoEmbed(url: URL, raw: string): VideoEmbed | null {
-  const host = url.hostname.toLowerCase().replace(/^www\./, "");
-  const parts = url.pathname.split("/").filter(Boolean);
-  const videoId = host === "nico.ms"
-    ? (parts[0] ?? "")
-    : parts[0] === "watch"
-      ? (parts[1] ?? "")
-      : "";
-  if (!/^[a-z]{2}\d+$/i.test(videoId)) return null;
-  return {
-    url: raw,
-    provider: "nicovideo",
-    embedKind: "script",
-    embedUrl: `https://embed.nicovideo.jp/watch/${videoId}/script?w=640&h=360`,
-    title: "Niconico video player",
-  };
+  void url;
+  void raw;
+  return null;
 }
 
 function parseStreamableEmbed(url: URL, raw: string): VideoEmbed | null {

@@ -58,6 +58,11 @@ func (s *Server) handlePublicFederatedIncomingStream(w http.ResponseWriter, r *h
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method_not_allowed"})
 		return
 	}
+	streamCtx, release, ok := s.acquireSSEConnection(w, r, nil)
+	if !ok {
+		return
+	}
+	defer release()
 	raw := strings.TrimSpace(r.URL.Query().Get("actor"))
 	if raw == "" {
 		raw = strings.TrimSpace(r.URL.Query().Get("acct"))
@@ -66,7 +71,7 @@ func (s *Server) handlePublicFederatedIncomingStream(w http.ResponseWriter, r *h
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing_acct_or_actor"})
 		return
 	}
-	resolved, err := ResolveRemoteActor(r.Context(), raw)
+	resolved, err := ResolveRemoteActor(streamCtx, raw)
 	if err != nil {
 		st := resolveErrorHTTPStatus(err)
 		writeJSON(w, st, map[string]string{"error": ResolveFailureAPIError(err)})
@@ -83,7 +88,7 @@ func (s *Server) handlePublicFederatedIncomingStream(w http.ResponseWriter, r *h
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
 
-	ctx := r.Context()
+	ctx := streamCtx
 	ch := redisFederatedIncomingActorChannel(resolved.ActorID)
 	pubsub := s.rdb.Subscribe(ctx, ch)
 	defer func() { _ = pubsub.Close() }()

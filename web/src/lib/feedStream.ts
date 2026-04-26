@@ -224,9 +224,9 @@ export function connectFeedStream(opts: {
     try {
       const res = await fetch(url, {
         method: "GET",
+        credentials: "include",
         headers: {
           Accept: "text/event-stream",
-          ...(opts.token ? { Authorization: `Bearer ${opts.token}` } : {}),
         },
         signal: ac.signal,
       });

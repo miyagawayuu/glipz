@@ -45,6 +45,11 @@ func (s *Server) handleNotifyStream(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		return
 	}
+	streamCtx, release, ok := s.acquireSSEConnection(w, r, &uid)
+	if !ok {
+		return
+	}
+	defer release()
 
 	flusher, okFlush := w.(http.Flusher)
 	if !okFlush {
@@ -57,7 +62,7 @@ func (s *Server) handleNotifyStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
 
-	ctx := r.Context()
+	ctx := streamCtx
 	chName := redisNotifyUserChannel(uid)
 	pubsub := s.rdb.Subscribe(ctx, chName)
 	defer func() { _ = pubsub.Close() }()

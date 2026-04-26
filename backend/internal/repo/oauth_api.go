@@ -14,12 +14,12 @@ import (
 )
 
 type OAuthClientRow struct {
-	ID            uuid.UUID
-	UserID        uuid.UUID
-	Name          string
-	RedirectURIs  string
-	CreatedAt     time.Time
-	ClientIDStr   string // same as ID
+	ID           uuid.UUID
+	UserID       uuid.UUID
+	Name         string
+	RedirectURIs string
+	CreatedAt    time.Time
+	ClientIDStr  string // same as ID
 }
 
 func (p *Pool) OAuthClientCreate(ctx context.Context, userID uuid.UUID, name, redirectURIs string, secretHash string) (uuid.UUID, error) {
@@ -72,9 +72,9 @@ func (p *Pool) OAuthClientDelete(ctx context.Context, ownerUserID, clientID uuid
 }
 
 type oauthClientCredRow struct {
-	UserID         uuid.UUID
-	SecretHash     string
-	RedirectURIs   string
+	UserID       uuid.UUID
+	SecretHash   string
+	RedirectURIs string
 }
 
 // OAuthClientByIDPublic returns a client's redirect URIs for the authorization screen without exposing secrets.
@@ -142,39 +142,40 @@ func (p *Pool) OAuthAuthorizationCodeInsert(ctx context.Context, clientID, userI
 	return err
 }
 
-// OAuthAuthorizationCodeExchange consumes an authorization code and returns the user_id authorized for the token.
-func (p *Pool) OAuthAuthorizationCodeExchange(ctx context.Context, clientID uuid.UUID, codePlain, redirectURI string) (uuid.UUID, error) {
+// OAuthAuthorizationCodeExchange consumes an authorization code and returns the user_id and scope authorized for the token.
+func (p *Pool) OAuthAuthorizationCodeExchange(ctx context.Context, clientID uuid.UUID, codePlain, redirectURI string) (uuid.UUID, string, error) {
 	sum := sha256.Sum256([]byte(codePlain))
 	hash := hex.EncodeToString(sum[:])
 	red := strings.TrimSpace(redirectURI)
 	tx, err := p.db.Begin(ctx)
 	if err != nil {
-		return uuid.Nil, err
+		return uuid.Nil, "", err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	var uid uuid.UUID
+	var scope string
 	err = tx.QueryRow(ctx, `
-		SELECT user_id FROM oauth_authorization_codes
+		SELECT user_id, scope FROM oauth_authorization_codes
 		WHERE code_sha256 = $1 AND client_id = $2 AND redirect_uri = $3
 		  AND used_at IS NULL AND expires_at > NOW()
 		FOR UPDATE
-	`, hash, clientID, red).Scan(&uid)
+	`, hash, clientID, red).Scan(&uid, &scope)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return uuid.Nil, ErrNotFound
+		return uuid.Nil, "", ErrNotFound
 	}
 	if err != nil {
-		return uuid.Nil, err
+		return uuid.Nil, "", err
 	}
 	if _, err := tx.Exec(ctx, `
 		UPDATE oauth_authorization_codes SET used_at = NOW() WHERE code_sha256 = $1
 	`, hash); err != nil {
-		return uuid.Nil, err
+		return uuid.Nil, "", err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return uuid.Nil, err
+		return uuid.Nil, "", err
 	}
-	return uid, nil
+	return uid, strings.TrimSpace(scope), nil
 }
 
 // --- Personal access tokens (glpat_<uuid>_<secret>) ---
@@ -190,10 +191,10 @@ func (p *Pool) PersonalAccessTokenCreate(ctx context.Context, userID uuid.UUID, 
 }
 
 type PersonalAccessTokenListRow struct {
-	ID         uuid.UUID
-	Label      string
+	ID          uuid.UUID
+	Label       string
 	TokenPrefix string
-	CreatedAt  time.Time
+	CreatedAt   time.Time
 }
 
 func (p *Pool) PersonalAccessTokenList(ctx context.Context, userID uuid.UUID) ([]PersonalAccessTokenListRow, error) {

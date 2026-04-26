@@ -34,6 +34,7 @@ import {
 import { getOperatorAnnouncements } from "./data/operatorAnnouncements";
 import { fetchPublicInstanceSettings, type OperatorAnnouncement } from "./lib/instanceSettings";
 import { legalDocumentLink, type LegalDocumentKey, type LegalDocumentURLSettings } from "./lib/legalDocumentLinks";
+import { safeHttpURL } from "./lib/redirect";
 
 const route = useRoute();
 const router = useRouter();
@@ -293,7 +294,7 @@ async function loadMe() {
       handle: u.handle ?? "",
       display_name: (u.display_name ?? "").trim() || displayNameFromEmail(u.email),
       badges: Array.isArray(u.badges) ? u.badges.map((badge) => String(badge)) : [],
-      avatar_url: u.avatar_url && String(u.avatar_url).trim() !== "" ? String(u.avatar_url) : null,
+      avatar_url: safeHttpURL(u.avatar_url) || null,
       is_site_admin: !!u.is_site_admin,
       fanclub_patreon_enabled: !!u.fanclub_patreon_enabled,
       fanclub_gumroad_enabled: !!u.fanclub_gumroad_enabled,
@@ -421,12 +422,17 @@ function toggleProfileMenu() {
   profileMenuOpen.value = !profileMenuOpen.value;
 }
 
-function logout() {
+async function logout() {
   closeProfileMenu();
   stopNotifyStream();
   stopDMStream();
   clearRememberedUnlockedIdentity();
   notifyToastMessageText.value = "";
+  try {
+    await api("/api/v1/auth/logout", { method: "POST" });
+  } catch {
+    /* ignore logout network failures */
+  }
   clearTokens();
   router.push("/login");
 }
@@ -790,6 +796,7 @@ function avatarInitials(email: string): string {
                 v-if="me?.avatar_url && !avatarImgFailed"
                 :src="me.avatar_url"
                 alt=""
+                referrerpolicy="no-referrer"
                 class="h-full w-full object-cover"
                 @error="avatarImgFailed = true"
               />

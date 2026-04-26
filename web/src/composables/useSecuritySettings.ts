@@ -32,6 +32,7 @@ export function useSecuritySettings() {
   const uri = ref("");
   const qrDataUrl = ref("");
   const code = ref("");
+  const mfaPassword = ref("");
   const err = ref("");
   const msg = ref("");
   /** Save message dedicated to the DM settings card so it stays separate from 2FA and other messages. */
@@ -95,6 +96,7 @@ export function useSecuritySettings() {
       const res = await api<{ secret: string; uri: string }>("/api/v1/auth/mfa/setup", {
         method: "POST",
         token,
+        json: { password: mfaPassword.value },
       });
       secret.value = res.secret;
       uri.value = res.uri;
@@ -116,9 +118,10 @@ export function useSecuritySettings() {
       await api("/api/v1/auth/mfa/enable", {
         method: "POST",
         token,
-        json: { code: code.value },
+        json: { code: code.value, password: mfaPassword.value },
       });
       code.value = "";
+      mfaPassword.value = "";
       secret.value = "";
       uri.value = "";
       msg.value = t("views.settings.security.mfa.enabledToast");
@@ -236,6 +239,7 @@ export function useSecuritySettings() {
     uri,
     qrDataUrl,
     code,
+    mfaPassword,
     err,
     msg,
     dmSaveMsg,

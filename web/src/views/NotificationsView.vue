@@ -14,6 +14,7 @@ import {
   resetUnreadNotificationCount,
 } from "../notificationHub";
 import { translate } from "../i18n";
+import { safeHttpURL } from "../lib/redirect";
 
 type NotificationRow = {
   id: string;
@@ -43,6 +44,10 @@ const route = useRoute();
 const router = useRouter();
 let loadInFlight: Promise<void> | null = null;
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+function safeNotificationURL(raw: unknown): string {
+  return safeHttpURL(raw);
+}
 
 function isRepliesTab(): boolean {
   const raw = route.query.tab;
@@ -258,9 +263,10 @@ onBeforeUnmount(() => {
               class="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-neutral-200 text-xs font-bold text-neutral-700"
             >
               <img
-                v-if="it.actor_avatar_url && !avatarLoadFailed[it.id]"
-                :src="it.actor_avatar_url"
+                v-if="safeNotificationURL(it.actor_avatar_url) && !avatarLoadFailed[it.id]"
+                :src="safeNotificationURL(it.actor_avatar_url)"
                 alt=""
+                referrerpolicy="no-referrer"
                 class="h-full w-full object-cover"
                 @error="onAvatarError(it.id)"
               />
@@ -278,8 +284,8 @@ onBeforeUnmount(() => {
                 {{ it.subject_caption_preview }}
               </p>
             </div>
-            <div v-if="it.subject_media_url" class="relative h-14 w-14 shrink-0 overflow-hidden rounded-md border border-neutral-200 bg-neutral-100">
-              <img :src="it.subject_media_url" alt="" class="h-full w-full object-cover" />
+            <div v-if="safeNotificationURL(it.subject_media_url)" class="relative h-14 w-14 shrink-0 overflow-hidden rounded-md border border-neutral-200 bg-neutral-100">
+              <img :src="safeNotificationURL(it.subject_media_url)" alt="" referrerpolicy="no-referrer" class="h-full w-full object-cover" />
             </div>
           </div>
         </div>
@@ -304,9 +310,10 @@ onBeforeUnmount(() => {
               class="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-neutral-200 text-xs font-bold text-neutral-700"
             >
               <img
-                v-if="it.actor_avatar_url && !avatarLoadFailed[it.id]"
-                :src="it.actor_avatar_url"
+                v-if="safeNotificationURL(it.actor_avatar_url) && !avatarLoadFailed[it.id]"
+                :src="safeNotificationURL(it.actor_avatar_url)"
                 alt=""
+                referrerpolicy="no-referrer"
                 class="h-full w-full object-cover"
                 @error="onAvatarError(it.id)"
               />
@@ -362,9 +369,10 @@ onBeforeUnmount(() => {
                     @click.stop
                   >
                     <img
-                      v-if="it.subject_author_avatar_url && !avatarLoadFailed[`${it.id}-sub`]"
-                      :src="it.subject_author_avatar_url"
+                      v-if="safeNotificationURL(it.subject_author_avatar_url) && !avatarLoadFailed[`${it.id}-sub`]"
+                      :src="safeNotificationURL(it.subject_author_avatar_url)"
                       alt=""
+                      referrerpolicy="no-referrer"
                       class="h-full w-full object-cover"
                       @error="onAvatarError(`${it.id}-sub`)"
                     />
@@ -375,9 +383,10 @@ onBeforeUnmount(() => {
                     class="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-neutral-200 text-xs font-bold text-neutral-700"
                   >
                     <img
-                      v-if="it.subject_author_avatar_url && !avatarLoadFailed[`${it.id}-sub`]"
-                      :src="it.subject_author_avatar_url"
+                      v-if="safeNotificationURL(it.subject_author_avatar_url) && !avatarLoadFailed[`${it.id}-sub`]"
+                      :src="safeNotificationURL(it.subject_author_avatar_url)"
                       alt=""
+                      referrerpolicy="no-referrer"
                       class="h-full w-full object-cover"
                       @error="onAvatarError(`${it.id}-sub`)"
                     />
@@ -394,10 +403,10 @@ onBeforeUnmount(() => {
                       </p>
                     </div>
                     <div
-                      v-if="it.subject_media_url"
+                      v-if="safeNotificationURL(it.subject_media_url)"
                       class="relative h-14 w-14 shrink-0 overflow-hidden rounded-md border border-neutral-200 bg-neutral-100"
                     >
-                      <img :src="it.subject_media_url" alt="" class="h-full w-full object-cover" />
+                      <img :src="safeNotificationURL(it.subject_media_url)" alt="" referrerpolicy="no-referrer" class="h-full w-full object-cover" />
                     </div>
                   </div>
                 </div>
@@ -421,13 +430,14 @@ onBeforeUnmount(() => {
             aria-hidden="true"
           />
           <div
-            v-if="it.actor_avatar_url"
+            v-if="safeNotificationURL(it.actor_avatar_url)"
             class="mt-0.5 flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-neutral-200 text-xs font-bold text-neutral-700"
           >
             <img
               v-if="!avatarLoadFailed[it.id]"
-              :src="it.actor_avatar_url"
+              :src="safeNotificationURL(it.actor_avatar_url)"
               alt=""
+              referrerpolicy="no-referrer"
               class="h-full w-full object-cover"
               @error="onAvatarError(it.id)"
             />

@@ -57,13 +57,14 @@ func (s *Server) sendRegistrationVerificationEmail(email, verifyURL string, expi
 		FromName:  s.cfg.MailFromName,
 	}
 	if !cfg.Enabled() {
-		log.Printf("registration verification link for %s: %s", email, verifyURL)
+		log.Printf("registration verification email skipped for %s; verification token withheld from logs", email)
 		return nil
 	}
 	return mailer.SendText(cfg, email, "Glipz メール認証", body)
 }
 
 func (s *Server) handleRegisterVerify(w http.ResponseWriter, r *http.Request) {
+	limitRequestBody(w, r, smallJSONRequestBodyMaxBytes)
 	var req registerVerifyReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_json"})

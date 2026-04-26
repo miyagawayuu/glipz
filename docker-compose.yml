@@ -1,4 +1,9 @@
 services:
+  # Development-only compose stack. Bind published ports to localhost so these
+  # services are not exposed when testing on a shared network. Do not use this
+  # file as-is for production: credentials are fixed for local development.
+  # Before running, copy .env.example to .env and choose GLIPZ_STORAGE_MODE.
+  # Leaving it unset defaults the backend to s3, which requires S3_* values.
   postgres:
     image: postgres:16-alpine
     environment:
@@ -6,7 +11,7 @@ services:
       POSTGRES_PASSWORD: glipz_dev
       POSTGRES_DB: glipz
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
@@ -19,7 +24,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 3s
@@ -27,10 +32,10 @@ services:
       retries: 10
 
   mailpit:
-    image: axllent/mailpit:latest
+    image: axllent/mailpit:v1.29.7
     ports:
-      - "1025:1025"
-      - "8025:8025"
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8025/api/v1/info"]
       interval: 5s
@@ -52,8 +57,10 @@ services:
       SMTP_FROM_NAME: Glipz
       LEGAL_DOCS_DIR: /app/data/legal-docs
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     volumes:
+      # The backend image runs as uid/gid 10001. If this bind mount already
+      # exists on the host, make sure it is writable by 10001:10001.
       - ./data/media:/app/data/media
       - ./data/legal-docs:/app/data/legal-docs:ro
     depends_on:

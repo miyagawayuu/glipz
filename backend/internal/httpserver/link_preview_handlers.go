@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -30,6 +29,10 @@ func (s *Server) handleGetLinkPreview(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing_url"})
 		return
 	}
+	if s.linkPreviewRateLimitExceeded(r.Context(), r) {
+		writeLinkPreviewRateLimited(w)
+		return
+	}
 	u, err := validateLinkPreviewURL(r.Context(), raw)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_url"})
@@ -44,75 +47,15 @@ func (s *Server) handleGetLinkPreview(w http.ResponseWriter, r *http.Request) {
 }
 
 func validateLinkPreviewURL(ctx context.Context, raw string) (*url.URL, error) {
-	u, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil {
-		return nil, err
-	}
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return nil, fmt.Errorf("unsupported scheme")
-	}
-	if u.Host == "" || u.User != nil {
-		return nil, fmt.Errorf("invalid host")
-	}
-	if err := ensurePublicPreviewHost(ctx, u.Hostname()); err != nil {
-		return nil, err
-	}
-	return u, nil
+	return validatePublicOutboundURL(ctx, raw, true)
 }
 
 func ensurePublicPreviewHost(ctx context.Context, host string) error {
-	host = strings.TrimSpace(strings.Trim(host, "[]"))
-	if host == "" {
-		return fmt.Errorf("empty host")
-	}
-	lower := strings.ToLower(host)
-	if lower == "localhost" || strings.HasSuffix(lower, ".localhost") || strings.HasSuffix(lower, ".local") {
-		return fmt.Errorf("local host not allowed")
-	}
-	if ip := net.ParseIP(host); ip != nil {
-		if !isPublicPreviewIP(ip) {
-			return fmt.Errorf("private ip not allowed")
-		}
-		return nil
-	}
-	lookupCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-	addrs, err := net.DefaultResolver.LookupIPAddr(lookupCtx, host)
-	if err != nil || len(addrs) == 0 {
-		return fmt.Errorf("dns lookup failed")
-	}
-	for _, addr := range addrs {
-		if !isPublicPreviewIP(addr.IP) {
-			return fmt.Errorf("private ip not allowed")
-		}
-	}
-	return nil
-}
-
-func isPublicPreviewIP(ip net.IP) bool {
-	if ip == nil {
-		return false
-	}
-	return !(ip.IsLoopback() ||
-		ip.IsPrivate() ||
-		ip.IsLinkLocalMulticast() ||
-		ip.IsLinkLocalUnicast() ||
-		ip.IsMulticast() ||
-		ip.IsInterfaceLocalMulticast() ||
-		ip.IsUnspecified())
+	return ensurePublicOutboundHost(ctx, host)
 }
 
 func fetchLinkPreview(ctx context.Context, target *url.URL) (linkPreviewJSON, error) {
-	client := &http.Client{
-		Timeout: 6 * time.Second,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 4 {
-				return fmt.Errorf("too many redirects")
-			}
-			_, err := validateLinkPreviewURL(ctx, req.URL.String())
-			return err
-		},
-	}
+	client := newPublicOutboundHTTPClient(6 * time.Second)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
 	if err != nil {
 		return linkPreviewJSON{}, err

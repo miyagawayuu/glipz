@@ -6,6 +6,7 @@ import EmojiInline from "./EmojiInline.vue";
 import Icon from "./Icon.vue";
 import VideoEmbedCard from "./VideoEmbedCard.vue";
 import { fetchLinkPreview, type LinkPreview } from "../lib/linkPreview";
+import { safeHttpURL } from "../lib/redirect";
 import { extractPreviewUrls, parseRichText } from "../lib/richText";
 import { extractVideoEmbeds } from "../lib/videoEmbed";
 
@@ -83,6 +84,10 @@ const videoEmbeds = computed(() =>
 const previews = ref<LinkPreview[]>([]);
 let previewRequestId = 0;
 
+function safePreviewImageURL(raw: unknown): string {
+  return safeHttpURL(raw);
+}
+
 watch(
   () => [props.text, props.cardLimit, videoEmbeds.value.map((embed) => embed.url).join("\n")] as const,
   async ([text]) => {
@@ -158,8 +163,8 @@ watch(
         rel="noreferrer noopener"
         class="flex overflow-hidden rounded-2xl border border-neutral-200 bg-white transition hover:border-lime-300 hover:bg-lime-50/30"
       >
-        <div v-if="preview.image_url" class="hidden w-32 shrink-0 bg-neutral-100 sm:block">
-          <img :src="preview.image_url" alt="" class="h-full w-full object-cover" loading="lazy" />
+        <div v-if="safePreviewImageURL(preview.image_url)" class="hidden w-32 shrink-0 bg-neutral-100 sm:block">
+          <img :src="safePreviewImageURL(preview.image_url)" alt="" class="h-full w-full object-cover" loading="lazy" referrerpolicy="no-referrer" />
         </div>
         <div class="min-w-0 flex-1 p-4">
           <p v-if="preview.site_name" class="text-xs font-medium uppercase tracking-wide text-neutral-500">

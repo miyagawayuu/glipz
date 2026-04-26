@@ -1,4 +1,8 @@
 .env
+.env.*
+!.env.example
+.npmrc
+.npmrc.*
 web/.env.production
 node_modules
 dist
@@ -6,6 +10,9 @@ dist
 docs
 data/
 *.exe
+server
+backend/server
+.jj/
 
 # Capacitor / native app files
 # Keep Capacitor out of the GitHub-published repository.

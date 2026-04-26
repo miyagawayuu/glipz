@@ -16,6 +16,7 @@ Useful counters include:
 - `glipz_sse_active`
 - `glipz_media_proxy_bytes_total`
 - `glipz_federation_delivery_total`
+- `glipz_rate_limit_errors_total`
 
 Slow HTTP requests and slow DB-facing operations are also logged with duration fields.
 
@@ -108,13 +109,20 @@ DM realtime traffic is message and invite notification traffic only. WebRTC audi
 
 Watch `glipz_sse_active` and Redis client count. If SSE connections grow into the thousands, split stream-serving instances from general API instances.
 
+The server also caps SSE connection count to reduce accidental fan-out: public streams allow up to 3 concurrent connections per client IP, authenticated streams allow up to 12 per IP and 4 per user, and each stream is rotated after 30 minutes. These limits use local process counters plus Redis-backed shared counters when Redis is available. If `GLIPZ_AUTH_RATE_LIMIT_FAIL_CLOSED=true`, Redis errors during shared SSE slot acquisition reject new streams instead of failing open.
+
 ## Load Test
 
 Use `k6-load-test.js` for a basic staged test:
 
 ```bash
-k6 run -e BASE_URL=https://your-instance.example -e TOKEN="$TOKEN" k6-load-test.js
+k6 run -e BASE_URL=https://staging.example -e ALLOW_NON_LOCAL_LOAD_TEST=true -e TOKEN="$TOKEN" k6-load-test.js
 ```
+
+The script refuses non-local `BASE_URL` values unless
+`ALLOW_NON_LOCAL_LOAD_TEST=true` is set. Use that flag only for staging or a
+production-like environment you are allowed to test; do not point the first run
+at a live production instance.
 
 When testing the local Docker Compose stack, run k6 on the Compose network so traffic goes directly to the backend container instead of through Docker Desktop's host port forwarding:
 
@@ -122,6 +130,7 @@ When testing the local Docker Compose stack, run k6 on the Compose network so tr
 $env:GLIPZ_LOAD_TOKEN="glpat_..."
 docker run --rm --network glipz_default -v "D:\glipz:/scripts" `
   -e BASE_URL=http://backend:8080 `
+  -e ALLOW_NON_LOCAL_LOAD_TEST=true `
   -e TOKEN=$env:GLIPZ_LOAD_TOKEN `
   -e SLEEP_SECONDS=1 `
   -e NOTIFICATIONS_EVERY=5 `

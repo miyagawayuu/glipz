@@ -18,6 +18,7 @@ import { avatarInitials, fullHandleAt, postDetailPath } from "../lib/feedDisplay
 import { buildComposerReplyQuery, composeRoutePath } from "../lib/postComposer";
 import { bumpMeHub } from "../meHub";
 import { createDMThread, inviteDMPeer } from "../lib/dm";
+import { safeHttpURL, safeMediaURL } from "../lib/redirect";
 
 let cropperInstance: InstanceType<typeof Cropper> | null = null;
 
@@ -43,6 +44,15 @@ type Profile = {
 };
 
 const { t } = useI18n();
+
+function safeHeaderStyle(raw: unknown): Record<string, string> {
+  const url = safeHttpURL(raw);
+  return url ? { backgroundImage: `url("${url}")`, backgroundSize: "cover", backgroundPosition: "center" } : {};
+}
+
+function safeProfileImageURL(raw: unknown): string {
+  return safeHttpURL(raw);
+}
 const route = useRoute();
 const router = useRouter();
 
@@ -183,9 +193,10 @@ async function loadMeEmail() {
 }
 
 function openLightbox(urls: string[], startIndex: number) {
-  if (!urls.length) return;
-  const i = Math.max(0, Math.min(startIndex, urls.length - 1));
-  lightbox.value = { urls, index: i };
+  const safeURLs = urls.map((url) => safeMediaURL(url)).filter(Boolean);
+  if (!safeURLs.length) return;
+  const i = Math.max(0, Math.min(startIndex, safeURLs.length - 1));
+  lightbox.value = { urls: safeURLs, index: i };
 }
 
 function closeLightbox() {
@@ -893,7 +904,7 @@ watch(handleParam, () => void loadAll());
         <div
           class="group relative h-36 w-full overflow-hidden bg-gradient-to-br from-lime-200 via-lime-100 to-neutral-200 sm:h-44"
           :class="profile.is_me ? 'cursor-pointer' : ''"
-          :style="profile.header_url ? `background-image: url(${profile.header_url}); background-size: cover; background-position: center` : ''"
+          :style="safeHeaderStyle(profile.header_url)"
         >
           <template v-if="profile.is_me">
             <input
@@ -924,9 +935,10 @@ watch(handleParam, () => void loadAll());
               :class="profile.is_me ? 'cursor-pointer' : ''"
             >
               <img
-                v-if="profile.avatar_url"
-                :src="profile.avatar_url"
+                v-if="safeProfileImageURL(profile.avatar_url)"
+                :src="safeProfileImageURL(profile.avatar_url)"
                 alt=""
+                referrerpolicy="no-referrer"
                 class="h-full w-full object-cover"
               />
               <span v-else>{{ avatarInitials(profile.email ?? profile.display_name) }}</span>

@@ -139,11 +139,8 @@ func isAllowedRemoteMediaContentType(raw string) bool {
 func copyRemoteMediaProxyHeaders(w http.ResponseWriter, h http.Header) {
 	for _, name := range []string{
 		"Content-Type",
-		"Content-Length",
-		"Content-Range",
 		"ETag",
 		"Last-Modified",
-		"Accept-Ranges",
 	} {
 		if v := strings.TrimSpace(h.Get(name)); v != "" {
 			w.Header().Set(name, v)
@@ -156,6 +153,7 @@ func copyRemoteMediaProxyHeaders(w http.ResponseWriter, h http.Header) {
 	}
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
+	w.Header().Set("Accept-Ranges", "none")
 }
 
 func (s *Server) handlePublicRemoteMediaProxy(w http.ResponseWriter, r *http.Request) {
@@ -174,8 +172,12 @@ func (s *Server) handlePublicRemoteMediaProxy(w http.ResponseWriter, r *http.Req
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_url_scheme"})
 		return
 	}
-	if !isSafeRemoteHost(u.Hostname()) {
+	if _, err := validatePublicOutboundURL(r.Context(), u.String(), true); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_remote_host"})
+		return
+	}
+	if s.remoteMediaRateLimitExceeded(r.Context(), r) {
+		writeRemoteMediaRateLimited(w)
 		return
 	}
 	u.Fragment = ""
@@ -193,7 +195,9 @@ func (s *Server) handlePublicRemoteMediaProxy(w http.ResponseWriter, r *http.Req
 		req.Header.Set("Accept", "image/*,video/*,audio/*,*/*;q=0.1")
 	}
 	if rg := strings.TrimSpace(r.Header.Get("Range")); rg != "" {
-		req.Header.Set("Range", rg)
+		w.Header().Set("Accept-Ranges", "none")
+		w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+		return
 	}
 
 	res, err := federationHTTP.Do(req)
@@ -206,6 +210,11 @@ func (s *Server) handlePublicRemoteMediaProxy(w http.ResponseWriter, r *http.Req
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "fetch_failed"})
 		return
 	}
+	maxBytes := s.cfg.RemoteMediaProxyMaxBytes
+	if responseContentLengthExceeds(res.Header, maxBytes) {
+		writeJSON(w, http.StatusRequestEntityTooLarge, map[string]string{"error": "remote_media_too_large"})
+		return
+	}
 	if !isAllowedRemoteMediaContentType(res.Header.Get("Content-Type")) {
 		writeJSON(w, http.StatusUnsupportedMediaType, map[string]string{"error": "unsupported_media_type"})
 		return
@@ -216,7 +225,15 @@ func (s *Server) handlePublicRemoteMediaProxy(w http.ResponseWriter, r *http.Req
 	if r.Method == http.MethodHead {
 		return
 	}
-	n, _ := io.Copy(w, res.Body)
+	n, exceeded, err := copyWithMaxBytes(w, res.Body, maxBytes)
+	if exceeded {
+		addMediaProxyBytes("remote_truncated", n)
+		return
+	}
+	if err != nil {
+		addMediaProxyBytes("remote_error", n)
+		return
+	}
 	addMediaProxyBytes("remote", n)
 }
 

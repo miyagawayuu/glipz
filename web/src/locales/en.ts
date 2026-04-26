@@ -1238,6 +1238,7 @@ export const enOverrides: DeepPartial<AppMessageSchema> = {
         twoFactorDisabled: "Not set up",
         uuidLabel: "UUID:",
         mfa: {
+          passwordLabel: "Current password",
           setupButton: "Start 2FA setup",
           setupIntro: "In your authenticator app (Google Authenticator, Microsoft Authenticator, etc.), scan the QR code below or enter the secret manually.",
           qrAlt: "QR code for 2FA enrollment",

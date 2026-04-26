@@ -1,3 +1,5 @@
+import { apiBase } from "./api";
+
 export type DMSealedBox = {
   iv: string;
   data: string;
@@ -34,6 +36,7 @@ export type DMEncryptedAttachmentDraft = {
 };
 
 const DM_PRIVATE_KEY_KDF_ITERATIONS = 250000;
+const DM_PRIVATE_KEY_KDF_MIN_ITERATIONS = 250000;
 
 function bytesToBase64(bytes: ArrayBuffer | Uint8Array): string {
   const arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
@@ -47,6 +50,10 @@ function base64ToBytes(value: string): Uint8Array {
   const out = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i += 1) out[i] = binary.charCodeAt(i);
   return out;
+}
+
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 }
 
 async function importPublicKey(jwk: JsonWebKey): Promise<CryptoKey> {
@@ -88,7 +95,7 @@ async function encryptBytesWithPublicKey(
 ): Promise<DMSealedBox> {
   const key = await derivePairKey(privateJwk, publicJwk);
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, data);
+  const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv: toArrayBuffer(iv) }, key, toArrayBuffer(data));
   return {
     iv: bytesToBase64(iv),
     data: bytesToBase64(encrypted),
@@ -102,9 +109,9 @@ async function decryptBytesWithPublicKey(
 ): Promise<Uint8Array> {
   const key = await derivePairKey(privateJwk, publicJwk);
   const decrypted = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: base64ToBytes(box.iv) },
+    { name: "AES-GCM", iv: toArrayBuffer(base64ToBytes(box.iv)) },
     key,
-    base64ToBytes(box.data),
+    toArrayBuffer(base64ToBytes(box.data)),
   );
   return new Uint8Array(decrypted);
 }
@@ -137,6 +144,20 @@ export async function createLocalDMIdentity(): Promise<DMLocalIdentity> {
 export function samePublicJwk(a: JsonWebKey | null | undefined, b: JsonWebKey | null | undefined): boolean {
   if (!a || !b) return false;
   return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function canonicalPublicJwk(jwk: JsonWebKey): string {
+  return JSON.stringify({
+    crv: jwk.crv || "",
+    kty: jwk.kty || "",
+    x: jwk.x || "",
+    y: jwk.y || "",
+  });
+}
+
+export async function publicJwkFingerprint(jwk: JsonWebKey): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonicalPublicJwk(jwk)));
+  return bytesToBase64(digest).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
 export async function encryptPrivateJwkForPassphrase(
@@ -180,13 +201,20 @@ export async function decryptPrivateJwkFromPassphrase(
   if (!backup?.salt || !backup?.iv || !backup?.data) {
     throw new Error("invalid_backup");
   }
+  if (backup.kdf !== "PBKDF2" || backup.hash !== "SHA-256") {
+    throw new Error("unsupported_backup_kdf");
+  }
+  const iterations = Number(backup.iterations);
+  if (!Number.isFinite(iterations) || iterations < DM_PRIVATE_KEY_KDF_MIN_ITERATIONS) {
+    throw new Error("weak_backup_kdf");
+  }
   const baseKey = await importPassphraseBaseKey(passphrase);
   const key = await crypto.subtle.deriveKey(
     {
       name: "PBKDF2",
-      salt: base64ToBytes(backup.salt),
-      iterations: Number(backup.iterations) || DM_PRIVATE_KEY_KDF_ITERATIONS,
-      hash: backup.hash || "SHA-256",
+      salt: toArrayBuffer(base64ToBytes(backup.salt)),
+      iterations,
+      hash: "SHA-256",
     },
     baseKey,
     { name: "AES-GCM", length: 256 },
@@ -194,9 +222,9 @@ export async function decryptPrivateJwkFromPassphrase(
     ["decrypt"],
   );
   const decrypted = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: base64ToBytes(backup.iv) },
+    { name: "AES-GCM", iv: toArrayBuffer(base64ToBytes(backup.iv)) },
     key,
-    base64ToBytes(backup.data),
+    toArrayBuffer(base64ToBytes(backup.data)),
   );
   return JSON.parse(new TextDecoder().decode(decrypted)) as JsonWebKey;
 }
@@ -266,10 +294,38 @@ export async function decryptDMAttachmentToBlob(
   peerPublicJwk: JsonWebKey,
   sentByMe: boolean,
 ): Promise<Blob> {
+  if (!isAllowedDMAttachmentURL(attachment.public_url)) {
+    throw new Error("attachment_url_not_allowed");
+  }
   const res = await fetch(attachment.public_url, { method: "GET" });
   if (!res.ok) throw new Error("attachment_fetch_failed");
   const encryptedFile = await res.arrayBuffer();
   return decryptDMAttachmentBytesToBlob(attachment, encryptedFile, selfIdentity, peerPublicJwk, sentByMe);
+}
+
+export function isAllowedDMAttachmentURL(raw: string): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const u = new URL(raw, window.location.origin);
+    const allowedOrigins = new Set([window.location.origin]);
+    const base = apiBase();
+    if (base) {
+      allowedOrigins.add(new URL(base, window.location.origin).origin);
+    }
+    const extraBaseURLs = String(import.meta.env.VITE_ALLOWED_DM_ATTACHMENT_BASE_URLS || "")
+      .split(",")
+      .map((baseURL) => baseURL.trim())
+      .filter(Boolean);
+    for (const baseURL of extraBaseURLs) {
+      const base = new URL(baseURL);
+      const basePath = base.pathname.endsWith("/") ? base.pathname : `${base.pathname}/`;
+      if (basePath === "/") continue;
+      if (base.protocol === "https:" && u.origin === base.origin && u.pathname.startsWith(basePath)) return true;
+    }
+    return allowedOrigins.has(u.origin) && u.pathname.startsWith("/api/v1/media/object/");
+  } catch {
+    return false;
+  }
 }
 
 export async function decryptDMAttachmentBytesToBlob(
@@ -288,9 +344,9 @@ export async function decryptDMAttachmentBytesToBlob(
   const box = sentByMe ? attachment.sender_key_box : attachment.recipient_key_box;
   const keyPublicJwk = sentByMe ? selfIdentity.publicJwk : peerPublicJwk;
   const rawKey = await decryptBytesWithPublicKey(selfIdentity.privateJwk, keyPublicJwk, box);
-  const key = await crypto.subtle.importKey("raw", rawKey, { name: "AES-GCM" }, false, ["decrypt"]);
+  const key = await crypto.subtle.importKey("raw", toArrayBuffer(rawKey), { name: "AES-GCM" }, false, ["decrypt"]);
   const decrypted = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: base64ToBytes(attachment.file_iv) },
+    { name: "AES-GCM", iv: toArrayBuffer(base64ToBytes(attachment.file_iv)) },
     key,
     encryptedFile,
   );

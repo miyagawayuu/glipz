@@ -2,7 +2,7 @@ package httpserver
 
 import (
 	"errors"
-	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -50,8 +50,12 @@ func (s *Server) handleFederationDMAttachmentProxy(w http.ResponseWriter, r *htt
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_acct"})
 		return
 	}
-	if !strings.EqualFold(strings.TrimSpace(u.Host), strings.TrimSpace(host)) {
+	if !strings.EqualFold(strings.TrimSpace(u.Hostname()), strings.TrimSpace(host)) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "url_host_mismatch"})
+		return
+	}
+	if _, err := validatePublicOutboundURL(r.Context(), u.String(), true); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_remote_host"})
 		return
 	}
 
@@ -74,6 +78,11 @@ func (s *Server) handleFederationDMAttachmentProxy(w http.ResponseWriter, r *htt
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "fetch_failed"})
 		return
 	}
+	maxBytes := s.cfg.FederationDMAttachmentMaxBytes
+	if responseContentLengthExceeds(res.Header, maxBytes) {
+		writeJSON(w, http.StatusRequestEntityTooLarge, map[string]string{"error": "attachment_too_large"})
+		return
+	}
 
 	// Same-origin response. Avoid caching since this is user-scoped.
 	w.Header().Set("Cache-Control", "no-store")
@@ -82,14 +91,17 @@ func (s *Server) handleFederationDMAttachmentProxy(w http.ResponseWriter, r *htt
 		// Keep remote content-type if present.
 		w.Header().Set("Content-Type", ct)
 	}
-	if cl := strings.TrimSpace(res.Header.Get("Content-Length")); cl != "" {
-		w.Header().Set("Content-Length", cl)
-	}
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'")
 	w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
 	w.Header().Set("Date", time.Now().UTC().Format(time.RFC1123))
 
-	_, _ = io.Copy(w, res.Body)
+	n, exceeded, err := copyWithMaxBytes(w, res.Body, maxBytes)
+	if exceeded {
+		log.Printf("federation dm attachment proxy exceeded limit: url_host=%s bytes=%d max=%d", u.Hostname(), n, maxBytes)
+		return
+	}
+	if err != nil {
+		log.Printf("federation dm attachment proxy copy error: url_host=%s bytes=%d err=%v", u.Hostname(), n, err)
+	}
 }
-

@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { getAccessToken } from "../auth";
 import { applyDocumentTitle } from "../i18n";
+import { api } from "../lib/api";
 import { isNativeApp } from "../lib/runtime";
 
 export const router = createRouter({
@@ -204,9 +205,21 @@ export const router = createRouter({
   ],
 });
 
-router.beforeEach((to) => {
-  if (to.meta.requiresAuth && !getAccessToken()) {
+router.beforeEach(async (to) => {
+  const token = getAccessToken();
+  if (to.meta.requiresAuth && !token) {
     return { path: "/login", query: { next: to.fullPath } };
+  }
+  if (to.meta.requiresAdmin) {
+    if (!token) {
+      return { path: "/login", query: { next: to.fullPath } };
+    }
+    try {
+      const me = await api<{ is_site_admin?: boolean }>("/api/v1/me", { method: "GET", token });
+      if (!me.is_site_admin) return { path: "/feed" };
+    } catch {
+      return { path: "/feed" };
+    }
   }
   return true;
 });

@@ -93,13 +93,15 @@ Create a production `.env` file:
 ```env
 # === Required ===
 
-JWT_SECRET=your-very-long-random-secret
+# Generate with: openssl rand -base64 48
+JWT_SECRET=
 
-DATABASE_URL=postgres://glipz:password@db-host:5432/glipz?sslmode=disable
+DATABASE_URL=postgres://glipz:password@db-host:5432/glipz?sslmode=require
 REDIS_URL=redis://redis-host:6379/0
 
 GLIPZ_STORAGE_MODE=local
-GLIPZ_LOCAL_STORAGE_PATH=/var/lib/glipz/media
+GLIPZ_LOCAL_STORAGE_PATH=/app/data/media
+LEGAL_DOCS_DIR=/app/data/legal-docs
 
 # Or, for S3-compatible storage:
 # GLIPZ_STORAGE_MODE=s3
@@ -118,10 +120,17 @@ GLIPZ_PROTOCOL_PUBLIC_ORIGIN=https://your-domain.com
 GLIPZ_PROTOCOL_HOST=your-domain.com
 GLIPZ_PROTOCOL_MEDIA_PUBLIC_BASE=https://your-domain.com/api/v1/media/object
 
+# If you serve the API on a separate subdomain, use values like:
+# FRONTEND_ORIGIN=https://your-domain.com
+# GLIPZ_PROTOCOL_PUBLIC_ORIGIN=https://api.your-domain.com
+# GLIPZ_PROTOCOL_HOST=your-domain.com
+# GLIPZ_PROTOCOL_MEDIA_PUBLIC_BASE=https://api.your-domain.com/api/v1/media/object
+
 # === Email (Mailgun example) ===
 
 MAILGUN_DOMAIN=your-domain.com
 MAILGUN_API_KEY=key-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+# MAILGUN_API_BASE=https://api.eu.mailgun.net
 MAIL_FROM_EMAIL=no-reply@your-domain.com
 MAIL_FROM_NAME=Glipz
 
@@ -152,13 +161,48 @@ MAIL_FROM_NAME=Glipz
 | `GLIPZ_LOCAL_STORAGE_PATH` | Local media directory; back it up if using `GLIPZ_STORAGE_MODE=local` |
 | `GLIPZ_ADMIN_USER_IDS` | Built-in moderation / admin API access and `/admin` control panel access |
 | `LEGAL_DOCS_DIR` | Optional directory for editable `terms.md`, `privacy.md`, and `nsfw-guidelines.md` |
+| `GLIPZ_TRUST_PROXY_HEADERS` | Set to `true` only when your reverse proxy always overwrites `X-Real-IP` / `X-Forwarded-For` and the backend cannot be reached directly |
+| `GLIPZ_AUTH_RATE_LIMIT_FAIL_CLOSED` | Optional stricter mode that rejects login/MFA attempts when Redis rate limit checks fail |
+| `GLIPZ_REMOTE_MEDIA_PROXY_RATE_LIMIT_MAX` | Public remote-media proxy requests allowed per IP per 15 minutes; defaults to `120` |
+| `GLIPZ_REMOTE_MEDIA_PROXY_RATE_LIMIT_FAIL_CLOSED` | Optional stricter mode that rejects public remote-media proxy requests when Redis rate limit writes fail |
+| `GLIPZ_REMOTE_MEDIA_PROXY_MAX_BYTES` | Maximum bytes streamed by the public remote-media proxy; defaults to `52428800` |
+| `GLIPZ_FEDERATION_DM_ATTACHMENT_MAX_BYTES` | Maximum bytes streamed by the authenticated federated DM attachment proxy; defaults to `52428800` |
+| `GLIPZ_LINK_PREVIEW_RATE_LIMIT_MAX` | Public link-preview requests allowed per IP/user per 15 minutes; defaults to `60` |
+| `GLIPZ_LINK_PREVIEW_RATE_LIMIT_FAIL_CLOSED` | Optional stricter mode that rejects link-preview requests when Redis rate limit writes fail |
+| `GLIPZ_FEDERATION_INBOX_RATE_LIMIT_FAIL_CLOSED` | Optional stricter mode that rejects federation inbox POSTs when Redis rate limit writes fail |
+| `GLIPZ_FEDERATION_DELIVERY_*` | Outbound federation delivery batch size, worker concurrency, and tick interval |
 | `PATREON_ENABLED` | Enables Patreon UI/routes; defaults to disabled |
 | `PATREON_*` | Patreon OAuth credentials; required when Patreon is enabled, and redirect URI must match your public API origin |
 | `GUMROAD_ENABLED` | Enables Gumroad license-key locks; defaults to disabled and requires no server secret |
 | `PAYPAL_ENABLED` | Enables PayPal payment UI/routes; defaults to disabled |
 | `PAYPAL_*` | PayPal REST app and webhook credentials; required when PayPal is enabled |
+| `MAILGUN_API_BASE` | Optional Mailgun regional API base, for example `https://api.eu.mailgun.net` |
 
-The production image is built from the **repository root** with `backend/Dockerfile` (see [docker-compose.yml](docker-compose.yml)): it runs `npm ci` / `npm run build` in `web/` on **Node 22**, then compiles the Go server with **Go 1.22**, and sets `STATIC_WEB_ROOT=/app/web/dist` by default.
+Use `sslmode=require` or stronger for production PostgreSQL connections unless
+the database connection is protected by an equivalent private TLS tunnel. Keep
+`sslmode=disable` for local development only.
+
+Rate limit checks use Redis. The default fail-open behavior preserves
+availability during Redis outages, but public internet deployments that prefer
+abuse resistance should consider enabling:
+
+```env
+GLIPZ_AUTH_RATE_LIMIT_FAIL_CLOSED=true
+GLIPZ_REMOTE_MEDIA_PROXY_RATE_LIMIT_FAIL_CLOSED=true
+GLIPZ_LINK_PREVIEW_RATE_LIMIT_FAIL_CLOSED=true
+GLIPZ_FEDERATION_INBOX_RATE_LIMIT_FAIL_CLOSED=true
+```
+
+Enable fail-closed mode together with Redis health checks and alerting, because
+Redis outages will reject the protected flows instead of allowing them through.
+
+The production image is built from the **repository root** with `backend/Dockerfile` (see [docker-compose.yml](docker-compose.yml)): it runs `npm ci` / `npm run build` in `web/` on **Node 22**, then compiles the Go server with **Go 1.26.2**, and sets `STATIC_WEB_ROOT=/app/web/dist` by default.
+
+When using CDN or direct object-storage media URLs, also set the frontend build-time allowlists in `web/.env.production`: `VITE_ALLOWED_MEDIA_BASE_URLS` for rendered media and `VITE_ALLOWED_DM_ATTACHMENT_BASE_URLS` for encrypted DM attachments. Use exact HTTPS path prefixes such as `https://cdn.example.com/media/`; root origins are rejected by the frontend safety checks.
+
+Provider callback URLs use the API public origin, not necessarily the frontend origin. For example, Patreon callbacks and PayPal return/webhook URLs should be based on `GLIPZ_PROTOCOL_PUBLIC_ORIGIN`.
+
+Mailgun's default API base works for the US region. Set `MAILGUN_API_BASE` when your Mailgun domain uses a regional API endpoint such as the EU region.
 
 ---
 
@@ -173,17 +217,45 @@ This builds:
 - The Vue frontend
 - Serves frontend from `/app/web/dist`
 
+For production releases, pin and verify base image digests in CI instead of
+relying only on mutable tags. For example:
+
+```bash
+docker buildx imagetools inspect node:22-alpine
+docker buildx imagetools inspect golang:1.26.2-alpine
+docker buildx imagetools inspect alpine:3.20
+docker buildx imagetools inspect postgres:16-alpine
+docker buildx imagetools inspect redis:7-alpine
+```
+
+Then use the reviewed `@sha256:...` references in the release Dockerfile or
+release compose overlay. Keep `web/Dockerfile` out of production publishing; it
+is a development-only Vite server image.
+
 ---
 
 ## Step 4: Run the Container
+
+Prepare writable host directories for the non-root `glipz` user used inside the
+container:
+
+```bash
+sudo mkdir -p /var/lib/glipz/media /var/lib/glipz/legal-docs
+sudo chown -R 10001:10001 /var/lib/glipz/media
+sudo chown -R 10001:10001 /var/lib/glipz/legal-docs
+```
+
+On shared hosts, prefer ownership or a dedicated read-only group for
+`legal-docs`. `chmod -R a+rX /var/lib/glipz/legal-docs` is only a simple
+single-purpose-host fallback.
 
 ```bash
 docker run -d \
   --name glipz \
   --restart unless-stopped \
   --env-file .env \
-  -v /var/lib/glipz/media:/var/lib/glipz/media \
-  -v /var/lib/glipz/legal-docs:/var/lib/glipz/legal-docs:ro \
+  -v /var/lib/glipz/media:/app/data/media \
+  -v /var/lib/glipz/legal-docs:/app/data/legal-docs:ro \
   -p 127.0.0.1:8080:8080 \
   glipz:latest
 ```
@@ -191,7 +263,7 @@ docker run -d \
 > **Important**: Only expose port 8080 to localhost. Access through your reverse proxy.
 > If you use `GLIPZ_STORAGE_MODE=s3`, the media volume mount is not required.
 
-For editable legal pages, set `LEGAL_DOCS_DIR=/var/lib/glipz/legal-docs` and
+For editable legal pages, set `LEGAL_DOCS_DIR=/app/data/legal-docs` and
 place `terms.md`, `privacy.md`, and `nsfw-guidelines.md` in that directory.
 Locale-specific files such as `terms.ja.md` or `terms.en.md` take precedence.
 
@@ -220,6 +292,12 @@ server {
 
     client_max_body_size 100m;
 
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob: https:; connect-src 'self'; frame-src https://www.youtube-nocookie.com https://player.vimeo.com https://www.dailymotion.com https://www.loom.com https://streamable.com https://fast.wistia.net https://player.bilibili.com https://www.tiktok.com https://store.steampowered.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
     # SSE endpoints - disable buffering (authenticated + public streams)
     location ~ ^/api/v1/(posts/feed/stream|notifications/stream|dm/stream|public/posts/feed/stream|public/federation/incoming/stream)$ {
         proxy_pass http://127.0.0.1:8080;
@@ -229,7 +307,8 @@ server {
         proxy_read_timeout 1h;
         proxy_send_timeout 1h;
         proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto $scheme;
         add_header X-Accel-Buffering no;
     }
@@ -239,11 +318,22 @@ server {
         proxy_pass http://127.0.0.1:8080;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
 ```
+
+If you enable `GLIPZ_TRUST_PROXY_HEADERS=true`, keep the backend bound to
+`127.0.0.1` or a private network and make sure the proxy overwrites
+`X-Real-IP` and `X-Forwarded-For` as shown above. Do not pass through
+client-supplied forwarding headers.
+
+The backend sets security headers when they are not already present, including
+`Content-Security-Policy`, `Referrer-Policy`, `Permissions-Policy`,
+`X-Content-Type-Options`, and `X-Frame-Options`. The examples above pin them at
+the proxy so operators can audit and adjust policy in one place.
 
 ### Caddy
 
@@ -252,6 +342,15 @@ your-domain.com {
     encode gzip zstd
     request_body {
         max_size 100MB
+    }
+
+    header {
+        Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob: https:; connect-src 'self'; frame-src https://www.youtube-nocookie.com https://player.vimeo.com https://www.dailymotion.com https://www.loom.com https://streamable.com https://fast.wistia.net https://player.bilibili.com https://www.tiktok.com https://store.steampowered.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
     }
 
     @sse path_regexp ^/api/v1/(posts/feed/stream|notifications/stream|dm/stream|public/posts/feed/stream|public/federation/incoming/stream)$
@@ -276,8 +375,8 @@ Ensure these paths are proxied correctly:
 | `/api/v1/dm/stream` | SSE direct messages |
 | `/api/v1/public/posts/feed/stream` | Public SSE feed (no auth; configure caching carefully) |
 | `/api/v1/public/federation/incoming/stream` | Public SSE federated incoming stream |
-| `/.well-known/*` | Federation discovery |
-| `/ap/*` | Federation endpoints |
+| `/.well-known/glipz-federation` | Glipz Federation discovery |
+| `/federation/*` | Glipz Federation endpoints |
 
 ---
 

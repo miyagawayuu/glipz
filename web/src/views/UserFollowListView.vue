@@ -7,6 +7,7 @@ import UserBadges from "../components/UserBadges.vue";
 import { getAccessToken } from "../auth";
 import { api } from "../lib/api";
 import { avatarInitials, fullHandleAt } from "../lib/feedDisplay";
+import { safeHttpURL } from "../lib/redirect";
 
 type FollowUserRow = {
   handle: string;
@@ -23,6 +24,10 @@ type FollowUserRow = {
 const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
+
+function safeAvatarURL(raw: unknown): string {
+  return safeHttpURL(raw);
+}
 
 const handleParam = computed(() =>
   String(route.params.handle ?? "")
@@ -149,7 +154,7 @@ watch(
             <div
               class="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-neutral-200 text-sm font-bold text-neutral-700"
             >
-              <img v-if="it.avatar_url" :src="it.avatar_url" alt="" class="h-full w-full object-cover" />
+              <img v-if="safeAvatarURL(it.avatar_url)" :src="safeAvatarURL(it.avatar_url)" alt="" referrerpolicy="no-referrer" class="h-full w-full object-cover" />
               <span v-else>{{ avatarInitials(it.display_name || it.handle) }}</span>
             </div>
             <div class="min-w-0 flex-1">

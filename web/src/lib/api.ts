@@ -1,70 +1,42 @@
 /** Empty means same-origin, for example :5173, and requests reach the backend through Vite's /api proxy. */
 import { translate } from "../i18n";
+import { COOKIE_AUTH_TOKEN } from "../auth";
 import { isNativeApp } from "./runtime";
 
-const API_BASE_STORAGE_KEY = "glipz_api_base";
-
-function normalizeApiDomainInput(raw: string): string {
+function normalizeApiOrigin(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) return "";
-
-  // Accept inputs like:
-  // - example.com
-  // - example.com:8443
-  // - https://example.com (we'll strip scheme)
-  // - example.com/path (we'll drop path/query/hash)
   const withScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed) ? trimmed : `https://${trimmed}`;
   const u = new URL(withScheme);
-  if (!u.hostname) return "";
-
-  const host = u.port ? `${u.hostname}:${u.port}` : u.hostname;
-  return host;
+  if (u.protocol !== "https:" || !u.hostname || u.username || u.password) return "";
+  return u.origin.replace(/\/+$/, "");
 }
 
 export function readStoredApiBase(): string {
-  if (typeof window === "undefined") return "";
-  if (!isNativeApp()) return "";
-  try {
-    const v = window.localStorage.getItem(API_BASE_STORAGE_KEY);
-    if (typeof v !== "string") return "";
-    return normalizeApiDomainInput(v);
-  } catch {
-    return "";
-  }
+  return "";
 }
 
 export function writeStoredApiBase(next: string): string {
-  const normalized = normalizeApiDomainInput(next);
-  if (typeof window === "undefined") return normalized;
-  if (!isNativeApp()) return normalized;
-  try {
-    if (!normalized) {
-      window.localStorage.removeItem(API_BASE_STORAGE_KEY);
-      return "";
-    }
-    window.localStorage.setItem(API_BASE_STORAGE_KEY, normalized);
-    return normalized;
-  } catch {
-    return normalized;
-  }
+  void next;
+  return "";
 }
 
 export function clearStoredApiBase(): void {
-  if (typeof window === "undefined") return;
-  if (!isNativeApp()) return;
-  try {
-    window.localStorage.removeItem(API_BASE_STORAGE_KEY);
-  } catch {
-    /* ignore */
-  }
+  /* API origin is fixed at build time. */
 }
 
 /** Instance domain for display purposes, avoiding Capacitor's localhost origin. */
 export function displayInstanceDomain(): string {
   if (typeof window === "undefined") return "";
 
-  const apiDomain = readStoredApiBase();
-  if (apiDomain) return apiDomain;
+  const base = apiBase();
+  if (base) {
+    try {
+      return new URL(base).host;
+    } catch {
+      /* ignore */
+    }
+  }
 
   const host = window.location.host || "";
   const hostname = window.location.hostname || "";
@@ -79,11 +51,15 @@ function warnIfCrossOriginApiBase(base: string): void {
 }
 
 export function apiBase(): string {
-  const stored = readStoredApiBase();
-  if (stored) {
-    const b = `https://${stored}`;
-    warnIfCrossOriginApiBase(b);
-    return b;
+  if (isNativeApp()) {
+    const nativeURL = import.meta.env.VITE_NATIVE_API_URL;
+    if (typeof nativeURL === "string" && nativeURL.trim() !== "") {
+      const b = normalizeApiOrigin(nativeURL);
+      if (b) {
+        warnIfCrossOriginApiBase(b);
+        return b;
+      }
+    }
   }
   const v = import.meta.env.VITE_API_URL;
   if (typeof v === "string" && v.trim() !== "") {
@@ -96,6 +72,32 @@ export function apiBase(): string {
 
 export type ApiError = { error: string };
 
+const CSRF_COOKIE = "glipz_csrf";
+
+function csrfToken(): string {
+  if (typeof document === "undefined") return "";
+  const prefix = `${CSRF_COOKIE}=`;
+  for (const part of document.cookie.split(";")) {
+    const trimmed = part.trim();
+    if (trimmed.startsWith(prefix)) return decodeURIComponent(trimmed.slice(prefix.length));
+  }
+  return "";
+}
+
+function isMutatingMethod(method: string | undefined): boolean {
+  const m = (method || "GET").toUpperCase();
+  return m !== "GET" && m !== "HEAD" && m !== "OPTIONS" && m !== "TRACE";
+}
+
+export function applyBrowserAuth(init: RequestInit = {}): RequestInit {
+  const headers = new Headers(init.headers);
+  if (isMutatingMethod(init.method)) {
+    const csrf = csrfToken();
+    if (csrf) headers.set("X-CSRF-Token", csrf);
+  }
+  return { ...init, credentials: "include", headers };
+}
+
 export async function api<T>(
   path: string,
   init?: RequestInit & { token?: string; json?: unknown },
@@ -105,13 +107,14 @@ export async function api<T>(
     headers.set("Content-Type", "application/json");
   }
   if (init?.token) {
-    headers.set("Authorization", `Bearer ${init.token}`);
+    if (init.token !== COOKIE_AUTH_TOKEN) headers.set("Authorization", `Bearer ${init.token}`);
   }
-  const res = await fetch(`${apiBase()}${path}`, {
+  const requestInit = applyBrowserAuth({
     ...init,
     headers,
     body: init?.json !== undefined ? JSON.stringify(init.json) : init?.body,
   });
+  const res = await fetch(`${apiBase()}${path}`, requestInit);
   const data = (await res.json().catch(() => ({}))) as T & ApiError;
   if (!res.ok) {
     const err = new Error((data as ApiError).error || res.statusText);
@@ -124,6 +127,7 @@ export async function api<T>(
 export async function apiPublicGet<T>(path: string): Promise<T> {
   const res = await fetch(`${apiBase()}${path}`, {
     method: "GET",
+    credentials: "include",
     headers: { Accept: "application/json" },
   });
   const data = (await res.json().catch(() => ({}))) as T & ApiError;
@@ -156,7 +160,8 @@ export async function uploadMediaFile(token: string, file: File): Promise<MediaU
   fd.append("file", file, file.name);
   const res = await fetch(`${apiBase()}/api/v1/media/upload`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
+    credentials: "include",
+    headers: applyBrowserAuth({ method: "POST" }).headers,
     body: fd,
   });
   const data = (await res.json().catch(() => ({}))) as MediaUploadResponse & ApiError;

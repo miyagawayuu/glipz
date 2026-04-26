@@ -129,6 +129,9 @@ func fetchRemoteFederationDiscovery(ctx context.Context, host string) (federatio
 	if host == "" {
 		return federationAccountDiscovery{}, errResolveBadInput
 	}
+	if err := ensurePublicOutboundHost(ctx, host); err != nil {
+		return federationAccountDiscovery{}, err
+	}
 	rawURL := fmt.Sprintf("https://%s/.well-known/glipz-federation", host)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
@@ -159,6 +162,9 @@ func fetchRemoteFederationDiscovery(ctx context.Context, host string) (federatio
 func fetchRemoteFederationAccount(ctx context.Context, acct string) (federationAccountDiscovery, error) {
 	user, host, err := splitAcct(strings.TrimPrefix(strings.TrimSpace(acct), "@"))
 	if err != nil {
+		return federationAccountDiscovery{}, err
+	}
+	if err := ensurePublicOutboundHost(ctx, host); err != nil {
 		return federationAccountDiscovery{}, err
 	}
 	rawURL := fmt.Sprintf("https://%s/.well-known/glipz-federation?resource=%s", host, url.QueryEscape(user+"@"+host))
@@ -205,6 +211,9 @@ type RemoteActorDisplay struct {
 }
 
 func fetchRemoteFederationProfile(ctx context.Context, profileURL string) (federationPublicProfile, error) {
+	if _, err := validatePublicOutboundURL(ctx, profileURL, false); err != nil {
+		return federationPublicProfile{}, err
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSpace(profileURL), nil)
 	if err != nil {
 		return federationPublicProfile{}, err

@@ -1,5 +1,5 @@
 import { getAccessToken } from "../auth";
-import { api, apiBase } from "./api";
+import { api, apiBase, applyBrowserAuth } from "./api";
 import {
   samePublicJwk,
   type DMEncryptedPrivateKeyBackup,
@@ -178,7 +178,7 @@ export async function uploadDMFile(token: string, file: File): Promise<DMUploadR
   fd.append("file", file, file.name);
   const res = await fetch(`${apiBase()}/api/v1/dm/upload`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
+    ...applyBrowserAuth({ method: "POST" }),
     body: fd,
   });
   const data = (await res.json().catch(() => ({}))) as DMUploadResponse & { error?: string };

@@ -1245,6 +1245,7 @@ export const jaMessages = {
         twoFactorDisabled: "未設定",
         uuidLabel: "UUID:",
         mfa: {
+          passwordLabel: "現在のパスワード",
           setupButton: "2FA セットアップを開始",
           setupIntro: "認証アプリ（Google Authenticator、Microsoft Authenticator など）で、次のQRコードをスキャンするかシークレットを手入力してください。",
           qrAlt: "2FA 登録用のQRコード",

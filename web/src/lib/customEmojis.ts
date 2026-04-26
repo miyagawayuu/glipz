@@ -2,6 +2,7 @@ import emojiKeywords from "emojilib";
 import { shallowRef } from "vue";
 import twemoji from "twemoji";
 import { api, apiPublicGet } from "./api";
+import { safeHttpURL } from "./redirect";
 import type { CustomEmoji } from "../types/customEmoji";
 import { unicodeEmojiByGroup } from "../data/unicodeEmojiByGroup";
 
@@ -57,8 +58,9 @@ export async function ensureCustomEmojiCatalog(token?: string | null): Promise<R
         : await apiPublicGet<{ items?: CustomEmoji[] }>("/api/v1/custom-emojis");
       const next: Record<string, CustomEmoji> = {};
       for (const item of res.items ?? []) {
-        if (!item?.shortcode || !item.image_url) continue;
-        next[item.shortcode] = item;
+        const imageURL = safeHttpURL(item?.image_url);
+        if (!item?.shortcode || !imageURL) continue;
+        next[item.shortcode] = { ...item, image_url: imageURL };
       }
       customEmojiMapRef.value = next;
       return next;
@@ -141,7 +143,7 @@ export async function ensureRemoteCustomEmojiResolved(token: string): Promise<vo
 
   try {
     const res = await apiPublicGet<{ image_url?: string }>(`/api/v1/public/federation/custom-emoji?shortcode=${encodeURIComponent(normalized)}`);
-    const url = String(res?.image_url ?? "").trim();
+    const url = safeHttpURL(res?.image_url);
     if (!url) return;
     remoteEmojiImageUrlRef.value = { ...remoteEmojiImageUrlRef.value, [normalized]: url };
   } catch {

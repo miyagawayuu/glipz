@@ -122,6 +122,11 @@ func (s *Server) handleFeedStream(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		return
 	}
+	streamCtx, release, ok := s.acquireSSEConnection(w, r, &uid)
+	if !ok {
+		return
+	}
+	defer release()
 	scope := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("scope")))
 	var channels []string
 	if scope == "following" {
@@ -141,7 +146,7 @@ func (s *Server) handleFeedStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
 
-	ctx := r.Context()
+	ctx := streamCtx
 	pubsub := s.rdb.Subscribe(ctx, channels...)
 	defer func() { _ = pubsub.Close() }()
 	streamName := "feed_global"
@@ -185,6 +190,11 @@ func (s *Server) handleFeedStream(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePublicFeedStream(w http.ResponseWriter, r *http.Request) {
+	streamCtx, release, ok := s.acquireSSEConnection(w, r, nil)
+	if !ok {
+		return
+	}
+	defer release()
 	flusher, okFlush := w.(http.Flusher)
 	if !okFlush {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "streaming_unsupported"})
@@ -196,7 +206,7 @@ func (s *Server) handlePublicFeedStream(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
 
-	ctx := r.Context()
+	ctx := streamCtx
 	pubsub := s.rdb.Subscribe(ctx, redisFeedGlobal)
 	defer func() { _ = pubsub.Close() }()
 	trackSSEOpen("feed_public")

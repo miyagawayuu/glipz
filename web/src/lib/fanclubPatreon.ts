@@ -1,5 +1,6 @@
 import { getAccessToken } from "../auth";
 import { api, apiBase } from "./api";
+import { redirectToAllowedExternalURL } from "./redirect";
 
 export type PatreonStatusResponse = {
   patreon: { available: boolean; connected?: boolean };
@@ -26,8 +27,8 @@ export async function startPatreonOAuth(returnToPath: string): Promise<void> {
   }
   const res = await fetch(url, {
     method: "GET",
+    credentials: "include",
     headers: {
-      Authorization: `Bearer ${token}`,
       Accept: "application/json",
     },
   });
@@ -40,8 +41,10 @@ export async function startPatreonOAuth(returnToPath: string): Promise<void> {
   }
   const loc = typeof data.redirect === "string" ? data.redirect.trim() : "";
   if (loc) {
-    window.location.href = loc;
-    return;
+    if (redirectToAllowedExternalURL(loc, ["https://www.patreon.com", "https://patreon.com"])) {
+      return;
+    }
+    throw new Error("patreon_authorize_invalid_redirect");
   }
   throw new Error("patreon_authorize_no_redirect");
 }

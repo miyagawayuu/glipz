@@ -20,11 +20,13 @@ import (
 )
 
 const oauthCodeTTL = 10 * time.Minute
-const oauthAccessTokenTTL = 90 * 24 * time.Hour
+const oauthAccessTokenTTL = 1 * time.Hour
+const oauthDefaultScope = "posts:read posts:write media:write"
+const oauthClientCredentialsScope = "client_credentials"
 
 type oauthClientCreateReq struct {
-	Name          string   `json:"name"`
-	RedirectURIs  []string `json:"redirect_uris"`
+	Name         string   `json:"name"`
+	RedirectURIs []string `json:"redirect_uris"`
 }
 
 func (s *Server) handleOAuthClientCreate(w http.ResponseWriter, r *http.Request) {
@@ -33,6 +35,7 @@ func (s *Server) handleOAuthClientCreate(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		return
 	}
+	limitRequestBody(w, r, smallJSONRequestBodyMaxBytes)
 	var req oauthClientCreateReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_json"})
@@ -45,10 +48,21 @@ func (s *Server) handleOAuthClientCreate(w http.ResponseWriter, r *http.Request)
 	}
 	var lines []string
 	for _, u := range req.RedirectURIs {
-		u = strings.TrimSpace(u)
-		if u != "" {
-			lines = append(lines, u)
+		if strings.TrimSpace(u) == "" {
+			continue
 		}
+		normalized, ok := normalizeOAuthRedirectURI(u)
+		if !ok {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_redirect_uri"})
+			return
+		}
+		if normalized != "" {
+			lines = append(lines, normalized)
+		}
+	}
+	if len(lines) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_redirect_uri"})
+		return
 	}
 	redirectBlock := strings.Join(lines, "\n")
 	plainSecret, err := randomHex(32)
@@ -132,12 +146,41 @@ type oauthAuthorizeReq struct {
 	Scope       string `json:"scope"`
 }
 
+func normalizeOAuthScope(raw string) string {
+	parts := strings.Fields(strings.ToLower(strings.TrimSpace(raw)))
+	if len(parts) == 0 {
+		return oauthDefaultScope
+	}
+	allowed := map[string]bool{}
+	for _, part := range parts {
+		switch part {
+		case "posts":
+			allowed["posts:read"] = true
+			allowed["posts:write"] = true
+			allowed["media:write"] = true
+		case "posts:read", "posts:write", "media:write":
+			allowed[part] = true
+		}
+	}
+	if len(allowed) == 0 {
+		return oauthDefaultScope
+	}
+	out := make([]string, 0, len(allowed))
+	for _, scope := range []string{"posts:read", "posts:write", "media:write"} {
+		if allowed[scope] {
+			out = append(out, scope)
+		}
+	}
+	return strings.Join(out, " ")
+}
+
 func (s *Server) handleOAuthAuthorizeConsent(w http.ResponseWriter, r *http.Request) {
 	uid, ok := userIDFrom(r.Context())
 	if !ok {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		return
 	}
+	limitRequestBody(w, r, smallJSONRequestBodyMaxBytes)
 	var req oauthAuthorizeReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_json"})
@@ -157,15 +200,16 @@ func (s *Server) handleOAuthAuthorizeConsent(w http.ResponseWriter, r *http.Requ
 		writeServerError(w, "OAuthClientByIDPublic", err)
 		return
 	}
-	red := strings.TrimSpace(req.RedirectURI)
+	red, ok := normalizeOAuthRedirectURI(req.RedirectURI)
+	if !ok {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_redirect_uri"})
+		return
+	}
 	if !repo.OAuthRedirectURIAllowed(row.RedirectURIs, red) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_redirect_uri"})
 		return
 	}
-	scope := strings.TrimSpace(req.Scope)
-	if scope == "" {
-		scope = "posts"
-	}
+	scope := normalizeOAuthScope(req.Scope)
 	codePlain, err := randomHex(24)
 	if err != nil {
 		writeServerError(w, "oauth code", err)
@@ -191,6 +235,7 @@ func (s *Server) handleOAuthAuthorizeConsent(w http.ResponseWriter, r *http.Requ
 
 // handleOAuthToken implements an application/x-www-form-urlencoded token endpoint close to RFC 6749.
 func (s *Server) handleOAuthToken(w http.ResponseWriter, r *http.Request) {
+	limitRequestBody(w, r, oauthFormRequestBodyMaxBytes)
 	if err := r.ParseForm(); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_request"})
 		return
@@ -222,7 +267,7 @@ func (s *Server) oauthTokenClientCredentials(w http.ResponseWriter, r *http.Requ
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_client"})
 		return
 	}
-	tok, err := authjwt.SignAccess(s.secret, ownerID, oauthAccessTokenTTL)
+	tok, err := authjwt.SignOAuthAccess(s.secret, ownerID, cid, oauthClientCredentialsScope, oauthAccessTokenTTL)
 	if err != nil {
 		writeServerError(w, "oauth SignAccess", err)
 		return
@@ -242,8 +287,12 @@ func (s *Server) oauthTokenAuthorizationCode(w http.ResponseWriter, r *http.Requ
 	}
 	secret := strings.TrimSpace(r.Form.Get("client_secret"))
 	code := strings.TrimSpace(r.Form.Get("code"))
-	red := strings.TrimSpace(r.Form.Get("redirect_uri"))
+	red, redOK := normalizeOAuthRedirectURI(r.Form.Get("redirect_uri"))
 	if secret == "" || code == "" || red == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_request"})
+		return
+	}
+	if !redOK {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_request"})
 		return
 	}
@@ -251,12 +300,12 @@ func (s *Server) oauthTokenAuthorizationCode(w http.ResponseWriter, r *http.Requ
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_client"})
 		return
 	}
-	userID, err := s.db.OAuthAuthorizationCodeExchange(r.Context(), cid, code, red)
+	userID, scope, err := s.db.OAuthAuthorizationCodeExchange(r.Context(), cid, code, red)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_grant"})
 		return
 	}
-	tok, err := authjwt.SignAccess(s.secret, userID, oauthAccessTokenTTL)
+	tok, err := authjwt.SignOAuthAccess(s.secret, userID, cid, normalizeOAuthScope(scope), oauthAccessTokenTTL)
 	if err != nil {
 		writeServerError(w, "oauth code SignAccess", err)
 		return

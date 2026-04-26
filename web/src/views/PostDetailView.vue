@@ -12,15 +12,17 @@ import { addTimelineReaction, removeTimelineReaction, toggleTimelineBookmark, to
 import type { TimelinePost } from "../types/timeline";
 import { postDetailPath } from "../lib/feedDisplay";
 import { buildComposerReplyQuery, composeRoutePath } from "../lib/postComposer";
+import { safeHttpURL, safeMediaURL } from "../lib/redirect";
 
 type LightboxState = { urls: string[]; index: number };
 const lightbox = ref<LightboxState | null>(null);
 let lightboxTouchStartX = 0;
 
 function openLightbox(urls: string[], startIndex: number) {
-  if (!urls.length) return;
-  const i = Math.max(0, Math.min(startIndex, urls.length - 1));
-  lightbox.value = { urls, index: i };
+  const safeURLs = urls.map((url) => safeMediaURL(url)).filter(Boolean);
+  if (!safeURLs.length) return;
+  const i = Math.max(0, Math.min(startIndex, safeURLs.length - 1));
+  lightbox.value = { urls: safeURLs, index: i };
 }
 
 function closeLightbox() {
@@ -78,6 +80,10 @@ const threadRepliesByRoot = ref<Record<string, TimelinePost[]>>({});
 const err = ref("");
 const loading = ref(true);
 const myEmail = ref<string | null>(null);
+
+function safeExternalURL(raw: unknown): string {
+  return safeHttpURL(raw);
+}
 const actionBusy = ref<string | null>(null);
 const repostModalOpen = ref(false);
 const repostTarget = ref<TimelinePost | null>(null);
@@ -443,13 +449,14 @@ onMounted(() => {
     </div>
 
     <div
-      v-if="!loading && !err && item?.is_federated && item.remote_object_url"
+      v-if="!loading && !err && item?.is_federated && safeExternalURL(item.remote_object_url)"
       class="border-b border-violet-200 bg-violet-50 px-4 py-2.5 text-sm text-violet-950"
     >
       <a
-        :href="item.remote_object_url"
+        :href="safeExternalURL(item.remote_object_url)"
         target="_blank"
         rel="noopener noreferrer"
+        referrerpolicy="no-referrer"
         class="font-medium text-lime-800 underline decoration-lime-600/60 underline-offset-2 hover:text-lime-900"
       >
         {{ t("views.postDetail.openOriginalExternal") }}

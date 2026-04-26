@@ -21,6 +21,13 @@ Glipz federation has four core pieces:
 
 The protocol is not ActivityPub. It uses Glipz-specific JSON payloads and `X-Glipz-*` signature headers. Legacy ActivityPub-compatible shared inbox code is not the main federation path.
 
+The reference server intentionally keeps the legacy ActivityPub-compatible shared
+inbox disabled. Do not rely on HTTP Signature shared-inbox delivery for Glipz
+interoperability; implement `X-Glipz-*` signed requests to `/federation/events`
+instead. If ActivityPub compatibility is added in the future, it must include
+complete HTTP Signature, digest, `keyId`/actor binding, and remote-key URL
+validation before accepting inbound activities.
+
 ---
 
 ## When to Integrate
@@ -52,6 +59,10 @@ Version 2 requires:
 - `X-Glipz-Nonce` on signed server-to-server requests.
 - `event_id` on signed event and follow/unfollow payloads.
 - Replay protection for nonces and event IDs.
+
+Version 1 is retained only for compatibility with older Glipz deployments. New
+servers should prefer version 2, and operators should plan to phase out version
+1 peers because nonce-based replay protection is mandatory only in version 2.
 
 Event envelopes use schema version `2` in the `v` field.
 
@@ -382,7 +393,11 @@ Request body:
 }
 ```
 
-Membership entitlement minting is intentionally limited. The current Glipz implementation does not let remote instances mint `entitlement_jwt` for Patreon- or Gumroad-locked posts; viewers should unlock those memberships on the origin instance, or use password-based unlock when applicable.
+Membership entitlement minting is intentionally limited. The origin-side `POST /federation/posts/{postID}/entitlement` endpoint refuses external providers that the origin cannot safely verify for a remote viewer, including Patreon and Gumroad, with `federation_membership_entitlement_unsupported`.
+
+For Patreon-locked incoming posts, the current Glipz web/API flow can still unlock cross-instance when the viewer's home instance has Patreon enabled and the viewer has connected Patreon there. The viewer instance verifies the campaign/tier with Patreon locally, mints a short-lived `entitlement_jwt` whose issuer is the viewer instance, and sends that token to the origin `unlock_url`.
+
+Gumroad-locked federated posts are origin-instance only today because the viewer instance cannot verify the license ownership relationship for the remote origin. Viewers should open the origin instance and use the Gumroad license flow there, or use password-based unlock when applicable.
 
 ---
 
@@ -430,7 +445,7 @@ For Glipz deployment and scaling details, see [SETUP.md](SETUP.md), [DEPLOY.md](
 - Glipz Federation Protocol is not ActivityPub and does not require ActivityStreams documents.
 - Public post federation is the primary content path.
 - Notes are no longer supported by the current Glipz model.
-- Remote membership entitlement minting for Patreon and Gumroad locks is not supported.
+- Origin-side remote membership entitlement minting for Patreon and Gumroad locks is not supported. Patreon cross-instance unlock is supported through the viewer-instance verification path described above; Gumroad remains origin-instance only.
 - Production federation should use HTTPS and stable public origins.
 - The authenticated `/api/v1/...` API is not part of the public server-to-server protocol, even when it starts federation actions locally.
 

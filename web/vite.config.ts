@@ -3,11 +3,12 @@ import vue from "@vitejs/plugin-vue";
 
 // Use backend:8080 from the Docker web container, or 127.0.0.1:8080 for host-based development.
 const proxyTarget = process.env.VITE_PROXY_TARGET || "http://127.0.0.1:8080";
+const devHost = process.env.VITE_DEV_HOST || "127.0.0.1";
 
 export default defineConfig({
   plugins: [vue()],
   server: {
-    host: "0.0.0.0",
+    host: devHost,
     port: 5173,
     proxy: {
       "/.well-known": {

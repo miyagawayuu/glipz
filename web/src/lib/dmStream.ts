@@ -51,7 +51,8 @@ export function connectDMStream(opts: {
     try {
       const res = await fetch(url, {
         method: "GET",
-        headers: { Accept: "text/event-stream", Authorization: `Bearer ${opts.token}` },
+        credentials: "include",
+        headers: { Accept: "text/event-stream" },
         signal: ac.signal,
       });
       if (!res.ok || !res.body) {

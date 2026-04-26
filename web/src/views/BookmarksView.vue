@@ -6,6 +6,7 @@ import PullToRefresh from "../components/PullToRefresh.vue";
 import PostTimeline from "../components/PostTimeline.vue";
 import { getAccessToken } from "../auth";
 import { api } from "../lib/api";
+import { safeMediaURL } from "../lib/redirect";
 import { fetchFederatedThreadReplies, fetchPostThreadReplies, mapFeedItem } from "../lib/feedStream";
 import { postDetailPath } from "../lib/feedDisplay";
 import { buildComposerReplyQuery, composeRoutePath } from "../lib/postComposer";
@@ -191,7 +192,7 @@ async function sharePost(it: TimelinePost) {
 }
 
 function openLightbox(urls: string[], index: number) {
-  const url = urls[index];
+  const url = safeMediaURL(urls[index]);
   if (!url) return;
   window.open(url, "_blank", "noopener,noreferrer");
 }

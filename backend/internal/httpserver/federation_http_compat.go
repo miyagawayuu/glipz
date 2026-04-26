@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-var federationHTTP = &http.Client{Timeout: 20 * time.Second}
+var federationHTTP = newPublicOutboundHTTPClient(20 * time.Second)
 
 func jsonStringField(raw json.RawMessage) (string, bool) {
 	if len(raw) == 0 {
@@ -31,10 +31,12 @@ func jsonStringField(raw json.RawMessage) (string, bool) {
 	return "", false
 }
 
+// Legacy ActivityPub-compatible shared inbox support is intentionally disabled.
+// Glipz federation receives signed server-to-server traffic at /federation/events.
 func verifyHTTPSignature(_ *http.Request, _ []byte) (string, string, error) {
-	return "", "", errors.New("legacy shared inbox support removed")
+	return "", "", errors.New("legacy ActivityPub-compatible shared inbox is disabled; use Glipz /federation/events")
 }
 
 func (s *Server) apSharedInboxAcceptOutbound(_ context.Context, _ map[string]json.RawMessage, _ string) error {
-	return errors.New("legacy shared inbox support removed")
+	return errors.New("legacy ActivityPub-compatible shared inbox is disabled; use Glipz /federation/events")
 }

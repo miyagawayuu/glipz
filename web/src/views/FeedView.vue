@@ -39,6 +39,7 @@ import {
   MAX_COMPOSER_IMAGE_SLOTS,
   mergePickedComposerFiles,
 } from "../lib/composerMedia";
+import { safeMediaURL } from "../lib/redirect";
 
 const MAX_IMAGES = MAX_COMPOSER_IMAGE_SLOTS;
 
@@ -50,9 +51,10 @@ const isNearFeedBottom = ref(false);
 let lightboxTouchStartX = 0;
 
 function openLightbox(urls: string[], startIndex: number) {
-  if (!urls.length) return;
-  const i = Math.max(0, Math.min(startIndex, urls.length - 1));
-  lightbox.value = { urls, index: i };
+  const safeURLs = urls.map((url) => safeMediaURL(url)).filter(Boolean);
+  if (!safeURLs.length) return;
+  const i = Math.max(0, Math.min(startIndex, safeURLs.length - 1));
+  lightbox.value = { urls: safeURLs, index: i };
 }
 
 function closeLightbox() {

@@ -8,6 +8,7 @@ import {
   FEDERATION_PROTOCOL_VERSION,
   FEDERATION_SUPPORTED_PROTOCOL_VERSIONS,
 } from "../lib/appInfo";
+import { sanitizeInlineHtml } from "../lib/sanitizeHtml";
 import { useBackLink } from "../lib/useBackLink";
 
 type FederationEventSchemaRow = {
@@ -40,6 +41,7 @@ const cautionItems = computed(() => tm("federationGuidelines.cautionItems") as s
 const cautionParagraphs = computed(() => tm("federationGuidelines.cautionParagraphs") as string[]);
 
 const backLink = useBackLink({ fallbackTo: "/register" });
+const safeHtml = (value: string) => sanitizeInlineHtml(value);
 </script>
 
 <template>
@@ -129,7 +131,7 @@ POST {{ publicOriginExample }}/federation/events</pre>
             <ul class="mt-4 space-y-3 text-sm leading-7 text-neutral-700">
               <li v-for="item in endpointItems" :key="item" class="flex gap-3">
                 <span class="mt-2 h-2 w-2 shrink-0 rounded-full bg-lime-500" />
-                <span v-html="item" />
+                <span v-html="safeHtml(item)" />
               </li>
             </ul>
             <p class="mt-4 text-sm leading-7 text-neutral-700">
@@ -174,7 +176,7 @@ POST {{ publicOriginExample }}/federation/events</pre>
             <ul class="mt-4 space-y-3 text-sm leading-7 text-neutral-700">
               <li v-for="item in discoveryItems" :key="item" class="flex gap-3">
                 <span class="mt-2 h-2 w-2 shrink-0 rounded-full bg-lime-500" />
-                <span v-html="item" />
+                <span v-html="safeHtml(item)" />
               </li>
             </ul>
             <p class="mt-4 text-sm leading-7 text-neutral-700">
@@ -193,7 +195,7 @@ POST {{ publicOriginExample }}/federation/events</pre>
             <ul class="mt-4 space-y-3 text-sm leading-7 text-neutral-700">
               <li v-for="item in signatureHeaders" :key="item" class="flex gap-3">
                 <span class="mt-2 h-2 w-2 shrink-0 rounded-full bg-lime-500" />
-                <span v-html="item" />
+                <span v-html="safeHtml(item)" />
               </li>
             </ul>
             <div class="mt-4 overflow-x-auto rounded-2xl bg-neutral-900 p-4 text-xs text-lime-100">
@@ -206,13 +208,13 @@ BASE64(SHA256(request_body))</pre>
             <ul class="mt-4 space-y-3 text-sm leading-7 text-neutral-700">
               <li v-for="item in signatureItems" :key="item" class="flex gap-3">
                 <span class="mt-2 h-2 w-2 shrink-0 rounded-full bg-lime-500" />
-                <span v-html="item" />
+                <span v-html="safeHtml(item)" />
               </li>
             </ul>
             <p class="mt-6 text-sm font-semibold text-neutral-900">{{ $t("federationGuidelines.signatureFlowTitle") }}</p>
             <ol class="mt-3 list-decimal space-y-2 pl-5 text-sm leading-7 text-neutral-700">
               <li v-for="item in signatureFlowItems" :key="item">
-                <span v-html="item" />
+                <span v-html="safeHtml(item)" />
               </li>
             </ol>
             <p class="mt-4 text-sm leading-7 text-neutral-700">
@@ -243,7 +245,7 @@ BASE64(SHA256(request_body))</pre>
             <ul class="mt-4 space-y-3 text-sm leading-7 text-neutral-700">
               <li v-for="item in eventItems" :key="item" class="flex gap-3">
                 <span class="mt-2 h-2 w-2 shrink-0 rounded-full bg-lime-500" />
-                <span v-html="item" />
+                <span v-html="safeHtml(item)" />
               </li>
             </ul>
             <p class="mt-6 text-sm font-semibold text-neutral-900">{{ $t("federationGuidelines.eventSchemaTitle") }}</p>
@@ -262,8 +264,8 @@ BASE64(SHA256(request_body))</pre>
                 <tbody class="divide-y divide-neutral-200 bg-white">
                   <tr v-for="row in eventSchemaRows" :key="row.kind" class="align-top">
                     <td class="px-3 py-2 font-mono text-[11px] text-neutral-900">{{ row.kind }}</td>
-                    <td class="px-3 py-2 leading-6" v-html="row.required" />
-                    <td class="px-3 py-2 leading-6" v-html="row.optional" />
+                    <td class="px-3 py-2 leading-6" v-html="safeHtml(row.required)" />
+                    <td class="px-3 py-2 leading-6" v-html="safeHtml(row.optional)" />
                   </tr>
                 </tbody>
               </table>
@@ -285,7 +287,7 @@ BASE64(SHA256(request_body))</pre>
             <ul class="mt-4 space-y-3 text-sm leading-7 text-neutral-700">
               <li v-for="item in followItems" :key="item" class="flex gap-3">
                 <span class="mt-2 h-2 w-2 shrink-0 rounded-full bg-lime-500" />
-                <span v-html="item" />
+                <span v-html="safeHtml(item)" />
               </li>
             </ul>
           </section>
@@ -298,7 +300,7 @@ BASE64(SHA256(request_body))</pre>
             <ul class="mt-4 space-y-3 text-sm leading-7 text-neutral-700">
               <li v-for="item in errorCodeItems" :key="item" class="flex gap-3">
                 <span class="mt-2 h-2 w-2 shrink-0 rounded-full bg-lime-500" />
-                <span v-html="item" />
+                <span v-html="safeHtml(item)" />
               </li>
             </ul>
           </section>
@@ -311,7 +313,7 @@ BASE64(SHA256(request_body))</pre>
             <ul class="mt-4 space-y-3 text-sm leading-7 text-neutral-700">
               <li v-for="item in rateLimitItems" :key="item" class="flex gap-3">
                 <span class="mt-2 h-2 w-2 shrink-0 rounded-full bg-lime-500" />
-                <span v-html="item" />
+                <span v-html="safeHtml(item)" />
               </li>
             </ul>
           </section>
@@ -321,7 +323,7 @@ BASE64(SHA256(request_body))</pre>
             <ul class="mt-4 space-y-3 text-sm leading-7 text-neutral-700">
               <li v-for="item in opsItems" :key="item" class="flex gap-3">
                 <span class="mt-2 h-2 w-2 shrink-0 rounded-full bg-lime-500" />
-                <span v-html="item" />
+                <span v-html="safeHtml(item)" />
               </li>
             </ul>
             <p class="mt-4 text-sm leading-7 text-neutral-700">
@@ -334,7 +336,7 @@ BASE64(SHA256(request_body))</pre>
             <ul class="mt-5 space-y-3 text-sm leading-7 text-neutral-700">
               <li v-for="item in cautionItems" :key="item" class="flex gap-3">
                 <span class="mt-2 h-2 w-2 shrink-0 rounded-full bg-amber-500" />
-                <span v-html="item" />
+                <span v-html="safeHtml(item)" />
               </li>
             </ul>
             <p v-for="paragraph in cautionParagraphs" :key="paragraph" class="mt-4 text-sm leading-7 text-neutral-700">

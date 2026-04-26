@@ -64,7 +64,12 @@ async function verifyAdmin() {
   }
 }
 
-function logout() {
+async function logout() {
+  try {
+    await api("/api/v1/auth/logout", { method: "POST" });
+  } catch {
+    /* ignore logout network failures */
+  }
   clearTokens();
   void router.push("/login");
 }

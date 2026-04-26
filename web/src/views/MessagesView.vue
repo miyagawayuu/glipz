@@ -33,6 +33,7 @@ import {
   encryptDMAttachment,
   encryptDMText,
   encryptPrivateJwkForPassphrase,
+  publicJwkFingerprint,
   type DMLocalIdentity,
 } from "../lib/dmCrypto";
 import {
@@ -119,6 +120,8 @@ const fedSendBusy = ref(false);
 const fedPendingFiles = ref<File[]>([]);
 const fedFileInput = ref<HTMLInputElement | null>(null);
 const notice = ref("");
+const keyPinWarning = ref("");
+const pendingKeyPin = ref<{ peerID: string; fingerprint: string } | null>(null);
 let threadListInFlight: Promise<void> | null = null;
 let threadRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -132,6 +135,33 @@ function onPickFedFiles(event: Event) {
   input.value = "";
   if (!files.length) return;
   fedPendingFiles.value = [...fedPendingFiles.value, ...files].slice(0, 8);
+}
+
+function keyPinStorageKey(peerID: string): string {
+  return `glipz_dm_peer_key_pin:${peerID}`;
+}
+
+async function ensurePeerKeyTrusted(peerID: string, publicJwk: JsonWebKey): Promise<boolean> {
+  const fingerprint = await publicJwkFingerprint(publicJwk);
+  const storageKey = keyPinStorageKey(peerID);
+  const existing = localStorage.getItem(storageKey);
+  if (!existing) {
+    localStorage.setItem(storageKey, fingerprint);
+    return true;
+  }
+  if (existing === fingerprint) return true;
+  pendingKeyPin.value = { peerID, fingerprint };
+  keyPinWarning.value = `DM鍵が変更されています: ${peerID}`;
+  return false;
+}
+
+async function trustPendingPeerKey() {
+  if (!pendingKeyPin.value) return;
+  localStorage.setItem(keyPinStorageKey(pendingKeyPin.value.peerID), pendingKeyPin.value.fingerprint);
+  pendingKeyPin.value = null;
+  keyPinWarning.value = "";
+  await loadActiveThreadAndMessages();
+  await loadActiveFederationThreadAndMessages();
 }
 
 function removeFedPendingFile(index: number) {
@@ -306,6 +336,9 @@ async function resolveThreadFromQuery() {
 async function decryptMessages(rows: DMMessage[], thread: DMThread): Promise<ResolvedDMMessage[]> {
   if (!identity.value) return [];
   const peerKey = thread.peer_public_jwk;
+  if (peerKey && !(await ensurePeerKeyTrusted(`local:${thread.peer_handle}`, peerKey))) {
+    return rows.map((row) => ({ ...row, decrypted_text: "DM鍵の変更確認が必要です", decrypt_error: true }));
+  }
   return Promise.all(
     rows.map(async (row) => {
       try {
@@ -403,6 +436,17 @@ async function loadActiveFederationThreadAndMessages() {
     if (remoteAcct) {
       const keyDoc = await api<any>(`/api/v1/federation/dm/keys?acct=${encodeURIComponent(remoteAcct)}`, { method: "GET", token });
       peerPublicJwk = (keyDoc?.public_jwk ?? null) as JsonWebKey | null;
+      if (peerPublicJwk && !(await ensurePeerKeyTrusted(`fed:${remoteAcct}`, peerPublicJwk))) {
+        fedMessages.value = rows.map((m) => ({
+          id: m.message_id,
+          created_at: m.created_at,
+          sent_by_me: false,
+          text: "DM鍵の変更確認が必要です",
+          decrypt_error: true,
+          attachments: m.attachments ?? [],
+        }));
+        return;
+      }
     }
     const rows = (msgs.items ?? []).slice().reverse();
     const existingTextByID = new Map<string, string>(fedMessages.value.map((x) => [x.id, x.text]));
@@ -466,6 +510,9 @@ async function sendFederationMessage() {
     });
     const peerPublicJwk = (keyDoc?.public_jwk ?? null) as JsonWebKey | null;
     if (!peerPublicJwk) throw new Error("peer_key_missing");
+    if (!(await ensurePeerKeyTrusted(`fed:${fedActiveRemoteAcct.value}`, peerPublicJwk))) {
+      throw new Error("peer_key_changed");
+    }
     const encryptedAttachments: any[] = [];
     for (const file of fedPendingFiles.value) {
       const encrypted = await encryptDMAttachment(file, identity.value, peerPublicJwk);
@@ -531,10 +578,13 @@ async function acceptFederationThread() {
     });
     const peerPublicJwk = (keyDoc?.public_jwk ?? null) as JsonWebKey | null;
     if (!peerPublicJwk) throw new Error("peer_key_missing");
+    if (!(await ensurePeerKeyTrusted(`fed:${fedActiveRemoteAcct.value}`, peerPublicJwk))) {
+      throw new Error("peer_key_changed");
+    }
 
     // Generate a thread key (not yet used for message payloads in this phase).
     const threadKey = crypto.getRandomValues(new Uint8Array(32));
-    localStorage.setItem(`fed_dm_thread_key:${fedActiveThreadId.value}`, bytesToBase64(threadKey));
+    sessionStorage.setItem(`fed_dm_thread_key:${fedActiveThreadId.value}`, bytesToBase64(threadKey));
 
     const sealed = await encryptDMText(JSON.stringify({ thread_key: bytesToBase64(threadKey) }), identity.value, peerPublicJwk);
     await api("/api/v1/federation/dm/accept", {
@@ -665,6 +715,10 @@ async function sendCurrentMessage() {
     error.value = t("views.messages.errors.peerKeyMissing");
     return;
   }
+  if (!(await ensurePeerKeyTrusted(`local:${activeThread.value.peer_handle}`, activeThread.value.peer_public_jwk))) {
+    error.value = "DM鍵の変更確認が必要です";
+    return;
+  }
   sendBusy.value = true;
   error.value = "";
   try {
@@ -696,6 +750,10 @@ async function sendCurrentMessage() {
 
 async function saveAttachment(message: ResolvedDMMessage, attachment: DMAttachment, index: number) {
   if (!identity.value || !activeThread.value?.peer_public_jwk) return;
+  if (!(await ensurePeerKeyTrusted(`local:${activeThread.value.peer_handle}`, activeThread.value.peer_public_jwk))) {
+    error.value = "DM鍵の変更確認が必要です";
+    return;
+  }
   attachmentBusyKey.value = `${message.id}:${index}`;
   try {
     const blob = await decryptDMAttachmentToBlob(
@@ -731,9 +789,12 @@ async function saveFederationAttachment(message: { id: string; sent_by_me: boole
     });
     const peerPublicJwk = (keyDoc?.public_jwk ?? null) as JsonWebKey | null;
     if (!peerPublicJwk) throw new Error("peer_key_missing");
+    if (!(await ensurePeerKeyTrusted(`fed:${fedActiveRemoteAcct.value}`, peerPublicJwk))) {
+      throw new Error("peer_key_changed");
+    }
 
     const proxyURL = `${apiBase()}/api/v1/federation/dm/attachment?acct=${encodeURIComponent(fedActiveRemoteAcct.value)}&url=${encodeURIComponent(String(attachment.public_url || ""))}`;
-    const res = await fetch(proxyURL, { method: "GET", headers: { Authorization: `Bearer ${token}` } });
+    const res = await fetch(proxyURL, { method: "GET", credentials: "include" });
     if (!res.ok) throw new Error("attachment_fetch_failed");
     const encryptedFile = await res.arrayBuffer();
     const blob = await decryptDMAttachmentBytesToBlob(attachment, encryptedFile, identity.value, peerPublicJwk, message.sent_by_me);
@@ -921,6 +982,17 @@ onBeforeUnmount(() => {
       >
         <div v-if="error" class="border-b border-red-200 bg-red-50 px-5 py-3 text-sm text-red-700">
           {{ error }}
+        </div>
+        <div v-if="keyPinWarning" class="border-b border-amber-200 bg-amber-50 px-5 py-3 text-sm text-amber-900">
+          <p>{{ keyPinWarning }}</p>
+          <button
+            v-if="pendingKeyPin"
+            type="button"
+            class="mt-2 rounded-full bg-amber-600 px-3 py-1 text-xs font-semibold text-white hover:bg-amber-700"
+            @click="trustPendingPeerKey"
+          >
+            この鍵を信頼して続行
+          </button>
         </div>
 
         <template v-if="loading">

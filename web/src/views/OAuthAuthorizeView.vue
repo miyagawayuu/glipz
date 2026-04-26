@@ -4,6 +4,7 @@ import { useI18n } from "vue-i18n";
 import { useRoute } from "vue-router";
 import { getAccessToken } from "../auth";
 import { api } from "../lib/api";
+import { redirectToAllowedExternalURL } from "../lib/redirect";
 
 const { t } = useI18n();
 const route = useRoute();
@@ -42,7 +43,9 @@ async function authorize() {
       },
     });
     if (res.redirect_to) {
-      window.location.href = res.redirect_to;
+      if (!redirectToAllowedExternalURL(res.redirect_to, [redirectURI.value])) {
+        throw new Error("invalid_redirect_uri");
+      }
       doneRedirect.value = res.redirect_to;
     }
   } catch (e: unknown) {

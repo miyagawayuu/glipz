@@ -146,7 +146,7 @@ func isAllowedDMAttachmentContentType(ct string) bool {
 	}
 }
 
-func validateDMAttachments(userID uuid.UUID, raw json.RawMessage) (json.RawMessage, error) {
+func (s *Server) validateDMAttachments(userID uuid.UUID, raw json.RawMessage) (json.RawMessage, error) {
 	if len(raw) == 0 {
 		return json.RawMessage("[]"), nil
 	}
@@ -164,6 +164,10 @@ func validateDMAttachments(userID uuid.UUID, raw json.RawMessage) (json.RawMessa
 	for _, it := range items {
 		if strings.TrimSpace(it.ObjectKey) == "" || !strings.HasPrefix(it.ObjectKey, prefix) {
 			return nil, errors.New("invalid_object_key")
+		}
+		expectedURL := strings.TrimSpace(s.glipzProtocolPublicMediaURL(it.ObjectKey))
+		if strings.TrimSpace(it.PublicURL) == "" || expectedURL == "" || strings.TrimSpace(it.PublicURL) != expectedURL {
+			return nil, errors.New("invalid_public_url")
 		}
 		if !isAllowedDMAttachmentContentType(it.ContentType) {
 			return nil, errors.New("unsupported_type")
@@ -502,7 +506,7 @@ func (s *Server) handleCreateDMMessage(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_payload"})
 		return
 	}
-	attachments, err := validateDMAttachments(uid, req.Attachments)
+	attachments, err := s.validateDMAttachments(uid, req.Attachments)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -583,6 +587,11 @@ func (s *Server) handleDMStream(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		return
 	}
+	streamCtx, release, ok := s.acquireSSEConnection(w, r, &uid)
+	if !ok {
+		return
+	}
+	defer release()
 	flusher, okFlush := w.(http.Flusher)
 	if !okFlush {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "streaming_unsupported"})
@@ -593,7 +602,7 @@ func (s *Server) handleDMStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
 
-	ctx := r.Context()
+	ctx := streamCtx
 	chName := redisDMUserChannel(uid)
 	pubsub := s.rdb.Subscribe(ctx, chName)
 	defer func() { _ = pubsub.Close() }()

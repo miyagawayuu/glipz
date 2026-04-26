@@ -3,6 +3,7 @@ import { useI18n } from "vue-i18n";
 import DOMPurify from "dompurify";
 import { marked } from "marked";
 import { apiBase } from "./api";
+import { enforceSafeLinkAttrs } from "./sanitizeHtml";
 
 export type LegalDocName = "terms" | "privacy" | "nsfw-guidelines";
 
@@ -18,9 +19,36 @@ marked.setOptions({ gfm: true, breaks: true });
 export function renderLegalMarkdown(md: string): string {
   const raw = marked.parse(md || "", { async: false });
   const html = typeof raw === "string" ? raw : String(raw);
-  return DOMPurify.sanitize(html, {
-    ADD_ATTR: ["class", "href", "target", "rel", "alt", "loading", "width", "height"],
+  const sanitized = DOMPurify.sanitize(html, {
+    ALLOWED_TAGS: [
+      "a",
+      "blockquote",
+      "br",
+      "code",
+      "em",
+      "h1",
+      "h2",
+      "h3",
+      "h4",
+      "hr",
+      "li",
+      "ol",
+      "p",
+      "pre",
+      "strong",
+      "table",
+      "tbody",
+      "td",
+      "th",
+      "thead",
+      "tr",
+      "ul",
+    ],
+    ALLOWED_ATTR: ["href", "rel", "target"],
+    FORBID_TAGS: ["script", "style", "svg", "math", "iframe", "object", "embed", "img", "video", "audio"],
+    FORBID_ATTR: ["onerror", "onload", "onclick", "style"],
   });
+  return enforceSafeLinkAttrs(sanitized);
 }
 
 async function fetchLegalDoc(doc: LegalDocName, locale: string): Promise<LegalDocResponse | null> {

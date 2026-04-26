@@ -7,6 +7,7 @@ import PostTimeline from "../components/PostTimeline.vue";
 import UserBadges from "../components/UserBadges.vue";
 import { getAccessToken } from "../auth";
 import { api } from "../lib/api";
+import { safeHttpURL, safeMediaURL } from "../lib/redirect";
 import { mapFeedItem } from "../lib/feedStream";
 import { avatarInitials, fullHandleAt, postDetailPath } from "../lib/feedDisplay";
 import { buildComposerReplyQuery, composeRoutePath } from "../lib/postComposer";
@@ -39,6 +40,10 @@ const err = ref("");
 const busy = ref(false);
 const myEmail = ref<string | null>(null);
 const actionBusy = ref<string | null>(null);
+
+function safeAvatarURL(raw: unknown): string {
+  return safeHttpURL(raw);
+}
 
 const currentQuery = computed(() => {
   const raw = route.query.q;
@@ -208,7 +213,7 @@ async function sharePost(it: TimelinePost) {
 }
 
 function openLightbox(urls: string[], index: number) {
-  const url = urls[index];
+  const url = safeMediaURL(urls[index]);
   if (!url) return;
   window.open(url, "_blank", "noopener,noreferrer");
 }
@@ -279,9 +284,10 @@ void loadMe();
             class="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-neutral-200 text-xs font-bold text-neutral-700"
           >
             <img
-              v-if="account.avatar_url"
-              :src="account.avatar_url"
+              v-if="safeAvatarURL(account.avatar_url)"
+              :src="safeAvatarURL(account.avatar_url)"
               alt=""
+              referrerpolicy="no-referrer"
               class="h-full w-full object-cover"
             />
             <span v-else>{{ avatarInitials(account.handle) }}</span>

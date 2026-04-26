@@ -16,7 +16,7 @@ Install these before starting:
 | **Docker & Docker Compose** | Yes | Runs PostgreSQL, Redis, Mailpit, Backend |
 | **Node.js 22+** | Yes (frontend) | Matches `web/package.json` `engines`; Docker image uses Node 22 |
 | **npm** | Yes (frontend) | Comes with Node.js |
-| **Go 1.22+** | No | Only if running backend outside Docker |
+| **Go 1.26.2+** | No | Only if running backend outside Docker |
 | **Media storage** | Yes | Server-local folder or S3-compatible storage (Cloudflare R2, Wasabi, MinIO, AWS S3, etc.) |
 
 ---
@@ -47,7 +47,8 @@ Copy-Item .env.example .env
 At minimum, set these in `.env`:
 
 ```env
-JWT_SECRET=your-secure-random-secret
+# Generate with: openssl rand -base64 48
+JWT_SECRET=
 
 # Either use a server-local folder:
 GLIPZ_STORAGE_MODE=local
@@ -137,6 +138,9 @@ For `npm run build`, copy [web/.env.production.example](web/.env.production.exam
 docker compose up --build
 ```
 
+This compose stack is for local development only. It uses fixed development
+credentials and localhost-bound ports; do not reuse it as-is for production.
+
 This starts:
 
 | Service | URL |
@@ -150,7 +154,7 @@ This starts:
 On first startup, the backend:
 - Connects to PostgreSQL and Redis
 - Runs database migrations
-- Initializes the S3 client
+- Initializes the configured media store (`local` folder or S3-compatible storage)
 - Starts the HTTP server
 
 ---
@@ -166,6 +170,10 @@ npm run dev
 ```
 
 Frontend: http://localhost:5173
+
+The Vite dev server binds to `127.0.0.1` by default. If you intentionally need
+LAN access from another device, start it with `VITE_DEV_HOST=0.0.0.0 npm run dev`
+and only do so on a trusted network.
 
 Vite proxies these routes to the backend (override backend host with `VITE_PROXY_TARGET` if needed, for example when the API runs only inside Docker):
 
@@ -198,6 +206,7 @@ go test ./...
 
 ```bash
 cd web
+npm test
 npm run build
 ```
 
@@ -252,7 +261,7 @@ Ensure these are set:
 - `DATABASE_URL`
 - `REDIS_URL`
 - `JWT_SECRET`
-- All S3 variables
+- `GLIPZ_STORAGE_MODE=local` with a writable `GLIPZ_LOCAL_STORAGE_PATH`, or `GLIPZ_STORAGE_MODE=s3` with the required `S3_*` variables
 
 ---
 
@@ -300,6 +309,7 @@ See [.env.example](.env.example) for all options.
 - `GLIPZ_PROTOCOL_PUBLIC_ORIGIN` is set
 - `GLIPZ_PROTOCOL_HOST` is set
 - `GLIPZ_PROTOCOL_MEDIA_PUBLIC_BASE` is set
+- Reverse proxy buffering is disabled for SSE endpoints listed earlier in this guide
 
 ### Patreon OAuth errors after deploy
 

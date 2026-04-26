@@ -42,11 +42,19 @@ func (s *Server) handleFederationDMPeerKeysGet(w http.ResponseWriter, r *http.Re
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unsupported_peer"})
 		return
 	}
+	if u.Scheme != "https" || !strings.EqualFold(u.Hostname(), host) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unsupported_peer"})
+		return
+	}
 	u.Path = strings.TrimSuffix(u.Path, "/") + "/" + url.PathEscape(user)
+	if _, err := validatePublicOutboundURL(r.Context(), u.String(), false); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unsupported_peer"})
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
-	res, err := http.DefaultClient.Do(req)
+	res, err := federationHTTP.Do(req)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "peer_unreachable"})
 		return
@@ -74,4 +82,3 @@ func (s *Server) handleFederationDMPeerKeysGet(w http.ResponseWriter, r *http.Re
 	// Pass through algorithm/kid if present; clients primarily need public_jwk.
 	writeJSON(w, http.StatusOK, doc)
 }
-

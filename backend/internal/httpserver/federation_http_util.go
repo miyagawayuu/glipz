@@ -26,13 +26,20 @@ func federationHostFromInboxURL(inboxURL string) (string, error) {
 	return strings.ToLower(strings.TrimPrefix(u.Hostname(), "www.")), nil
 }
 
-func clientIPForFederationRL(r *http.Request) string {
-	if xff := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); xff != "" {
-		if i := strings.IndexByte(xff, ','); i >= 0 {
-			xff = strings.TrimSpace(xff[:i])
+func (s *Server) clientIPForFederationRL(r *http.Request) string {
+	if s.cfg.TrustProxyHeaders {
+		if xri := strings.TrimSpace(r.Header.Get("X-Real-IP")); xri != "" {
+			if ip := net.ParseIP(xri); ip != nil {
+				return ip.String()
+			}
 		}
-		if xff != "" {
-			return xff
+		if xff := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); xff != "" {
+			if i := strings.IndexByte(xff, ','); i >= 0 {
+				xff = strings.TrimSpace(xff[:i])
+			}
+			if ip := net.ParseIP(xff); ip != nil {
+				return ip.String()
+			}
 		}
 	}
 	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
@@ -47,7 +54,7 @@ const federationInboxRatePerMinute = 180
 // federationInboxPostRateExceeded applies a lightweight Redis-backed rate limit to inbox POST requests.
 // Requests are allowed through if Redis is unavailable.
 func (s *Server) federationInboxPostRateExceeded(r *http.Request) bool {
-	ip := clientIPForFederationRL(r)
+	ip := s.clientIPForFederationRL(r)
 	if ip == "" {
 		return false
 	}
@@ -57,7 +64,7 @@ func (s *Server) federationInboxPostRateExceeded(r *http.Request) bool {
 	key := fmt.Sprintf("rl:federation:inbox:%s:%d", ip, slot)
 	n, err := s.rdb.Incr(ctx, key).Result()
 	if err != nil {
-		return false
+		return s.cfg.FederationInboxRateLimitFailClosed
 	}
 	if n == 1 {
 		_ = s.rdb.Expire(ctx, key, 3*time.Minute).Err()
