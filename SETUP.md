@@ -93,6 +93,12 @@ GLIPZ_PROTOCOL_MEDIA_PUBLIC_BASE=http://localhost:8080/api/v1/media/object
 # FEDERATION_POLICY_SUMMARY=Short text shown as your instance federation policy
 ```
 
+For production, prefer the backend media proxy (`GLIPZ_MEDIA_PROXY_MODE=proxy`).
+It forces active content types such as SVG, HTML, XML, and JavaScript to download
+instead of rendering inline. If you switch to direct object-storage or CDN media
+delivery, configure that endpoint to apply equivalent `Content-Disposition: attachment`
+and `X-Content-Type-Options: nosniff` behavior for those types.
+
 ### Patreon fan club (Optional)
 
 Patreon is disabled by default. Register an API client at Patreon, then enable it explicitly (redirect URI must match your deployment; see comments in [.env.example](.env.example)):

@@ -174,7 +174,7 @@ S3_USE_PATH_STYLE=true-or-false-for-your-provider
 
 In local mode, the backend stores uploaded files on disk and serves them from `/api/v1/media/object/*`. With Docker Compose, `./data/media` is mounted into the backend container so uploads survive container rebuilds.
 
-Cloudflare R2 uses `S3_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com`, `S3_REGION=auto`, and path-style access. For direct media delivery, set `GLIPZ_PROTOCOL_MEDIA_PUBLIC_BASE` to your R2 custom public domain and use `GLIPZ_MEDIA_PROXY_MODE=direct`.
+Cloudflare R2 uses `S3_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com`, `S3_REGION=auto`, and path-style access. For direct media delivery, set `GLIPZ_PROTOCOL_MEDIA_PUBLIC_BASE` to your R2 custom public domain and use `GLIPZ_MEDIA_PROXY_MODE=direct`. Direct media endpoints must reject or download active content types such as SVG, HTML, XML, and JavaScript with `Content-Disposition: attachment` and `X-Content-Type-Options: nosniff`; the backend proxy applies this automatically.
 
 ### 2. Start the stack
 
@@ -327,7 +327,7 @@ Membership entitlement over Glipz federation (`POST .../federation/posts/{postID
 | `GLIPZ_TRUST_PROXY_HEADERS` | Trusts reverse-proxy client IP / scheme headers; enable only behind a proxy that overwrites them | Optional |
 | `GLIPZ_AUTH_RATE_LIMIT_FAIL_CLOSED` | Rejects login/MFA attempts when Redis-backed auth/SSE rate limit checks fail | Optional |
 | `GLIPZ_FEED_PAGE_SIZE` | Authenticated feed items returned per request; lower values reduce payload size under load | Optional |
-| `GLIPZ_MEDIA_PROXY_MODE` | `proxy` streams media through the API; `direct` redirects to configured public media URLs | Optional |
+| `GLIPZ_MEDIA_PROXY_MODE` | `proxy` streams media through the API and applies media safety headers; `direct` redirects safe media to configured public media URLs | Optional |
 | `GLIPZ_REMOTE_MEDIA_PROXY_MAX_BYTES` | Maximum bytes streamed by the public remote-media proxy; default is 50 MiB | Optional |
 | `GLIPZ_REMOTE_MEDIA_PROXY_RATE_LIMIT_MAX` | Public remote-media proxy requests allowed per IP per 15 minutes; default is 120 | Optional |
 | `GLIPZ_REMOTE_MEDIA_PROXY_RATE_LIMIT_FAIL_CLOSED` | Rejects remote-media proxy requests when Redis-backed rate limit writes fail | Optional |

@@ -1,9 +1,11 @@
 package httpserver
 
 import (
+	"net/http/httptest"
 	"testing"
 
 	"glipz.io/backend/internal/config"
+	"glipz.io/backend/internal/s3client"
 )
 
 func TestFederationRemoteMediaURL(t *testing.T) {
@@ -33,5 +35,43 @@ func TestLocalMediaDirectURLUsesConfiguredPublicBase(t *testing.T) {
 	want := "https://media.example.com/posts/abc/image.png"
 	if got != want {
 		t.Fatalf("direct media URL = %q, want %q", got, want)
+	}
+}
+
+func TestWriteMediaProxyHeadersForcesDangerousContentToAttachment(t *testing.T) {
+	rec := httptest.NewRecorder()
+
+	writeMediaProxyHeaders(rec, s3client.ObjectMeta{
+		ContentType:   "text/html; charset=utf-8",
+		ContentLength: 42,
+	})
+
+	if got := rec.Header().Get("Content-Type"); got != fallbackDownloadContentType {
+		t.Fatalf("Content-Type = %q, want %q", got, fallbackDownloadContentType)
+	}
+	if got := rec.Header().Get("Content-Disposition"); got != "attachment" {
+		t.Fatalf("Content-Disposition = %q, want attachment", got)
+	}
+	if got := rec.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Fatalf("X-Content-Type-Options = %q, want nosniff", got)
+	}
+	if got := rec.Header().Get("Cross-Origin-Resource-Policy"); got != "same-origin" {
+		t.Fatalf("Cross-Origin-Resource-Policy = %q, want same-origin", got)
+	}
+}
+
+func TestWriteMediaProxyHeadersKeepsSafeMediaInline(t *testing.T) {
+	rec := httptest.NewRecorder()
+
+	writeMediaProxyHeaders(rec, s3client.ObjectMeta{
+		ContentType:   "image/png",
+		ContentLength: 42,
+	})
+
+	if got := rec.Header().Get("Content-Type"); got != "image/png" {
+		t.Fatalf("Content-Type = %q, want image/png", got)
+	}
+	if got := rec.Header().Get("Content-Disposition"); got != "" {
+		t.Fatalf("Content-Disposition = %q, want empty", got)
 	}
 }

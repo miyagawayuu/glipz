@@ -131,15 +131,34 @@ func (s *Server) dmMessageToJSON(row repo.DMMessageViewer, badges []string) map[
 }
 
 func isAllowedDMAttachmentContentType(ct string) bool {
-	ct = strings.TrimSpace(strings.ToLower(ct))
+	ct = normalizeMediaContentType(ct)
+	if isActiveMediaContentType(ct) {
+		return false
+	}
 	switch {
 	case ct == "":
 		return false
 	case strings.HasPrefix(ct, "image/"),
 		strings.HasPrefix(ct, "video/"),
-		strings.HasPrefix(ct, "audio/"),
-		strings.HasPrefix(ct, "text/"),
-		strings.HasPrefix(ct, "application/"):
+		strings.HasPrefix(ct, "audio/"):
+		return true
+	case ct == "text/plain",
+		ct == "text/csv",
+		ct == "text/markdown",
+		ct == "text/tab-separated-values",
+		ct == "application/octet-stream",
+		ct == "application/pdf",
+		ct == "application/json",
+		ct == "application/zip",
+		ct == "application/gzip",
+		ct == "application/x-gzip",
+		ct == "application/x-tar",
+		ct == "application/x-7z-compressed",
+		ct == "application/vnd.rar":
+		return true
+	case strings.HasSuffix(ct, "+zip"),
+		strings.HasPrefix(ct, "application/vnd.openxmlformats-officedocument."),
+		strings.HasPrefix(ct, "application/vnd.oasis.opendocument."):
 		return true
 	default:
 		return false

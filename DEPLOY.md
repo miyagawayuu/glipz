@@ -80,6 +80,12 @@ For S3-compatible storage, create a bucket with:
 - **Public access blocked** (Glipz uses the media proxy)
 - **CORS enabled** for your domain
 
+Keep `GLIPZ_MEDIA_PROXY_MODE=proxy` unless your CDN or object-storage public
+endpoint enforces equivalent media safety headers. The backend proxy serves
+active content types such as SVG, HTML, XML, and JavaScript as downloads with
+`Content-Type: application/octet-stream`, `Content-Disposition: attachment`,
+and `X-Content-Type-Options: nosniff`.
+
 ### 1.4 Domain & SSL
 
 Point your domain to the server and obtain SSL certificates (Let's Encrypt recommended).
@@ -198,7 +204,7 @@ Redis outages will reject the protected flows instead of allowing them through.
 
 The production image is built from the **repository root** with `backend/Dockerfile` (see [docker-compose.yml](docker-compose.yml)): it runs `npm ci` / `npm run build` in `web/` on **Node 22**, then compiles the Go server with **Go 1.26.2**, and sets `STATIC_WEB_ROOT=/app/web/dist` by default.
 
-When using CDN or direct object-storage media URLs, also set the frontend build-time allowlists in `web/.env.production`: `VITE_ALLOWED_MEDIA_BASE_URLS` for rendered media and `VITE_ALLOWED_DM_ATTACHMENT_BASE_URLS` for encrypted DM attachments. Use exact HTTPS path prefixes such as `https://cdn.example.com/media/`; root origins are rejected by the frontend safety checks.
+When using CDN or direct object-storage media URLs, also set the frontend build-time allowlists in `web/.env.production`: `VITE_ALLOWED_MEDIA_BASE_URLS` for rendered media and `VITE_ALLOWED_DM_ATTACHMENT_BASE_URLS` for encrypted DM attachments. Use exact HTTPS path prefixes such as `https://cdn.example.com/media/`; root origins are rejected by the frontend safety checks. Configure the CDN/storage endpoint to reject or download active content types (`image/svg+xml`, `text/html`, XML, and JavaScript types) with `Content-Disposition: attachment` and `X-Content-Type-Options: nosniff`.
 
 Provider callback URLs use the API public origin, not necessarily the frontend origin. For example, Patreon callbacks and PayPal return/webhook URLs should be based on `GLIPZ_PROTOCOL_PUBLIC_ORIGIN`.
 

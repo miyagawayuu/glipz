@@ -964,7 +964,7 @@ func (s *Server) handlePresign(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_params"})
 		return
 	}
-	if !strings.HasPrefix(req.ContentType, "image/") && !strings.HasPrefix(req.ContentType, "video/") {
+	if !isAllowedPresignedMediaContentType(req.ContentType) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unsupported_type"})
 		return
 	}
@@ -1026,7 +1026,7 @@ func (s *Server) handleMediaUpload(w http.ResponseWriter, r *http.Request) {
 	if ct == "" {
 		ct = "application/octet-stream"
 	}
-	if !strings.HasPrefix(ct, "image/") && !strings.HasPrefix(ct, "video/") && !strings.HasPrefix(ct, "audio/") {
+	if !isAllowedUploadMediaContentType(ct) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unsupported_type"})
 		return
 	}

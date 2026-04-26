@@ -100,9 +100,14 @@ func (s *Server) federationRemoteMediaURLs(urls []string) []string {
 }
 
 func writeMediaProxyHeaders(w http.ResponseWriter, meta s3client.ObjectMeta) {
-	if meta.ContentType != "" {
+	if shouldDownloadMediaContentType(meta.ContentType) {
+		w.Header().Set("Content-Type", fallbackDownloadContentType)
+		w.Header().Set("Content-Disposition", "attachment")
+	} else if meta.ContentType != "" {
 		w.Header().Set("Content-Type", meta.ContentType)
 	}
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
 	if meta.ContentLength >= 0 {
 		w.Header().Set("Content-Length", strconv.FormatInt(meta.ContentLength, 10))
 	}
@@ -126,19 +131,21 @@ func writeMediaProxyHeaders(w http.ResponseWriter, meta s3client.ObjectMeta) {
 }
 
 func isAllowedRemoteMediaContentType(raw string) bool {
-	ct := strings.ToLower(strings.TrimSpace(raw))
-	if i := strings.IndexByte(ct, ';'); i >= 0 {
-		ct = strings.TrimSpace(ct[:i])
-	}
+	ct := normalizeMediaContentType(raw)
 	if ct == "" || ct == "application/octet-stream" {
 		return true
 	}
-	return strings.HasPrefix(ct, "image/") || strings.HasPrefix(ct, "video/") || strings.HasPrefix(ct, "audio/")
+	return isInlineSafeMediaContentType(ct)
 }
 
 func copyRemoteMediaProxyHeaders(w http.ResponseWriter, h http.Header) {
+	if ct := strings.TrimSpace(h.Get("Content-Type")); shouldDownloadMediaContentType(ct) {
+		w.Header().Set("Content-Type", fallbackDownloadContentType)
+		w.Header().Set("Content-Disposition", "attachment")
+	} else if ct != "" {
+		w.Header().Set("Content-Type", ct)
+	}
 	for _, name := range []string{
-		"Content-Type",
 		"ETag",
 		"Last-Modified",
 	} {
@@ -249,8 +256,20 @@ func (s *Server) handlePublicMediaObject(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if s.cfg.MediaProxyMode == "direct" {
-		http.Redirect(w, r, s.localMediaDirectURL(objectKey), http.StatusTemporaryRedirect)
-		return
+		meta, err := s.s3.HeadObject(r.Context(), objectKey)
+		if err != nil {
+			switch {
+			case s3client.IsNotFound(err):
+				http.NotFound(w, r)
+			default:
+				writeServerError(w, "media direct head", err)
+			}
+			return
+		}
+		if !shouldDownloadMediaContentType(meta.ContentType) {
+			http.Redirect(w, r, s.localMediaDirectURL(objectKey), http.StatusTemporaryRedirect)
+			return
+		}
 	}
 
 	switch r.Method {
