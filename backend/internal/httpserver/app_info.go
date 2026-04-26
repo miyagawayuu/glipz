@@ -70,10 +70,6 @@ func (s *Server) patreonFeatureEnabled() bool {
 	return s.cfg.PatreonEnabled
 }
 
-func (s *Server) gumroadFeatureEnabled() bool {
-	return s.cfg.GumroadEnabled
-}
-
 func (s *Server) paypalFeatureEnabled() bool {
 	return s.cfg.PayPalEnabled
 }
@@ -97,8 +93,6 @@ func (s *Server) membershipProviderEnabled(provider string) bool {
 	switch strings.ToLower(strings.TrimSpace(provider)) {
 	case "patreon":
 		return s.patreonIntegrationAvailable()
-	case "gumroad":
-		return s.gumroadFeatureEnabled()
 	default:
 		return false
 	}

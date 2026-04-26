@@ -4,7 +4,6 @@ import { computed, inject, onActivated, onMounted, provide, ref } from "vue";
 import { RouterLink } from "vue-router";
 import { useI18n } from "vue-i18n";
 import DMSettingsPanel from "../components/DMSettingsPanel.vue";
-import FanclubGumroadSettings from "../components/FanclubGumroadSettings.vue";
 import FanclubPatreonSettings from "../components/FanclubPatreonSettings.vue";
 import PaymentPayPalSettings from "../components/PaymentPayPalSettings.vue";
 import Icon from "../components/Icon.vue";
@@ -18,7 +17,6 @@ type AppMe = {
   handle: string;
   is_site_admin?: boolean;
   fanclub_patreon_enabled?: boolean;
-  fanclub_gumroad_enabled?: boolean;
   payment_paypal_enabled?: boolean;
 } | null;
 
@@ -32,9 +30,8 @@ const themePreference = ref<ThemePreference>(readStoredThemePreference());
 
 const profilePath = computed(() => (appMe?.value?.handle ? `/@${appMe.value.handle}` : "/feed"));
 const showAdmin = computed(() => Boolean(appMe?.value?.is_site_admin));
-const showFanclubGumroad = computed(() => Boolean(appMe?.value?.fanclub_gumroad_enabled));
 const showFanclubPatreon = computed(() => Boolean(appMe?.value?.fanclub_patreon_enabled));
-const showFanclub = computed(() => showFanclubGumroad.value || showFanclubPatreon.value);
+const showFanclub = computed(() => showFanclubPatreon.value);
 const showPayments = computed(() => Boolean(appMe?.value?.payment_paypal_enabled));
 
 const themeOptions = computed(() =>
@@ -144,7 +141,6 @@ onActivated(syncThemeFromStorage);
         <h2 class="text-xs font-semibold uppercase tracking-wide text-neutral-500">
           {{ $t("views.settings.sections.fanclub") }}
         </h2>
-        <FanclubGumroadSettings v-if="showFanclubGumroad" />
         <FanclubPatreonSettings v-if="showFanclubPatreon" />
       </section>
 

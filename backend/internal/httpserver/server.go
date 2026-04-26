@@ -209,7 +209,6 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c s3client.
 			r.Post("/fanclub/patreon/entitlement", s.handlePatreonEntitlement)
 			r.Post("/fanclub/patreon/entitlement-federated", s.handlePatreonEntitlementFederated)
 			r.Get("/fanclub/patreon/campaigns", s.handlePatreonCampaigns)
-			r.Post("/fanclub/gumroad/entitlement", s.handleGumroadEntitlement)
 			r.Get("/payment/paypal/plans", s.handlePayPalListPlans)
 			r.Post("/payment/paypal/plans", s.handlePayPalUpsertPlan)
 			r.Post("/payment/paypal/subscription/create", s.handlePayPalSubscriptionCreate)
@@ -817,7 +816,6 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		"totp_enabled":            u.TOTPEnabled,
 		"dm_invite_auto_accept":   u.DMInviteAutoAccept,
 		"fanclub_patreon_enabled": s.patreonIntegrationAvailable(),
-		"fanclub_gumroad_enabled": s.gumroadFeatureEnabled(),
 		"payment_paypal_enabled":  s.paypalIntegrationAvailable(),
 	}
 	if u.AvatarObjectKey != nil && *u.AvatarObjectKey != "" {

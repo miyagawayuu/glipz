@@ -21,7 +21,6 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 
-	"glipz.io/backend/internal/fanclub/gumroad"
 	"glipz.io/backend/internal/fanclub/patreon"
 	"glipz.io/backend/internal/repo"
 )
@@ -857,7 +856,7 @@ func (s *Server) handleFederationPostEntitlementInbound(w http.ResponseWriter, r
 		return
 	}
 	if strings.EqualFold(strings.TrimSpace(row.MembershipProvider), patreon.ProviderID) ||
-		strings.EqualFold(strings.TrimSpace(row.MembershipProvider), gumroad.ProviderID) {
+		strings.EqualFold(strings.TrimSpace(row.MembershipProvider), "gumroad") {
 		// Remote instances cannot prove external membership to this node; minting here would bypass paywalls.
 		// Use 501 (not 403): consumers must not treat this as federation trust / "untrusted_instance".
 		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "federation_membership_entitlement_unsupported"})

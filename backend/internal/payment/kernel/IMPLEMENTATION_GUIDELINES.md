@@ -2,7 +2,7 @@
 
 This document describes how to add **peer-style payment providers** (e.g. Stripe Connect, PayPal for merchants) to Glipz. The `internal/payment/kernel` package only contains **PSP-agnostic infrastructure** (Redis key naming, OAuth `state` helpers). All provider rules, API clients, and money semantics live under `internal/payment/<provider>/`.
 
-`internal/fanclub/` is for **membership / entitlement** verification (Patreon, Gumroad, etc.) and is separate from this module.
+`internal/fanclub/` is for **membership / entitlement** verification (Patreon, etc.) and is separate from this module.
 
 ## Non-custodial, user-to-user (no admin as payee)
 

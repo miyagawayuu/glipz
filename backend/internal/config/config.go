@@ -61,8 +61,6 @@ type Config struct {
 	PatreonClientSecret string
 	// Optional override. Default: {GLIPZ_PROTOCOL_PUBLIC_ORIGIN}/api/v1/fanclub/patreon/callback
 	PatreonRedirectURI string
-	// Gumroad (fan club). Disabled by default; uses Gumroad's public license verification endpoint.
-	GumroadEnabled bool
 	// PayPal (payment). Disabled by default; requires PayPalEnabled and API credentials.
 	PayPalEnabled      bool
 	PayPalClientID     string
@@ -213,7 +211,6 @@ func Load() (Config, error) {
 	c.PatreonClientID = strings.TrimSpace(os.Getenv("PATREON_CLIENT_ID"))
 	c.PatreonClientSecret = strings.TrimSpace(os.Getenv("PATREON_CLIENT_SECRET"))
 	c.PatreonRedirectURI = strings.TrimSpace(os.Getenv("PATREON_REDIRECT_URI"))
-	c.GumroadEnabled, _ = strconv.ParseBool(getEnv("GUMROAD_ENABLED", "false"))
 	c.PayPalEnabled, _ = strconv.ParseBool(getEnv("PAYPAL_ENABLED", "false"))
 	c.PayPalClientID = strings.TrimSpace(os.Getenv("PAYPAL_CLIENT_ID"))
 	c.PayPalClientSecret = strings.TrimSpace(os.Getenv("PAYPAL_CLIENT_SECRET"))

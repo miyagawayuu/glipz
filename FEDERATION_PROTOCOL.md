@@ -393,11 +393,9 @@ Request body:
 }
 ```
 
-Membership entitlement minting is intentionally limited. The origin-side `POST /federation/posts/{postID}/entitlement` endpoint refuses external providers that the origin cannot safely verify for a remote viewer, including Patreon and Gumroad, with `federation_membership_entitlement_unsupported`.
+Membership entitlement minting is intentionally limited. The origin-side `POST /federation/posts/{postID}/entitlement` endpoint refuses external providers that the origin cannot safely verify for a remote viewer, including Patreon, with `federation_membership_entitlement_unsupported`.
 
 For Patreon-locked incoming posts, the current Glipz web/API flow can still unlock cross-instance when the viewer's home instance has Patreon enabled and the viewer has connected Patreon there. The viewer instance verifies the campaign/tier with Patreon locally, mints a short-lived `entitlement_jwt` whose issuer is the viewer instance, and sends that token to the origin `unlock_url`.
-
-Gumroad-locked federated posts are origin-instance only today because the viewer instance cannot verify the license ownership relationship for the remote origin. Viewers should open the origin instance and use the Gumroad license flow there, or use password-based unlock when applicable.
 
 ---
 
@@ -445,7 +443,7 @@ For Glipz deployment and scaling details, see [SETUP.md](SETUP.md), [DEPLOY.md](
 - Glipz Federation Protocol is not ActivityPub and does not require ActivityStreams documents.
 - Public post federation is the primary content path.
 - Notes are no longer supported by the current Glipz model.
-- Origin-side remote membership entitlement minting for Patreon and Gumroad locks is not supported. Patreon cross-instance unlock is supported through the viewer-instance verification path described above; Gumroad remains origin-instance only.
+- Origin-side remote membership entitlement minting for Patreon locks is not supported. Patreon cross-instance unlock is supported through the viewer-instance verification path described above.
 - Production federation should use HTTPS and stable public origins.
 - The authenticated `/api/v1/...` API is not part of the public server-to-server protocol, even when it starts federation actions locally.
 

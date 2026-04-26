@@ -110,16 +110,6 @@ PATREON_CLIENT_SECRET=
 # PATREON_REDIRECT_URI=http://localhost:8080/api/v1/fanclub/patreon/callback
 ```
 
-### Gumroad fan club locks (Optional)
-
-Gumroad is disabled by default. It uses Gumroad's public license verification endpoint, so no API secret is required:
-
-```env
-GUMROAD_ENABLED=true
-```
-
-Creators enter their Gumroad Membership `product_id` in the composer; viewers enter a valid license key to unlock.
-
 ### PayPal subscriptions (Optional)
 
 PayPal payment paywalls are disabled by default. Create a REST app in the PayPal Developer Dashboard, configure the webhook URLs shown in [.env.example](.env.example), then enable it explicitly:
@@ -281,7 +271,6 @@ These are disabled unless configured:
 | **Federation** | `GLIPZ_PROTOCOL_*`, optional `FEDERATION_POLICY_SUMMARY` |
 | **Legal documents** | `LEGAL_DOCS_DIR` |
 | **Patreon** | `PATREON_ENABLED=true`, `PATREON_CLIENT_ID`, `PATREON_CLIENT_SECRET`, optional `PATREON_REDIRECT_URI` |
-| **Gumroad** | `GUMROAD_ENABLED=true` |
 | **PayPal** | `PAYPAL_ENABLED=true`, `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID`, `PAYPAL_ENV` |
 
 See [.env.example](.env.example) for all options.
@@ -323,9 +312,9 @@ See [.env.example](.env.example) for all options.
 - Redirect URI in the Patreon developer console exactly matches `PATREON_REDIRECT_URI` or `{GLIPZ_PROTOCOL_PUBLIC_ORIGIN}/api/v1/fanclub/patreon/callback`
 - `GLIPZ_PROTOCOL_PUBLIC_ORIGIN` uses HTTPS in production
 
-### Patreon / Gumroad / PayPal UI is missing
+### Patreon / PayPal UI is missing
 
-- The related provider flag is enabled: `PATREON_ENABLED=true`, `GUMROAD_ENABLED=true`, or `PAYPAL_ENABLED=true`
+- The related provider flag is enabled: `PATREON_ENABLED=true` or `PAYPAL_ENABLED=true`
 - Credential-backed providers also have credentials set (`PATREON_*` or `PAYPAL_*`)
 - Restart the backend after changing `.env`, then reload the frontend
 
@@ -347,7 +336,7 @@ Before going live:
 - [ ] `GLIPZ_PROTOCOL_PUBLIC_ORIGIN` set (if using federation)
 - [ ] Database and Redis secured
 - [ ] Real email provider configured (Mailgun, etc.)
-- [ ] Optional providers explicitly enabled only when configured (`PATREON_ENABLED`, `GUMROAD_ENABLED`, `PAYPAL_ENABLED`)
+- [ ] Optional providers explicitly enabled only when configured (`PATREON_ENABLED`, `PAYPAL_ENABLED`)
 - [ ] License file added (see LICENSE)
 
 ---

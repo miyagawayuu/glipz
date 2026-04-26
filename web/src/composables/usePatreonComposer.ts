@@ -4,21 +4,18 @@ import { fetchPatreonCampaigns, fetchPatreonStatus, startPatreonOAuth, type Patr
 export const patreonSettingsPath = "/settings";
 
 type Translate = (key: string) => string;
-type MembershipProvider = "patreon" | "gumroad";
 
 export function usePatreonComposer(opts: {
   viewPassword: Ref<string>;
   viewPasswordConfirm: Ref<string>;
   composerPasswordOpen: Ref<boolean>;
   patreonEnabled: Ref<boolean>;
-  gumroadEnabled: Ref<boolean>;
 }) {
   const patreonAvailable = ref(false);
   const patreonConnected = ref(false);
   const patreonCampaigns = ref<PatreonCampaignRow[]>([]);
   const composerMembershipOpen = ref(false);
   const membershipUsePatreon = ref(false);
-  const membershipProvider = ref<MembershipProvider>("gumroad");
   const membershipCampaignId = ref("");
   const membershipTierId = ref("");
   const patreonConnectBusy = ref(false);
@@ -47,20 +44,8 @@ export function usePatreonComposer(opts: {
     membershipTierId.value = "";
   });
 
-  watch(membershipProvider, () => {
-    membershipCampaignId.value = "";
-    membershipTierId.value = "";
-  });
-
-  watch([opts.patreonEnabled, opts.gumroadEnabled], () => {
-    if (!opts.patreonEnabled.value && membershipProvider.value === "patreon") {
-      membershipProvider.value = opts.gumroadEnabled.value ? "gumroad" : "patreon";
-      membershipUsePatreon.value = false;
-    }
-    if (!opts.gumroadEnabled.value && membershipProvider.value === "gumroad") {
-      membershipProvider.value = opts.patreonEnabled.value ? "patreon" : "gumroad";
-      membershipUsePatreon.value = false;
-    }
+  watch(opts.patreonEnabled, () => {
+    if (!opts.patreonEnabled.value) membershipUsePatreon.value = false;
   });
 
   async function loadPatreon(token: string) {
@@ -94,29 +79,20 @@ export function usePatreonComposer(opts: {
   function resetPatreonComposerState() {
     composerMembershipOpen.value = false;
     membershipUsePatreon.value = false;
-    membershipProvider.value = "gumroad";
     membershipCampaignId.value = "";
     membershipTierId.value = "";
   }
 
   /** Returns a translated error message, or null if validation passes. */
   function validateMembershipForSubmit(pw: string, pw2: string, t: Translate): string | null {
-    if (membershipUsePatreon.value && membershipProvider.value === "patreon" && !opts.patreonEnabled.value) {
+    if (membershipUsePatreon.value && !opts.patreonEnabled.value) {
       return t("views.compose.errors.membershipIdsRequired");
-    }
-    if (membershipUsePatreon.value && membershipProvider.value === "gumroad" && !opts.gumroadEnabled.value) {
-      return t("views.compose.errors.gumroadProductRequired");
     }
     if (membershipUsePatreon.value && (pw.trim() || pw2.trim())) {
       return t("views.compose.errors.membershipWithPassword");
     }
-    if (membershipUsePatreon.value && membershipProvider.value === "patreon") {
-      if (!membershipCampaignId.value.trim() || !membershipTierId.value.trim()) {
-        return t("views.compose.errors.membershipIdsRequired");
-      }
-    }
-    if (membershipUsePatreon.value && membershipProvider.value === "gumroad" && !membershipCampaignId.value.trim()) {
-      return t("views.compose.errors.gumroadProductRequired");
+    if (membershipUsePatreon.value && (!membershipCampaignId.value.trim() || !membershipTierId.value.trim())) {
+      return t("views.compose.errors.membershipIdsRequired");
     }
     return null;
   }
@@ -124,9 +100,9 @@ export function usePatreonComposer(opts: {
   function applyMembershipToBody(body: Record<string, unknown>) {
     if (!membershipUsePatreon.value) return;
     body.membership = {
-      provider: membershipProvider.value,
+      provider: "patreon",
       creator_id: membershipCampaignId.value.trim(),
-      tier_id: membershipProvider.value === "gumroad" ? "license" : membershipTierId.value.trim(),
+      tier_id: membershipTierId.value.trim(),
     };
   }
 
@@ -149,7 +125,6 @@ export function usePatreonComposer(opts: {
     patreonCampaigns,
     composerMembershipOpen,
     membershipUsePatreon,
-    membershipProvider,
     membershipCampaignId,
     membershipTierId,
     patreonConnectBusy,

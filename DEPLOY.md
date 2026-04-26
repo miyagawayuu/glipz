@@ -147,7 +147,6 @@ MAIL_FROM_NAME=Glipz
 # PATREON_CLIENT_ID=...
 # PATREON_CLIENT_SECRET=...
 # PATREON_REDIRECT_URI=https://your-domain.com/api/v1/fanclub/patreon/callback
-# GUMROAD_ENABLED=true
 # PAYPAL_ENABLED=true
 # PAYPAL_CLIENT_ID=...
 # PAYPAL_CLIENT_SECRET=...
@@ -179,7 +178,6 @@ MAIL_FROM_NAME=Glipz
 | `GLIPZ_FEDERATION_DELIVERY_*` | Outbound federation delivery batch size, worker concurrency, and tick interval |
 | `PATREON_ENABLED` | Enables Patreon UI/routes; defaults to disabled |
 | `PATREON_*` | Patreon OAuth credentials; required when Patreon is enabled, and redirect URI must match your public API origin |
-| `GUMROAD_ENABLED` | Enables Gumroad license-key locks; defaults to disabled and requires no server secret |
 | `PAYPAL_ENABLED` | Enables PayPal payment UI/routes; defaults to disabled |
 | `PAYPAL_*` | PayPal REST app and webhook credentials; required when PayPal is enabled |
 | `MAILGUN_API_BASE` | Optional Mailgun regional API base, for example `https://api.eu.mailgun.net` |
@@ -420,7 +418,6 @@ Run these checks after deployment:
 | **Federation** | Set `GLIPZ_PROTOCOL_*` variables |
 | **Web Push** | Set `WEB_PUSH_VAPID_*` variables |
 | **Patreon fan club** | Set `PATREON_ENABLED=true`, `PATREON_CLIENT_ID`, `PATREON_CLIENT_SECRET`, and `PATREON_REDIRECT_URI` (or rely on default derived from `GLIPZ_PROTOCOL_PUBLIC_ORIGIN`) |
-| **Gumroad fan club locks** | Set `GUMROAD_ENABLED=true`; no server secret is required |
 | **PayPal subscriptions** | Set `PAYPAL_ENABLED=true`, `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID`, and `PAYPAL_ENV` |
 
 ---

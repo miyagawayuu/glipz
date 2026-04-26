@@ -14,7 +14,6 @@ import { getAccessToken } from "../auth";
 import { api } from "../lib/api";
 import { customEmojiMap, ensureCustomEmojiCatalog, pickerCustomEmojisForHandle, unicodeReactionPickerCategories } from "../lib/customEmojis";
 import { blockFederationUser, muteFederationUser } from "../lib/federationPrivacy";
-import { requestGumroadEntitlement } from "../lib/fanclubGumroad";
 import { requestPatreonEntitlement, requestPatreonEntitlementFederated } from "../lib/fanclubPatreon";
 import { createPayPalSubscription, requestPayPalEntitlement } from "../lib/paymentPayPal";
 import { redirectToAllowedExternalURL, safeHttpURL, safeMediaURL } from "../lib/redirect";
@@ -100,7 +99,6 @@ const appMe = inject<Ref<{
   handle?: string;
   is_site_admin?: boolean;
   fanclub_patreon_enabled?: boolean;
-  fanclub_gumroad_enabled?: boolean;
   payment_paypal_enabled?: boolean;
 } | null> | null>("appMe", null);
 const effectiveViewerEmail = computed(() =>
@@ -168,7 +166,6 @@ function isOwnPost(it: TimelinePost) {
 function membershipUnlockUIEnabled(it: TimelinePost): boolean {
 	const provider = (it.membership_provider || "").toLowerCase();
 	if (provider === "patreon") return Boolean(appMe?.value?.fanclub_patreon_enabled);
-	if (provider === "gumroad") return Boolean(appMe?.value?.fanclub_gumroad_enabled);
 	return false;
 }
 
@@ -239,7 +236,6 @@ const reportErr = ref("");
 const nsfwRevealedIds = ref(new Set<string>());
 const ageGatePostId = ref<string | null>(null);
 const unlockPwd = reactive<Record<string, string>>({});
-const unlockGumroadLicense = reactive<Record<string, string>>({});
 const unlockErr = reactive<Record<string, string>>({});
 const unlockBusy = ref<string | null>(null);
 const pollBusy = ref<string | null>(null);
@@ -809,31 +805,6 @@ async function submitUnlock(it: TimelinePost) {
         return;
       }
     }
-    if (it.has_membership_lock && provider === "gumroad") {
-      if (it.is_federated) {
-        unlockErr[it.id] = t("components.postTimeline.unlock.federatedMembershipUnsupported");
-        return;
-      }
-      const licenseKey = (unlockGumroadLicense[it.id] ?? "").trim();
-      if (!licenseKey) {
-        unlockErr[it.id] = t("components.postTimeline.unlock.gumroadLicenseRequired");
-        return;
-      }
-      try {
-        entitlementJwt = await requestGumroadEntitlement(token, it.id, licenseKey);
-      } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : "";
-        unlockErr[it.id] =
-          msg === "not_entitled"
-            ? t("components.postTimeline.unlock.notEntitled")
-            : msg === "gumroad_license_required"
-              ? t("components.postTimeline.unlock.gumroadLicenseRequired")
-              : msg === "gumroad_api_error" || msg.startsWith("gumroad_")
-                ? t("components.postTimeline.unlock.gumroadApiError")
-                : msg || t("components.postTimeline.unlock.unlockFailed");
-        return;
-      }
-    }
     const res = await unlockTimelinePost(token, it, { password: pwd, entitlement_jwt: entitlementJwt });
     emit("patchItem", {
       id: it.id,
@@ -1218,21 +1189,6 @@ async function startPayPalSubscribe(it: TimelinePost) {
           <p class="mt-1 text-xs text-sky-900/80">
             {{ $t("components.postTimeline.membershipLockedBody") }}
           </p>
-          <div v-if="(it.membership_provider || '').toLowerCase() === 'gumroad'" class="mt-3">
-            <label class="sr-only" :for="`gumroad-license-${it.id}`">{{
-              $t("components.postTimeline.unlock.gumroadLicenseLabel")
-            }}</label>
-            <input
-              :id="`gumroad-license-${it.id}`"
-              type="text"
-              autocomplete="off"
-              class="w-full rounded-xl border border-sky-300/80 bg-white px-3 py-2 text-sm text-neutral-900 outline-none ring-sky-500 focus:ring-2"
-              :placeholder="$t('components.postTimeline.unlock.gumroadLicensePlaceholder')"
-              :value="unlockGumroadLicense[it.id] ?? ''"
-              @input="unlockGumroadLicense[it.id] = ($event.target as HTMLInputElement).value"
-              @keydown.enter.prevent="submitUnlock(it)"
-            />
-          </div>
           <div class="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
             <button
               type="button"

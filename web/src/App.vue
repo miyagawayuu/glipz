@@ -49,7 +49,6 @@ const me = ref<{
   avatar_url: string | null;
   is_site_admin?: boolean;
   fanclub_patreon_enabled?: boolean;
-  fanclub_gumroad_enabled?: boolean;
   payment_paypal_enabled?: boolean;
 } | null>(null);
 provide("appMe", me);
@@ -281,7 +280,6 @@ async function loadMe() {
       avatar_url?: string | null;
       is_site_admin?: boolean;
       fanclub_patreon_enabled?: boolean;
-      fanclub_gumroad_enabled?: boolean;
       payment_paypal_enabled?: boolean;
     }>("/api/v1/me", {
       method: "GET",
@@ -297,7 +295,6 @@ async function loadMe() {
       avatar_url: safeHttpURL(u.avatar_url) || null,
       is_site_admin: !!u.is_site_admin,
       fanclub_patreon_enabled: !!u.fanclub_patreon_enabled,
-      fanclub_gumroad_enabled: !!u.fanclub_gumroad_enabled,
       payment_paypal_enabled: !!u.payment_paypal_enabled,
     };
     await refreshUnreadNotificationCount();
