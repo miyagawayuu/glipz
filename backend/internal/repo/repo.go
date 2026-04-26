@@ -2097,6 +2097,21 @@ func (p *Pool) ListFeedFollowing(ctx context.Context, viewerID uuid.UUID, limit 
 		limit = 50
 	}
 	rows, err := p.db.Query(ctx, `
+		WITH candidate AS (
+			SELECT p.id
+			FROM posts p
+			WHERE p.reply_to_id IS NULL
+			  AND COALESCE(btrim(p.reply_to_remote_object_iri), '') = ''
+			  AND p.visible_at <= NOW()
+			  AND p.group_id IS NULL
+			  AND `+postReadableByViewerSQL("p", "$1")+`
+			  AND EXISTS (
+				SELECT 1 FROM user_follows f
+				WHERE f.follower_id = $1 AND f.followee_id = p.user_id
+			  )
+			ORDER BY p.visible_at DESC, p.id DESC
+			LIMIT $2
+		)
 		SELECT p.id, p.user_id, u.email, u.handle, u.display_name, u.avatar_object_key, p.caption, p.media_type, p.object_keys,
 			p.is_nsfw,
 			`+postVisibilityExpr("p")+`,
@@ -2106,7 +2121,7 @@ func (p *Pool) ListFeedFollowing(ctx context.Context, viewerID uuid.UUID, limit 
 			(COALESCE(btrim(p.membership_provider), '') <> '') AS has_membership_lock,
 			COALESCE(p.membership_provider, ''), COALESCE(p.membership_creator_id, ''), COALESCE(p.membership_tier_id, ''),
 			p.created_at, p.visible_at,
-			COALESCE(rpl.reply_count, 0)::bigint,
+			(COALESCE(rpl.reply_count, 0) + COALESCE(frpl.reply_count, 0))::bigint,
 			COALESCE(lk.like_count, 0)::bigint + COALESCE(rlk.like_count, 0)::bigint,
 			COALESCE(rp.repost_count, 0)::bigint,
 			EXISTS (SELECT 1 FROM post_likes l WHERE l.post_id = p.id AND l.user_id = $1),
@@ -2121,6 +2136,14 @@ func (p *Pool) ListFeedFollowing(ctx context.Context, viewerID uuid.UUID, limit 
 			WHERE reply_to_id IN (SELECT id FROM candidate)
 			GROUP BY reply_to_id
 		) rpl ON rpl.post_id = p.id
+		LEFT JOIN (
+			SELECT substring(reply_to_object_iri FROM '/posts/([0-9a-fA-F-]{36})$')::uuid AS post_id, COUNT(*)::bigint AS reply_count
+			FROM federation_incoming_posts
+			WHERE deleted_at IS NULL
+			  AND COALESCE(btrim(reply_to_object_iri), '') ~ '/posts/[0-9a-fA-F-]{36}$'
+			  AND substring(reply_to_object_iri FROM '/posts/([0-9a-fA-F-]{36})$')::uuid IN (SELECT id FROM candidate)
+			GROUP BY 1
+		) frpl ON frpl.post_id = p.id
 		LEFT JOIN (
 			SELECT post_id, COUNT(*)::bigint AS like_count FROM post_likes WHERE post_id IN (SELECT id FROM candidate) GROUP BY post_id
 		) lk ON lk.post_id = p.id
