@@ -14,15 +14,17 @@ import (
 )
 
 const (
-	loginRateLimitWindow       = 15 * time.Minute
-	loginRateLimitIPMax        = 30
-	loginRateLimitAccountMax   = 10
-	mfaRateLimitWindow         = 10 * time.Minute
-	mfaRateLimitIPMax          = 60
-	mfaRateLimitUserMax        = 10
-	remoteMediaRateLimitWindow = 15 * time.Minute
-	linkPreviewRateLimitWindow = 15 * time.Minute
-	loginRateLimitRedisTimeout = 2 * time.Second
+	loginRateLimitWindow            = 15 * time.Minute
+	loginRateLimitIPMax             = 30
+	loginRateLimitAccountMax        = 10
+	mfaRateLimitWindow              = 10 * time.Minute
+	mfaRateLimitIPMax               = 60
+	mfaRateLimitUserMax             = 10
+	remoteMediaRateLimitWindow      = 15 * time.Minute
+	remoteFederationRateLimitWindow = 15 * time.Minute
+	remoteFederationRateLimitMax    = 60
+	linkPreviewRateLimitWindow      = 15 * time.Minute
+	loginRateLimitRedisTimeout      = 2 * time.Second
 )
 
 func (s *Server) clientIPForAuthRateLimit(r *http.Request) string {
@@ -47,6 +49,11 @@ func loginIPRateKey(ip string) string {
 func remoteMediaIPRateKey(ip string) string {
 	sum := sha256.Sum256([]byte(strings.TrimSpace(ip)))
 	return "rl:media:remote:ip:" + hex.EncodeToString(sum[:])
+}
+
+func remoteFederationIPRateKey(ip string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(ip)))
+	return "rl:federation:remote_lookup:ip:" + hex.EncodeToString(sum[:])
 }
 
 func linkPreviewIPRateKey(ip string) string {
@@ -262,6 +269,34 @@ func (s *Server) remoteMediaRateLimitExceeded(ctx context.Context, r *http.Reque
 
 func writeRemoteMediaRateLimited(w http.ResponseWriter) {
 	w.Header().Set("Retry-After", fmt.Sprintf("%.0f", remoteMediaRateLimitWindow.Seconds()))
+	writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "rate_limited"})
+}
+
+func (s *Server) remoteFederationRateLimitExceeded(ctx context.Context, r *http.Request) bool {
+	if s.rdb == nil {
+		return false
+	}
+	ip := s.clientIPForAuthRateLimit(r)
+	if strings.TrimSpace(ip) == "" {
+		return false
+	}
+	limitCtx, cancel := context.WithTimeout(ctx, loginRateLimitRedisTimeout)
+	defer cancel()
+	key := remoteFederationIPRateKey(ip)
+	n, err := s.rdb.Incr(limitCtx, key).Result()
+	if err != nil {
+		addRateLimitError("remote_federation.incr")
+		log.Printf("remote federation rate limit incr %s: %v", key, err)
+		return true
+	}
+	if n == 1 {
+		_ = s.rdb.Expire(limitCtx, key, remoteFederationRateLimitWindow).Err()
+	}
+	return int(n) > remoteFederationRateLimitMax
+}
+
+func writeRemoteFederationRateLimited(w http.ResponseWriter) {
+	w.Header().Set("Retry-After", fmt.Sprintf("%.0f", remoteFederationRateLimitWindow.Seconds()))
 	writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "rate_limited"})
 }
 

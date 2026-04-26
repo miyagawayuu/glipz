@@ -634,6 +634,7 @@ export const enOverrides: DeepPartial<AppMessageSchema> = {
       close: "Close",
       errors: {
         missingAcctOrActor: "Please specify acct or actor.",
+        disabled: "Remote federation profile loading is disabled.",
         loadFailed: "Failed to load",
         repostFailed: "Failed to repost",
         reactionFailed: "Failed to react",

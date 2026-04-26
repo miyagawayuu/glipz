@@ -642,6 +642,7 @@ export const jaMessages = {
       close: "閉じる",
       errors: {
         missingAcctOrActor: "acct または actor を指定してください。",
+        disabled: "連合プロフィールの読み込みは無効です。",
         loadFailed: "読み込みに失敗しました",
         repostFailed: "リポストに失敗しました",
         reactionFailed: "リアクションに失敗しました",

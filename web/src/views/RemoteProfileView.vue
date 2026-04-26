@@ -130,6 +130,7 @@ async function loadProfile() {
   busy.value = true;
   profile.value = null;
   posts.value = [];
+  stopIncomingStream();
   try {
     let path = "";
     if (actorForQuery.value) {

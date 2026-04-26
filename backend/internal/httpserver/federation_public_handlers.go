@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -22,6 +21,10 @@ func (s *Server) handlePublicFederatedIncomingByActor(w http.ResponseWriter, r *
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method_not_allowed"})
 		return
 	}
+	if s.remoteFederationRateLimitExceeded(r.Context(), r) {
+		writeRemoteFederationRateLimited(w)
+		return
+	}
 	raw := strings.TrimSpace(r.URL.Query().Get("actor"))
 	if raw == "" {
 		raw = strings.TrimSpace(r.URL.Query().Get("acct"))
@@ -30,7 +33,9 @@ func (s *Server) handlePublicFederatedIncomingByActor(w http.ResponseWriter, r *
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing_acct_or_actor"})
 		return
 	}
-	resolved, err := ResolveRemoteActor(r.Context(), raw)
+	resolveCtx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	resolved, err := ResolveRemoteActor(resolveCtx, raw)
 	if err != nil {
 		st := resolveErrorHTTPStatus(err)
 		writeJSON(w, st, map[string]string{"error": ResolveFailureAPIError(err)})
@@ -58,11 +63,10 @@ func (s *Server) handlePublicFederatedIncomingStream(w http.ResponseWriter, r *h
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method_not_allowed"})
 		return
 	}
-	streamCtx, release, ok := s.acquireSSEConnection(w, r, nil)
-	if !ok {
+	if s.remoteFederationRateLimitExceeded(r.Context(), r) {
+		writeRemoteFederationRateLimited(w)
 		return
 	}
-	defer release()
 	raw := strings.TrimSpace(r.URL.Query().Get("actor"))
 	if raw == "" {
 		raw = strings.TrimSpace(r.URL.Query().Get("acct"))
@@ -71,12 +75,19 @@ func (s *Server) handlePublicFederatedIncomingStream(w http.ResponseWriter, r *h
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing_acct_or_actor"})
 		return
 	}
-	resolved, err := ResolveRemoteActor(streamCtx, raw)
+	resolveCtx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	resolved, err := ResolveRemoteActor(resolveCtx, raw)
+	cancel()
 	if err != nil {
 		st := resolveErrorHTTPStatus(err)
 		writeJSON(w, st, map[string]string{"error": ResolveFailureAPIError(err)})
 		return
 	}
+	streamCtx, release, ok := s.acquireSSEConnection(w, r, nil)
+	if !ok {
+		return
+	}
+	defer release()
 
 	flusher, okFlush := w.(http.Flusher)
 	if !okFlush {
@@ -132,6 +143,10 @@ func (s *Server) handlePublicRemoteProfile(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method_not_allowed"})
 		return
 	}
+	if s.remoteFederationRateLimitExceeded(r.Context(), r) {
+		writeRemoteFederationRateLimited(w)
+		return
+	}
 	acct := strings.TrimSpace(r.URL.Query().Get("acct"))
 	actor := strings.TrimSpace(r.URL.Query().Get("actor"))
 	raw := actor
@@ -142,7 +157,9 @@ func (s *Server) handlePublicRemoteProfile(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing_acct_or_actor"})
 		return
 	}
-	disp, err := FetchRemoteActorDisplay(r.Context(), raw)
+	resolveCtx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	disp, err := FetchRemoteActorDisplay(resolveCtx, raw)
 	if err != nil {
 		st := resolveErrorHTTPStatus(err)
 		writeJSON(w, st, map[string]string{"error": ResolveFailureAPIError(err)})
@@ -158,18 +175,29 @@ func (s *Server) handlePublicRemoteActorPosts(w http.ResponseWriter, r *http.Req
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method_not_allowed"})
 		return
 	}
+	if s.remoteFederationRateLimitExceeded(r.Context(), r) {
+		writeRemoteFederationRateLimited(w)
+		return
+	}
 	actorID := strings.TrimSpace(r.URL.Query().Get("actor"))
 	if actorID == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing_actor"})
 		return
 	}
-	resolved, err := ResolveRemoteActor(r.Context(), actorID)
+	resolveCtx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	resolved, err := ResolveRemoteActor(resolveCtx, actorID)
 	if err != nil {
 		st := resolveErrorHTTPStatus(err)
 		writeJSON(w, st, map[string]string{"error": ResolveFailureAPIError(err)})
 		return
 	}
-	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, resolved.PostsURL, nil)
+	postsURL, err := validatePublicOutboundURL(resolveCtx, resolved.PostsURL, false)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "invalid_remote_posts_url"})
+		return
+	}
+	req, err := http.NewRequestWithContext(resolveCtx, http.MethodGet, postsURL.String(), nil)
 	if err != nil {
 		writeServerError(w, "remote posts request", err)
 		return
@@ -180,13 +208,13 @@ func (s *Server) handlePublicRemoteActorPosts(w http.ResponseWriter, r *http.Req
 		return
 	}
 	defer res.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(res.Body, 2<<20))
-	if err != nil {
-		writeServerError(w, "remote posts read", err)
-		return
-	}
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": fmt.Sprintf("remote_posts_http_%d", res.StatusCode)})
+		return
+	}
+	body, err := readRemoteFederationJSONBody(res, 2*maxRemoteFederationJSONBytes)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "remote_posts_too_large"})
 		return
 	}
 	var payload struct {

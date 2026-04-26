@@ -1,17 +1,19 @@
 package httpserver
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
 )
 
 var errResolveBadInput = errors.New("bad federation resolve input")
+
+const maxRemoteFederationJSONBytes = 1 << 20
 
 func ResolveFailureAPIError(err error) string {
 	if err == nil {
@@ -142,12 +144,12 @@ func fetchRemoteFederationDiscovery(ctx context.Context, host string) (federatio
 		return federationAccountDiscovery{}, fmt.Errorf("discovery fetch: %w", err)
 	}
 	defer res.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(res.Body, 1<<20))
-	if err != nil {
-		return federationAccountDiscovery{}, err
-	}
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
 		return federationAccountDiscovery{}, fmt.Errorf("discovery: http %d", res.StatusCode)
+	}
+	body, err := readRemoteFederationJSONBody(res, maxRemoteFederationJSONBytes)
+	if err != nil {
+		return federationAccountDiscovery{}, fmt.Errorf("discovery read: %w", err)
 	}
 	var doc federationAccountDiscovery
 	if err := json.Unmarshal(body, &doc); err != nil {
@@ -177,12 +179,12 @@ func fetchRemoteFederationAccount(ctx context.Context, acct string) (federationA
 		return federationAccountDiscovery{}, fmt.Errorf("discovery fetch: %w", err)
 	}
 	defer res.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(res.Body, 1<<20))
-	if err != nil {
-		return federationAccountDiscovery{}, err
-	}
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
 		return federationAccountDiscovery{}, fmt.Errorf("discovery: http %d", res.StatusCode)
+	}
+	body, err := readRemoteFederationJSONBody(res, maxRemoteFederationJSONBytes)
+	if err != nil {
+		return federationAccountDiscovery{}, fmt.Errorf("discovery read: %w", err)
 	}
 	var doc federationAccountDiscovery
 	if err := json.Unmarshal(body, &doc); err != nil {
@@ -223,18 +225,36 @@ func fetchRemoteFederationProfile(ctx context.Context, profileURL string) (feder
 		return federationPublicProfile{}, fmt.Errorf("profile fetch: %w", err)
 	}
 	defer res.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(res.Body, 1<<20))
-	if err != nil {
-		return federationPublicProfile{}, err
-	}
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
 		return federationPublicProfile{}, fmt.Errorf("profile: http %d", res.StatusCode)
+	}
+	body, err := readRemoteFederationJSONBody(res, maxRemoteFederationJSONBytes)
+	if err != nil {
+		return federationPublicProfile{}, fmt.Errorf("profile read: %w", err)
 	}
 	var doc federationPublicProfile
 	if err := json.Unmarshal(body, &doc); err != nil {
 		return federationPublicProfile{}, fmt.Errorf("profile json: %w", err)
 	}
 	return doc, nil
+}
+
+func readRemoteFederationJSONBody(res *http.Response, maxBytes int64) ([]byte, error) {
+	if res == nil || res.Body == nil {
+		return nil, fmt.Errorf("empty response")
+	}
+	if responseContentLengthExceeds(res.Header, maxBytes) {
+		return nil, fmt.Errorf("response too large")
+	}
+	var body bytes.Buffer
+	_, exceeded, err := copyWithMaxBytes(&body, res.Body, maxBytes)
+	if err != nil {
+		return nil, err
+	}
+	if exceeded {
+		return nil, fmt.Errorf("response too large")
+	}
+	return body.Bytes(), nil
 }
 
 func FetchRemoteActorDisplay(ctx context.Context, raw string) (RemoteActorDisplay, error) {

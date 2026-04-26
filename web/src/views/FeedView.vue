@@ -38,6 +38,7 @@ import {
   inferPostMediaType,
   MAX_COMPOSER_IMAGE_SLOTS,
   mergePickedComposerFiles,
+  SAFE_MEDIA_ACCEPT,
 } from "../lib/composerMedia";
 import { safeMediaURL } from "../lib/redirect";
 
@@ -1118,7 +1119,7 @@ function addPollOptionField() {
             >
               <input
                 type="file"
-                accept="image/*,video/*,audio/*"
+                :accept="SAFE_MEDIA_ACCEPT"
                 multiple
                 class="hidden"
                 :disabled="attachmentPickerDisabled"

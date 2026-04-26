@@ -13,6 +13,7 @@ import {
   inferPostMediaType,
   MAX_COMPOSER_IMAGE_SLOTS,
   mergePickedComposerFiles,
+  SAFE_MEDIA_ACCEPT,
 } from "../lib/composerMedia";
 import { patreonSettingsPath, usePatreonComposer } from "../composables/usePatreonComposer";
 import { usePaymentComposer } from "../composables/usePaymentComposer";
@@ -583,7 +584,7 @@ onBeforeUnmount(() => {
             >
               <input
                 type="file"
-                accept="image/*,video/*,audio/*"
+                :accept="SAFE_MEDIA_ACCEPT"
                 multiple
                 class="hidden"
                 :disabled="attachmentPickerDisabled"

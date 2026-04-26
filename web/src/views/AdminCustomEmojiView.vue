@@ -12,6 +12,7 @@ import {
   patchAdminSiteCustomEmoji,
 } from "../lib/customEmojiApi";
 import { refreshCustomEmojiCatalog } from "../lib/customEmojis";
+import { SAFE_PROFILE_IMAGE_ACCEPT } from "../lib/composerMedia";
 import type { CustomEmoji } from "../types/customEmoji";
 
 type DraftRow = {
@@ -167,7 +168,7 @@ onMounted(async () => {
           </label>
           <label class="block text-sm">
             <span class="mb-1 block font-medium text-neutral-800">{{ $t("views.adminCustomEmojis.fileLabel") }}</span>
-            <input type="file" accept="image/*" class="block w-full text-sm text-neutral-700" @change="(e) => createForm.file = (e.target as HTMLInputElement).files?.[0] ?? null" />
+            <input type="file" :accept="SAFE_PROFILE_IMAGE_ACCEPT" class="block w-full text-sm text-neutral-700" @change="(e) => createForm.file = (e.target as HTMLInputElement).files?.[0] ?? null" />
           </label>
         </div>
         <label class="mt-4 flex items-center gap-2 text-sm text-neutral-700">
@@ -226,7 +227,7 @@ onMounted(async () => {
               </label>
               <label class="block text-sm">
                 <span class="mb-1 block font-medium text-neutral-800">{{ $t("views.adminCustomEmojis.replaceFileLabel") }}</span>
-                <input type="file" accept="image/*" class="block w-full text-sm text-neutral-700" @change="(e) => drafts[item.id].file = (e.target as HTMLInputElement).files?.[0] ?? null" />
+                <input type="file" :accept="SAFE_PROFILE_IMAGE_ACCEPT" class="block w-full text-sm text-neutral-700" @change="(e) => drafts[item.id].file = (e.target as HTMLInputElement).files?.[0] ?? null" />
               </label>
             </div>
             <label class="mt-4 flex items-center gap-2 text-sm text-neutral-700">

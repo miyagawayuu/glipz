@@ -1,6 +1,7 @@
 /** Empty means same-origin, for example :5173, and requests reach the backend through Vite's /api proxy. */
 import { translate } from "../i18n";
 import { COOKIE_AUTH_TOKEN } from "../auth";
+import { isSafeComposerMediaFile } from "./composerMedia";
 import { isNativeApp } from "./runtime";
 
 function normalizeApiOrigin(raw: string): string {
@@ -156,6 +157,9 @@ export async function presignedPut(
 export type MediaUploadResponse = { object_key: string; public_url: string };
 
 export async function uploadMediaFile(token: string, file: File): Promise<MediaUploadResponse> {
+  if (!isSafeComposerMediaFile(file)) {
+    throw new Error("unsupported_type");
+  }
   const fd = new FormData();
   fd.append("file", file, file.name);
   const res = await fetch(`${apiBase()}/api/v1/media/upload`, {

@@ -11,6 +11,7 @@ func TestMediaContentTypeSafety(t *testing.T) {
 		allowedUpload   bool
 		allowedPresign  bool
 		allowedDMAttach bool
+		download        bool
 	}{
 		{
 			name:            "svg image is active",
@@ -20,6 +21,7 @@ func TestMediaContentTypeSafety(t *testing.T) {
 			allowedUpload:   false,
 			allowedPresign:  false,
 			allowedDMAttach: false,
+			download:        true,
 		},
 		{
 			name:            "html is active",
@@ -29,6 +31,7 @@ func TestMediaContentTypeSafety(t *testing.T) {
 			allowedUpload:   false,
 			allowedPresign:  false,
 			allowedDMAttach: false,
+			download:        true,
 		},
 		{
 			name:            "xhtml is active",
@@ -38,6 +41,7 @@ func TestMediaContentTypeSafety(t *testing.T) {
 			allowedUpload:   false,
 			allowedPresign:  false,
 			allowedDMAttach: false,
+			download:        true,
 		},
 		{
 			name:            "javascript is active",
@@ -47,6 +51,7 @@ func TestMediaContentTypeSafety(t *testing.T) {
 			allowedUpload:   false,
 			allowedPresign:  false,
 			allowedDMAttach: false,
+			download:        true,
 		},
 		{
 			name:            "png is inline safe",
@@ -56,6 +61,17 @@ func TestMediaContentTypeSafety(t *testing.T) {
 			allowedUpload:   true,
 			allowedPresign:  true,
 			allowedDMAttach: true,
+			download:        false,
+		},
+		{
+			name:            "png parameters are normalized",
+			contentType:     "image/png; charset=binary",
+			active:          false,
+			inlineSafe:      true,
+			allowedUpload:   true,
+			allowedPresign:  true,
+			allowedDMAttach: true,
+			download:        false,
 		},
 		{
 			name:            "mp4 is inline safe",
@@ -65,6 +81,7 @@ func TestMediaContentTypeSafety(t *testing.T) {
 			allowedUpload:   true,
 			allowedPresign:  true,
 			allowedDMAttach: true,
+			download:        false,
 		},
 		{
 			name:            "mp3 is inline safe",
@@ -72,8 +89,19 @@ func TestMediaContentTypeSafety(t *testing.T) {
 			active:          false,
 			inlineSafe:      true,
 			allowedUpload:   true,
+			allowedPresign:  true,
+			allowedDMAttach: true,
+			download:        false,
+		},
+		{
+			name:            "bmp is not an accepted public media format",
+			contentType:     "image/bmp",
+			active:          false,
+			inlineSafe:      false,
+			allowedUpload:   false,
 			allowedPresign:  false,
 			allowedDMAttach: true,
+			download:        true,
 		},
 		{
 			name:            "octet stream is DM attachment only",
@@ -83,6 +111,7 @@ func TestMediaContentTypeSafety(t *testing.T) {
 			allowedUpload:   false,
 			allowedPresign:  false,
 			allowedDMAttach: true,
+			download:        true,
 		},
 	}
 
@@ -102,6 +131,9 @@ func TestMediaContentTypeSafety(t *testing.T) {
 			}
 			if got := isAllowedDMAttachmentContentType(tt.contentType); got != tt.allowedDMAttach {
 				t.Fatalf("isAllowedDMAttachmentContentType(%q) = %v, want %v", tt.contentType, got, tt.allowedDMAttach)
+			}
+			if got := shouldDownloadMediaContentType(tt.contentType); got != tt.download {
+				t.Fatalf("shouldDownloadMediaContentType(%q) = %v, want %v", tt.contentType, got, tt.download)
 			}
 		})
 	}

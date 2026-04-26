@@ -1,6 +1,22 @@
 /** Max image attachments per post (server matches). */
 export const MAX_COMPOSER_IMAGE_SLOTS = 4;
 
+export const SAFE_MEDIA_ACCEPT =
+  "image/avif,image/gif,image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/webm,audio/aac,audio/flac,audio/mp4,audio/mpeg,audio/ogg,audio/wav,audio/webm,audio/x-wav";
+
+export const SAFE_PROFILE_IMAGE_ACCEPT = "image/avif,image/gif,image/jpeg,image/png,image/webp";
+
+const SAFE_MEDIA_TYPES = new Set(SAFE_MEDIA_ACCEPT.split(","));
+const SAFE_PROFILE_IMAGE_TYPES = new Set(SAFE_PROFILE_IMAGE_ACCEPT.split(","));
+
+export function isSafeComposerMediaFile(file: File): boolean {
+  return SAFE_MEDIA_TYPES.has(file.type);
+}
+
+export function isSafeProfileImageFile(file: File): boolean {
+  return SAFE_PROFILE_IMAGE_TYPES.has(file.type);
+}
+
 export function inferPostMediaType(files: File[]): "none" | "image" | "video" | "audio" {
   if (!files.length) return "none";
   const t = files[0].type;
@@ -23,10 +39,7 @@ export function mergePickedComposerFiles(
   existing: File[],
   picked: File[],
 ): { files: File[]; replacedKind: boolean; partialImageDrop: boolean; excludedImages: number } {
-  const valid = picked.filter(
-    (f) =>
-      f.type.startsWith("image/") || f.type.startsWith("video/") || f.type.startsWith("audio/"),
-  );
+  const valid = picked.filter(isSafeComposerMediaFile);
   if (!valid.length) {
     return { files: existing, replacedKind: false, partialImageDrop: false, excludedImages: 0 };
   }

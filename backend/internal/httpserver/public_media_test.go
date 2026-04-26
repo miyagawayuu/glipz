@@ -75,3 +75,43 @@ func TestWriteMediaProxyHeadersKeepsSafeMediaInline(t *testing.T) {
 		t.Fatalf("Content-Disposition = %q, want empty", got)
 	}
 }
+
+func TestMediaUploadContentTypeAllowlist(t *testing.T) {
+	allowed := []string{
+		"image/jpeg",
+		"image/png; charset=binary",
+		"image/webp",
+		"video/mp4",
+		"video/webm",
+		"audio/mpeg",
+		"audio/ogg",
+	}
+	for _, ct := range allowed {
+		if !isAllowedUploadMediaContentType(ct) {
+			t.Fatalf("isAllowedUploadMediaContentType(%q) = false, want true", ct)
+		}
+		if !isAllowedPresignedMediaContentType(ct) {
+			t.Fatalf("isAllowedPresignedMediaContentType(%q) = false, want true", ct)
+		}
+	}
+}
+
+func TestMediaUploadContentTypeRejectsActiveContent(t *testing.T) {
+	rejected := []string{
+		"",
+		"application/octet-stream",
+		"image/svg+xml",
+		"text/html; charset=utf-8",
+		"application/xhtml+xml",
+		"application/javascript",
+		"text/css",
+	}
+	for _, ct := range rejected {
+		if isAllowedUploadMediaContentType(ct) {
+			t.Fatalf("isAllowedUploadMediaContentType(%q) = true, want false", ct)
+		}
+		if isAllowedPresignedMediaContentType(ct) {
+			t.Fatalf("isAllowedPresignedMediaContentType(%q) = true, want false", ct)
+		}
+	}
+}

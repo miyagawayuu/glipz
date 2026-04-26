@@ -19,6 +19,7 @@ import { buildComposerReplyQuery, composeRoutePath } from "../lib/postComposer";
 import { bumpMeHub } from "../meHub";
 import { createDMThread, inviteDMPeer } from "../lib/dm";
 import { safeHttpURL, safeMediaURL } from "../lib/redirect";
+import { isSafeProfileImageFile, SAFE_PROFILE_IMAGE_ACCEPT } from "../lib/composerMedia";
 
 let cropperInstance: InstanceType<typeof Cropper> | null = null;
 
@@ -534,7 +535,7 @@ function closeCropModal() {
 }
 
 function openCropFromFile(kind: "avatar" | "header", file: File) {
-  if (!file.type.startsWith("image/")) return;
+  if (!isSafeProfileImageFile(file)) return;
   cropperInstance?.destroy();
   cropperInstance = null;
   if (cropSrc.value) URL.revokeObjectURL(cropSrc.value);
@@ -910,7 +911,7 @@ watch(handleParam, () => void loadAll());
             <input
               id="profile-header-file"
               type="file"
-              accept="image/*"
+              :accept="SAFE_PROFILE_IMAGE_ACCEPT"
               class="sr-only"
               :disabled="uploadBusy || saving"
               @change="onPickHeaderFile"
@@ -946,7 +947,7 @@ watch(handleParam, () => void loadAll());
                 <input
                   id="profile-avatar-file"
                   type="file"
-                  accept="image/*"
+                  :accept="SAFE_PROFILE_IMAGE_ACCEPT"
                   class="sr-only"
                   :disabled="uploadBusy || saving"
                   @change="onPickAvatarFile"
