@@ -23,7 +23,7 @@ This repository contains the official Go implementation of the Glipz Federation 
 
 - **Independent communities** that want a customizable social space under their own domain and rules
 - **SNS operators** who want to launch a community-focused social network without depending on a centralized platform
-- **Creators and fan communities** that need optional gated posts, memberships, or subscription-based media access
+- **Creators and fan communities** that need optional gated posts and memberships
 - **Developers** who want a modern Go/Vue social app with REST APIs, OAuth, PATs, and federation hooks
 - **Independent operators** who want to run a single-server instance with local media storage or scale out with S3-compatible storage/CDN delivery
 
@@ -36,7 +36,7 @@ This repository contains the official Go implementation of the Glipz Federation 
 | Feature | Description |
 |---------|-------------|
 | **Timelines** | Home, local, and federated timelines |
-| **Posts** | Text, media, polls, scheduled publishing; optional view password, Patreon membership gate, or PayPal subscription paywall on media |
+| **Posts** | Text, media, polls, scheduled publishing; optional view password or Patreon membership gate |
 | **Replies & Threads** | Full threaded conversations |
 | **Reposts** | Share posts with optional commentary |
 | **Reactions** | Emoji reactions on local and federated posts |
@@ -77,13 +77,6 @@ This repository contains the official Go implementation of the Glipz Federation 
 - **Patreon:** link your campaign via OAuth; configure `PATREON_ENABLED=true` plus `PATREON_CLIENT_ID` / `PATREON_CLIENT_SECRET` in `.env` (see [.env.example](.env.example)); callback path is documented there.
 - **Federation:** Patreon-locked federated posts can be unlocked from the viewer instance when that instance has Patreon enabled and the viewer has connected Patreon there. The viewer instance verifies the campaign/tier with Patreon and sends a short-lived `entitlement_jwt` to the origin unlock endpoint.
 - Other membership platforms (e.g. SubscribeStar, Ko-fi, Fansly, Ci-en, pixiv FANBOX, Fantia) are not integrated: most lack a stable, third-party–safe API to verify a viewer’s subscription in real time, or are unsuitable for server-side checks under Glipz’s model.
-
-### Payments (PayPal subscriptions; optional)
-
-- **Disabled by default:** set `PAYPAL_ENABLED=true` to expose PayPal payment UI and routes. When disabled, PayPal paywall creation/unlock UI is hidden and server handlers return unavailable/not implemented responses.
-- Glipz also supports **user-to-user (non-custodial) paywalls** under `internal/payment/…`.
-- **PayPal (subscriptions):** creators register a PayPal `plan_id` (created on PayPal) and can lock posts behind an active subscription. The server validates PayPal webhooks and mints short-lived unlock entitlements for viewers.
-- Configure `PAYPAL_ENABLED=true` plus `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID`, and `PAYPAL_ENV` in `.env` (see [.env.example](.env.example)). PayPal approvals return through `{GLIPZ_PROTOCOL_PUBLIC_ORIGIN}/api/v1/payment/paypal/subscription/return`; webhooks use `{GLIPZ_PROTOCOL_PUBLIC_ORIGIN}/api/v1/payment/paypal/webhook`.
 
 ### Developer Features
 
@@ -222,7 +215,6 @@ Mailpit (started with the Docker stack) is for local development. In production,
 - [ ] Email provider configured (Mailgun, etc.)
 - [ ] `GLIPZ_ADMIN_USER_IDS` set for site administrators who can access `/admin`
 - [ ] Patreon fan club (if used): `PATREON_ENABLED=true`, `PATREON_CLIENT_ID`, `PATREON_CLIENT_SECRET`, and matching redirect URI
-- [ ] PayPal payments (if used): `PAYPAL_ENABLED=true`, `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID`, and `PAYPAL_ENV`
 
 ---
 
@@ -247,7 +239,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 
 ### Example: Post unlock (password / membership entitlement)
 
-Posts can carry a view password, a membership lock, or a payment lock. **Unlock** reveals the protected media/caption for that post:
+Posts can carry a view password or membership lock. **Unlock** reveals the protected media/caption for that post:
 
 - **Password unlock**: viewer enters a password.
 - **Membership unlock (federation)**: viewer requests a short-lived, verifiable `entitlement_jwt` (JWS) from the origin instance and uses it to unlock.
@@ -328,8 +320,6 @@ Membership entitlement over Glipz federation (`POST .../federation/posts/{postID
 | `VITE_ALLOWED_DM_ATTACHMENT_BASE_URLS` | Frontend allowlist for CDN/direct encrypted DM attachment URL prefixes | Optional |
 | `PATREON_ENABLED` | Enables Patreon UI/routes; defaults to disabled | Optional |
 | `PATREON_*` | Patreon OAuth credentials for fan club features | Required when Patreon is enabled |
-| `PAYPAL_ENABLED` | Enables PayPal UI/routes; defaults to disabled | Optional |
-| `PAYPAL_*` | PayPal subscriptions for payment paywalls | Required when PayPal is enabled |
 | `WEB_PUSH_VAPID_*` | Web Push (VAPID) keys | Optional |
 
 Most operational instance settings are editable at runtime from `/admin/instance-settings` and are stored in PostgreSQL (`site_settings`). Environment variables such as `FEDERATION_POLICY_SUMMARY` are still useful as initial/default configuration, but the admin-saved database value is what operators should manage after deployment.

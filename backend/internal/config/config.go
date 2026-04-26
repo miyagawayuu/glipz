@@ -61,13 +61,6 @@ type Config struct {
 	PatreonClientSecret string
 	// Optional override. Default: {GLIPZ_PROTOCOL_PUBLIC_ORIGIN}/api/v1/fanclub/patreon/callback
 	PatreonRedirectURI string
-	// PayPal (payment). Disabled by default; requires PayPalEnabled and API credentials.
-	PayPalEnabled      bool
-	PayPalClientID     string
-	PayPalClientSecret string
-	PayPalWebhookID    string
-	// "sandbox" (default) or "live"
-	PayPalEnv string
 	// Optional lightweight expvar metrics endpoint at /debug/vars.
 	MetricsEnabled bool
 	// Optional per-request access logs. Slow requests are still logged by metrics middleware when disabled.
@@ -211,11 +204,6 @@ func Load() (Config, error) {
 	c.PatreonClientID = strings.TrimSpace(os.Getenv("PATREON_CLIENT_ID"))
 	c.PatreonClientSecret = strings.TrimSpace(os.Getenv("PATREON_CLIENT_SECRET"))
 	c.PatreonRedirectURI = strings.TrimSpace(os.Getenv("PATREON_REDIRECT_URI"))
-	c.PayPalEnabled, _ = strconv.ParseBool(getEnv("PAYPAL_ENABLED", "false"))
-	c.PayPalClientID = strings.TrimSpace(os.Getenv("PAYPAL_CLIENT_ID"))
-	c.PayPalClientSecret = strings.TrimSpace(os.Getenv("PAYPAL_CLIENT_SECRET"))
-	c.PayPalWebhookID = strings.TrimSpace(os.Getenv("PAYPAL_WEBHOOK_ID"))
-	c.PayPalEnv = strings.ToLower(strings.TrimSpace(getEnv("PAYPAL_ENV", "sandbox")))
 	c.MetricsEnabled, _ = strconv.ParseBool(getEnv("GLIPZ_METRICS_ENABLED", "false"))
 	c.AccessLogEnabled, _ = strconv.ParseBool(getEnv("GLIPZ_ACCESS_LOG_ENABLED", "false"))
 	c.SlowRequestLogMs = positiveIntEnv("GLIPZ_SLOW_REQUEST_LOG_MS", 0, 0, 600000)

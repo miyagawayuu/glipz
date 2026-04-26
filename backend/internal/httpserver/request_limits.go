@@ -21,7 +21,7 @@ func limitAPIRequestBody(next http.Handler) http.Handler {
 			return
 		}
 		switch r.URL.Path {
-		case "/api/v1/media/upload", "/api/v1/dm/upload", "/api/v1/payment/paypal/webhook":
+		case "/api/v1/media/upload", "/api/v1/dm/upload":
 			next.ServeHTTP(w, r)
 			return
 		}

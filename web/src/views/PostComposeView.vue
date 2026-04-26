@@ -16,8 +16,6 @@ import {
   SAFE_MEDIA_ACCEPT,
 } from "../lib/composerMedia";
 import { patreonSettingsPath, usePatreonComposer } from "../composables/usePatreonComposer";
-import { usePaymentComposer } from "../composables/usePaymentComposer";
-import { listPayPalPlans, type PayPalPlanRow } from "../lib/paymentPayPal";
 import { avatarInitials, handleAt } from "../lib/feedDisplay";
 import { parseComposerReplyQuery, type ComposerReplyTarget } from "../lib/postComposer";
 import {
@@ -71,7 +69,6 @@ const scheduleLocal = ref("");
 const composerScheduleOpen = ref(false);
 const composerVisibilityOpen = ref(false);
 const fanclubPatreonEnabled = ref(false);
-const paymentPayPalEnabled = ref(false);
 
 const attachmentKind = computed(() =>
   selectedImages.value.length ? inferPostMediaType(selectedImages.value) : "none",
@@ -106,41 +103,8 @@ const {
   patreonEnabled: fanclubPatreonEnabled,
 });
 
-const {
-  composerPaymentOpen,
-  paymentUsePayPal,
-  payPalPlanId,
-  resetPaymentComposerState,
-  validatePaymentForSubmit,
-  applyPaymentToBody,
-} = usePaymentComposer({
-  viewPassword,
-  viewPasswordConfirm,
-  composerPasswordOpen,
-  membershipUsePatreon,
-  paypalEnabled: paymentPayPalEnabled,
-});
-
 const patreonSettingsHref = patreonSettingsPath;
-const paypalPlans = ref<PayPalPlanRow[]>([]);
-const paypalPlansLoading = ref(false);
-const activePayPalPlans = computed(() => paypalPlans.value.filter((plan) => plan.active !== false));
 const fanclubComposerEnabled = computed(() => patreonAvailable.value);
-
-async function loadPayPalPlans(token: string) {
-  if (!paymentPayPalEnabled.value) {
-    paypalPlans.value = [];
-    return;
-  }
-  paypalPlansLoading.value = true;
-  try {
-    paypalPlans.value = await listPayPalPlans(token);
-  } catch {
-    paypalPlans.value = [];
-  } finally {
-    paypalPlansLoading.value = false;
-  }
-}
 
 function hasComposerContent(): boolean {
   if (selectedImages.value.length > 0) return true;
@@ -172,22 +136,18 @@ async function loadMe() {
       handle?: string;
       avatar_url?: string | null;
       fanclub_patreon_enabled?: boolean;
-      payment_paypal_enabled?: boolean;
     }>("/api/v1/me", { method: "GET", token });
     myEmail.value = u.email;
     myHandle.value = typeof u.handle === "string" ? u.handle : null;
     myAvatarUrl.value = u.avatar_url && String(u.avatar_url).trim() !== "" ? String(u.avatar_url) : null;
     fanclubPatreonEnabled.value = !!u.fanclub_patreon_enabled;
-    paymentPayPalEnabled.value = !!u.payment_paypal_enabled;
     composerAvatarImgFailed.value = false;
     void loadPatreon(token);
-    void loadPayPalPlans(token);
   } catch {
     myEmail.value = null;
     myHandle.value = null;
     myAvatarUrl.value = null;
     fanclubPatreonEnabled.value = false;
-    paymentPayPalEnabled.value = false;
     composerAvatarImgFailed.value = false;
   }
 }
@@ -330,7 +290,6 @@ function resetComposer() {
   composerScheduleOpen.value = false;
   composerVisibilityOpen.value = false;
   resetPatreonComposerState();
-  resetPaymentComposerState();
 }
 
 async function submitPost() {
@@ -350,11 +309,6 @@ async function submitPost() {
   const memErr = validateMembershipForSubmit(pw, pw2, t);
   if (memErr) {
     err.value = memErr;
-    return;
-  }
-  const payErr = validatePaymentForSubmit(t);
-  if (payErr) {
-    err.value = payErr;
     return;
   }
   if (pw || pw2) {
@@ -432,7 +386,6 @@ async function submitPost() {
       }
     }
     applyMembershipToBody(body);
-    applyPaymentToBody(body);
     if (replyingTo.value) {
       if (replyingTo.value.is_federated) {
         const incomingId = replyingTo.value.id.startsWith("federated:")
@@ -626,19 +579,6 @@ onBeforeUnmount(() => {
               <Icon name="user" class="h-5 w-5" />
             </button>
             <button
-              v-if="paymentPayPalEnabled"
-              type="button"
-              class="rounded-full p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800"
-              :class="(paymentUsePayPal || composerPaymentOpen) && 'bg-emerald-50 text-emerald-800'"
-              :title="composerPaymentOpen ? $t('views.compose.paymentClose') : $t('views.compose.paymentTitle')"
-              :aria-expanded="composerPaymentOpen"
-              aria-controls="composer-payment-panel"
-              @click="composerPaymentOpen = !composerPaymentOpen"
-            >
-              <span class="sr-only">{{ $t("views.compose.paymentOpen") }}</span>
-              <Icon name="wallet" class="h-5 w-5" />
-            </button>
-            <button
               type="button"
               class="rounded-full p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800"
               :class="composerPollOpen && 'bg-lime-50 text-lime-800'"
@@ -756,7 +696,7 @@ onBeforeUnmount(() => {
           </p>
         </div>
         <div
-          v-if="composerNsfwOpen || composerPasswordOpen || (fanclubComposerEnabled && composerMembershipOpen) || (paymentPayPalEnabled && composerPaymentOpen)"
+          v-if="composerNsfwOpen || composerPasswordOpen || (fanclubComposerEnabled && composerMembershipOpen)"
           class="mt-3 space-y-3"
         >
           <div
@@ -959,55 +899,6 @@ onBeforeUnmount(() => {
                 </div>
               </div>
             </template>
-          </div>
-          <div
-            v-if="paymentPayPalEnabled && composerPaymentOpen"
-            id="composer-payment-panel"
-            class="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-3 text-sm"
-          >
-            <p class="text-xs font-medium text-neutral-700">{{ $t("views.compose.paymentTitle") }}</p>
-            <p class="mt-1 text-xs text-neutral-600">{{ $t("views.compose.paymentHint") }}</p>
-            <label class="mt-3 flex cursor-pointer items-center gap-2 text-sm text-neutral-800">
-              <input v-model="paymentUsePayPal" type="checkbox" class="h-4 w-4 rounded border-neutral-200 text-lime-600" />
-              <span>{{ $t("views.compose.paypalPaymentOpen") }}</span>
-            </label>
-            <div v-if="paymentUsePayPal" class="mt-3">
-              <label class="mb-0.5 block text-xs text-neutral-500" for="paypal-plan-id">{{
-                $t("views.compose.paypalPlanId")
-              }}</label>
-              <select
-                v-if="activePayPalPlans.length > 0"
-                id="paypal-plan-id"
-                v-model="payPalPlanId"
-                class="w-full rounded-xl border border-neutral-200 bg-white px-2 py-2 text-sm text-neutral-900"
-              >
-                <option value="">{{ $t("views.compose.paypalPlanSelectPlaceholder") }}</option>
-                <option v-for="plan in activePayPalPlans" :key="plan.id" :value="plan.plan_id">
-                  {{ plan.label || plan.plan_id }}
-                </option>
-              </select>
-              <input
-                v-else
-                id="paypal-plan-id"
-                v-model="payPalPlanId"
-                type="text"
-                autocomplete="off"
-                class="w-full rounded-xl border border-neutral-200 bg-white px-2 py-2 text-sm text-neutral-900"
-                :placeholder="$t('views.compose.paypalPlanIdPlaceholder')"
-              />
-              <p class="mt-2 text-xs text-neutral-600">
-                {{
-                  activePayPalPlans.length > 0
-                    ? $t("views.compose.paypalPlanSelectHint")
-                    : paypalPlansLoading
-                      ? $t("app.loadingShort")
-                      : $t("views.compose.paypalPlanHint")
-                }}
-                <RouterLink v-if="!paypalPlansLoading && activePayPalPlans.length === 0" to="/settings" class="font-medium text-lime-800 underline">
-                  {{ $t("views.compose.paypalPlanSettingsLink") }}
-                </RouterLink>
-              </p>
-            </div>
           </div>
         </div>
         <div v-if="previewUrls.length" class="mt-3 space-y-3">

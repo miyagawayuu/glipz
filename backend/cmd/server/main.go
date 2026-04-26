@@ -54,9 +54,6 @@ func main() {
 	if err := migrate.RunPostsExtras(ctx, pool); err != nil {
 		log.Fatalf("migrate posts extras: %v", err)
 	}
-	if err := migrate.RunPaymentPayPal(ctx, pool); err != nil {
-		log.Fatalf("migrate payment paypal: %v", err)
-	}
 	if err := migrate.RunFederationSubscribers(ctx, pool); err != nil {
 		log.Fatalf("migrate federation subscribers: %v", err)
 	}

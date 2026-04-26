@@ -15,8 +15,7 @@ import { api } from "../lib/api";
 import { customEmojiMap, ensureCustomEmojiCatalog, pickerCustomEmojisForHandle, unicodeReactionPickerCategories } from "../lib/customEmojis";
 import { blockFederationUser, muteFederationUser } from "../lib/federationPrivacy";
 import { requestPatreonEntitlement, requestPatreonEntitlementFederated } from "../lib/fanclubPatreon";
-import { createPayPalSubscription, requestPayPalEntitlement } from "../lib/paymentPayPal";
-import { redirectToAllowedExternalURL, safeHttpURL, safeMediaURL } from "../lib/redirect";
+import { safeHttpURL, safeMediaURL } from "../lib/redirect";
 import { unlockTimelinePost, voteTimelinePoll } from "../lib/federationActions";
 import type { TimelinePoll, TimelinePost } from "../types/timeline";
 import {
@@ -99,7 +98,6 @@ const appMe = inject<Ref<{
   handle?: string;
   is_site_admin?: boolean;
   fanclub_patreon_enabled?: boolean;
-  payment_paypal_enabled?: boolean;
 } | null> | null>("appMe", null);
 const effectiveViewerEmail = computed(() =>
   props.viewerEmail !== undefined ? props.viewerEmail : (appMe?.value?.email ?? null),
@@ -169,11 +167,6 @@ function membershipUnlockUIEnabled(it: TimelinePost): boolean {
 	return false;
 }
 
-function paymentUnlockUIEnabled(it: TimelinePost): boolean {
-	const provider = (it.payment_provider || "").toLowerCase();
-	return provider === "paypal" && Boolean(appMe?.value?.payment_paypal_enabled);
-}
-
 const openMenuId = ref<string | null>(null);
 const federationPrivacyBusyId = ref<string | null>(null);
 const openReactionPickerId = ref<string | null>(null);
@@ -239,7 +232,6 @@ const unlockPwd = reactive<Record<string, string>>({});
 const unlockErr = reactive<Record<string, string>>({});
 const unlockBusy = ref<string | null>(null);
 const pollBusy = ref<string | null>(null);
-const paypalReturnStorageKey = "glipz_paypal_return";
 
 /** Falls back to initials when an avatar image URL fails to load. */
 const avatarLoadFailed = reactive<Record<string, boolean>>({});
@@ -770,22 +762,6 @@ async function submitUnlock(it: TimelinePost) {
   unlockErr[it.id] = "";
   try {
     let entitlementJwt: string | undefined;
-    if (it.has_payment_lock) {
-      if (it.is_federated) {
-        unlockErr[it.id] = t("components.postTimeline.unlock.federatedMembershipUnsupported");
-        return;
-      }
-      try {
-        entitlementJwt = await requestPayPalEntitlement(token, it.id);
-      } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : "";
-        unlockErr[it.id] =
-          msg === "paypal_subscription_required"
-            ? t("components.postTimeline.unlock.paypalSubscriptionRequired")
-            : msg || t("components.postTimeline.unlock.unlockFailed");
-        return;
-      }
-    }
     const provider = (it.membership_provider || "").toLowerCase();
     if (it.has_membership_lock && provider === "patreon") {
       try {
@@ -835,33 +811,6 @@ async function submitUnlock(it: TimelinePost) {
               : msg === "untrusted_instance"
                 ? t("components.postTimeline.unlock.untrustedInstance")
                 : msg;
-  } finally {
-    unlockBusy.value = null;
-  }
-}
-
-async function startPayPalSubscribe(it: TimelinePost) {
-  const token = getAccessToken();
-  if (!token || unlockBusy.value === it.id) return;
-  unlockBusy.value = it.id;
-  unlockErr[it.id] = "";
-  try {
-    try {
-      window.sessionStorage.setItem(
-        paypalReturnStorageKey,
-        JSON.stringify({ post_id: it.id, path: window.location.pathname + window.location.search + window.location.hash }),
-      );
-    } catch {
-      /* ignore storage failures */
-    }
-    const { approval_url } = await createPayPalSubscription(token, it.id);
-    if (approval_url) {
-      if (!redirectToAllowedExternalURL(approval_url, ["https://www.paypal.com", "https://www.sandbox.paypal.com"])) {
-        throw new Error("invalid_payment_redirect");
-      }
-    }
-  } catch (e: unknown) {
-    unlockErr[it.id] = e instanceof Error ? e.message : t("components.postTimeline.unlock.unlockFailed");
   } finally {
     unlockBusy.value = null;
   }
@@ -1201,33 +1150,6 @@ async function startPayPalSubscribe(it: TimelinePost) {
                   ? $t("components.postTimeline.unlockSubmitting")
                   : $t("components.postTimeline.membershipUnlockSubmit")
               }}
-            </button>
-          </div>
-          <p v-if="unlockErr[it.id]" class="mt-2 text-xs text-red-600">{{ unlockErr[it.id] }}</p>
-        </div>
-
-        <div
-          v-else-if="it.content_locked && it.has_payment_lock && paymentUnlockUIEnabled(it)"
-          class="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50/90 p-4"
-        >
-          <p class="text-sm font-medium text-emerald-950">{{ $t("components.postTimeline.paymentLockedTitle") }}</p>
-          <p class="mt-1 text-xs text-emerald-900/80">{{ $t("components.postTimeline.paymentLockedBody") }}</p>
-          <div class="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
-            <button
-              type="button"
-              class="shrink-0 rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
-              :disabled="unlockBusy === it.id"
-              @click="startPayPalSubscribe(it)"
-            >
-              {{ $t("components.postTimeline.paymentSubscribeSubmit") }}
-            </button>
-            <button
-              type="button"
-              class="shrink-0 rounded-full border border-emerald-300 bg-white px-4 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-50 disabled:opacity-50"
-              :disabled="unlockBusy === it.id"
-              @click="submitUnlock(it)"
-            >
-              {{ $t("components.postTimeline.paymentUnlockSubmit") }}
             </button>
           </div>
           <p v-if="unlockErr[it.id]" class="mt-2 text-xs text-red-600">{{ unlockErr[it.id] }}</p>

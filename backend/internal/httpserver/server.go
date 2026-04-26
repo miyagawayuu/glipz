@@ -27,7 +27,6 @@ import (
 
 	"glipz.io/backend/internal/authjwt"
 	"glipz.io/backend/internal/config"
-	"glipz.io/backend/internal/payment/kernel"
 	"glipz.io/backend/internal/repo"
 	"glipz.io/backend/internal/s3client"
 )
@@ -209,10 +208,6 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c s3client.
 			r.Post("/fanclub/patreon/entitlement", s.handlePatreonEntitlement)
 			r.Post("/fanclub/patreon/entitlement-federated", s.handlePatreonEntitlementFederated)
 			r.Get("/fanclub/patreon/campaigns", s.handlePatreonCampaigns)
-			r.Get("/payment/paypal/plans", s.handlePayPalListPlans)
-			r.Post("/payment/paypal/plans", s.handlePayPalUpsertPlan)
-			r.Post("/payment/paypal/subscription/create", s.handlePayPalSubscriptionCreate)
-			r.Post("/payment/paypal/entitlement", s.handlePayPalEntitlement)
 			r.Get("/me", s.handleMe)
 			r.Get("/me/custom-emojis", s.handleMeListCustomEmojis)
 			r.Post("/me/custom-emojis", s.handleMeCreateCustomEmoji)
@@ -296,10 +291,6 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c s3client.
 			r.Post("/users/by-handle/{handle}/follow", s.handleToggleFollow)
 			r.Patch("/me/profile", s.handlePatchMeProfile)
 		})
-
-		// PayPal webhook + return endpoints are unauthenticated.
-		r.Post("/payment/paypal/webhook", s.handlePayPalWebhook)
-		r.Get("/payment/paypal/subscription/return", s.handlePayPalSubscriptionReturn)
 	})
 	s.mountStaticSPAFallback(r)
 	go s.runFeedBroadcastScheduler(context.Background())
@@ -816,7 +807,6 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		"totp_enabled":            u.TOTPEnabled,
 		"dm_invite_auto_accept":   u.DMInviteAutoAccept,
 		"fanclub_patreon_enabled": s.patreonIntegrationAvailable(),
-		"payment_paypal_enabled":  s.paypalIntegrationAvailable(),
 	}
 	if u.AvatarObjectKey != nil && *u.AvatarObjectKey != "" {
 		out["avatar_url"] = s.glipzProtocolPublicMediaURL(*u.AvatarObjectKey)
@@ -1094,11 +1084,6 @@ type createPostMembership struct {
 	TierID    string `json:"tier_id"`
 }
 
-type createPostPayment struct {
-	Provider string `json:"provider"`
-	PlanID   string `json:"plan_id"`
-}
-
 type createPostReq struct {
 	Caption                string                      `json:"caption"`
 	MediaType              string                      `json:"media_type"`
@@ -1115,18 +1100,12 @@ type createPostReq struct {
 	VisibleAt              string                      `json:"visible_at"`
 	Poll                   *createPostPollReq          `json:"poll"`
 	Membership             *createPostMembership       `json:"membership,omitempty"`
-	Payment                *createPostPayment          `json:"payment,omitempty"`
 }
 
 type patchPostMembership struct {
 	Provider  string `json:"provider"`
 	CreatorID string `json:"creator_id"`
 	TierID    string `json:"tier_id"`
-}
-
-type patchPostPayment struct {
-	Provider string `json:"provider"`
-	PlanID   string `json:"plan_id"`
 }
 
 type patchPostReq struct {
@@ -1139,8 +1118,6 @@ type patchPostReq struct {
 	ViewPasswordTextRanges []viewPasswordTextRangeJSON `json:"view_password_text_ranges"`
 	Membership             *patchPostMembership        `json:"membership,omitempty"`
 	ClearMembership        bool                        `json:"clear_membership"`
-	Payment                *patchPostPayment           `json:"payment,omitempty"`
-	ClearPayment           bool                        `json:"clear_payment"`
 }
 
 func normalizeObjectKeys(req createPostReq) []string {
@@ -1386,35 +1363,7 @@ func (s *Server) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	pProv, pCre, pPlan := "", "", ""
-	if req.Payment != nil {
-		prov := strings.ToLower(strings.TrimSpace(req.Payment.Provider))
-		planID := strings.TrimSpace(req.Payment.PlanID)
-		if prov != "" {
-			if planID == "" {
-				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_payment"})
-				return
-			}
-			// Phase 1: only PayPal subscriptions.
-			if prov != "paypal" {
-				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_payment"})
-				return
-			}
-			if !s.paymentProviderEnabled(prov) {
-				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "payment_provider_disabled"})
-				return
-			}
-			if mProv != "" {
-				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_payment"})
-				return
-			}
-			pProv = prov
-			pCre = uid.String()
-			pPlan = planID
-		}
-	}
-
-	id, err := s.db.CreatePost(r.Context(), uid, req.Caption, mt, keys, replyTo, replyToRemoteObjectIRI, req.IsNSFW, visibility, viewHash, viewScope, viewRanges, visibleAt, pollIn, mProv, mCre, mTier, pProv, pCre, pPlan)
+	id, err := s.db.CreatePost(r.Context(), uid, req.Caption, mt, keys, replyTo, replyToRemoteObjectIRI, req.IsNSFW, visibility, viewHash, viewScope, viewRanges, visibleAt, pollIn, mProv, mCre, mTier)
 	if err != nil {
 		if errors.Is(err, repo.ErrNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "reply_target_not_found"})
@@ -1582,10 +1531,6 @@ type feedItem struct {
 	MembershipProvider     string                      `json:"membership_provider,omitempty"`
 	MembershipCreatorID    string                      `json:"membership_creator_id,omitempty"`
 	MembershipTierID       string                      `json:"membership_tier_id,omitempty"`
-	HasPaymentLock         bool                        `json:"has_payment_lock,omitempty"`
-	PaymentProvider        string                      `json:"payment_provider,omitempty"`
-	PaymentCreatorID       string                      `json:"payment_creator_id,omitempty"`
-	PaymentPlanID          string                      `json:"payment_plan_id,omitempty"`
 	ViewPasswordScope      int                         `json:"view_password_scope"`
 	ViewPasswordTextRanges []viewPasswordTextRangeJSON `json:"view_password_text_ranges"`
 	ContentLocked          bool                        `json:"content_locked"`
@@ -1708,7 +1653,7 @@ func (s *Server) postRowToFeedItem(ctx context.Context, row repo.PostRow, viewer
 		}
 	}
 	if !unlocked {
-		if row.HasMembershipLock || row.HasPaymentLock {
+		if row.HasMembershipLock {
 			caption = ""
 			keys = []string{}
 			textLocked = true
@@ -1742,7 +1687,7 @@ func (s *Server) postRowToFeedItem(ctx context.Context, row repo.PostRow, viewer
 	}
 	pollJSON := buildFeedPoll(row.Poll)
 	if !unlocked {
-		if row.HasMembershipLock || row.HasPaymentLock {
+		if row.HasMembershipLock {
 			pollJSON = nil
 		} else if row.HasViewPassword && scope == repo.ViewPasswordScopeAll {
 			pollJSON = nil
@@ -1751,16 +1696,10 @@ func (s *Server) postRowToFeedItem(ctx context.Context, row repo.PostRow, viewer
 	memProvider := row.MembershipProvider
 	memCreator := row.MembershipCreatorID
 	memTier := row.MembershipTierID
-	payProvider := row.PaymentProvider
-	payCreator := row.PaymentCreatorID
-	payPlan := row.PaymentPlanID
 	if viewer != row.UserID {
 		memProvider = ""
 		memCreator = ""
 		memTier = ""
-		payProvider = ""
-		payCreator = ""
-		payPlan = ""
 	}
 	return feedItem{
 		ID:                     row.ID.String(),
@@ -1779,10 +1718,6 @@ func (s *Server) postRowToFeedItem(ctx context.Context, row repo.PostRow, viewer
 		MembershipProvider:     memProvider,
 		MembershipCreatorID:    memCreator,
 		MembershipTierID:       memTier,
-		HasPaymentLock:         row.HasPaymentLock,
-		PaymentProvider:        payProvider,
-		PaymentCreatorID:       payCreator,
-		PaymentPlanID:          payPlan,
 		ViewPasswordScope:      scope,
 		ViewPasswordTextRanges: repoRangesToJSON(row.ViewPasswordTextRanges),
 		ContentLocked:          contentLocked,
@@ -2279,8 +2214,7 @@ func (s *Server) handlePostUnlock(w http.ResponseWriter, r *http.Request) {
 	}
 	hasPW := row.ViewPasswordHash != nil && strings.TrimSpace(*row.ViewPasswordHash) != ""
 	hasMem := row.HasMembershipLock
-	hasPay := row.HasPaymentLock
-	if !hasPW && !hasMem && !hasPay {
+	if !hasPW && !hasMem {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "not_protected"})
 		return
 	}
@@ -2296,49 +2230,12 @@ func (s *Server) handlePostUnlock(w http.ResponseWriter, r *http.Request) {
 	viewerAcct := s.localFullAcct(u.Handle)
 	pass := strings.TrimSpace(req.Password)
 	ent := strings.TrimSpace(req.EntitlementJWT)
-	if hasMem && hasPay {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_unlock"})
-		return
-	}
 	if hasMem {
 		if ent == "" {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_unlock"})
 			return
 		}
 		if err := s.verifyFederationEntitlementJWT(r.Context(), ent, viewerAcct, row, postID); err != nil {
-			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_entitlement"})
-			return
-		}
-		if hasPW {
-			if pass == "" {
-				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no_password"})
-				return
-			}
-			if err := bcrypt.CompareHashAndPassword([]byte(*row.ViewPasswordHash), []byte(pass)); err != nil {
-				writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "wrong_password"})
-				return
-			}
-		}
-	} else if hasPay {
-		if ent == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_unlock"})
-			return
-		}
-		claims, err := kernel.ParseEntitlement(s.secret, ent)
-		if err != nil {
-			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_entitlement"})
-			return
-		}
-		if strings.TrimSpace(claims.Provider) != strings.TrimSpace(row.PaymentProvider) {
-			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_entitlement"})
-			return
-		}
-		if strings.TrimSpace(claims.Subject) != uid.String() {
-			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_entitlement"})
-			return
-		}
-		wantScope := "post:" + postID.String() + ":unlock"
-		if strings.TrimSpace(claims.Scope) != wantScope {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_entitlement"})
 			return
 		}
@@ -2449,10 +2346,6 @@ func (s *Server) handlePatchPost(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "membership_conflict"})
 		return
 	}
-	if req.ClearPayment && req.Payment != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "payment_conflict"})
-		return
-	}
 	var memUpdate *repo.PostMembershipUpdate
 	if req.ClearMembership {
 		memUpdate = &repo.PostMembershipUpdate{}
@@ -2476,33 +2369,6 @@ func (s *Server) handlePatchPost(w http.ResponseWriter, r *http.Request) {
 			newPW = nil
 		}
 	}
-	var payUpdate *repo.PostPaymentUpdate
-	if req.ClearPayment {
-		payUpdate = &repo.PostPaymentUpdate{}
-	} else if req.Payment != nil {
-		prov := strings.ToLower(strings.TrimSpace(req.Payment.Provider))
-		planID := strings.TrimSpace(req.Payment.PlanID)
-		if prov != "" {
-			if prov != "paypal" || planID == "" {
-				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_payment"})
-				return
-			}
-			if !s.paymentProviderEnabled(prov) {
-				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "payment_provider_disabled"})
-				return
-			}
-			payUpdate = &repo.PostPaymentUpdate{
-				Provider:  prov,
-				CreatorID: uid.String(),
-				PlanID:    planID,
-			}
-			// payment lock is mutually exclusive with membership lock.
-			if memUpdate != nil && strings.TrimSpace(memUpdate.Provider) != "" {
-				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_payment"})
-				return
-			}
-		}
-	}
 	if newPW != nil && memUpdate != nil {
 		np := strings.TrimSpace(*newPW)
 		if np != "" {
@@ -2512,7 +2378,7 @@ func (s *Server) handlePatchPost(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	err = s.db.UpdatePost(r.Context(), uid, postID, req.Caption, req.IsNSFW, req.Visibility, req.ClearViewPassword, newPW, req.ViewPasswordScope, viewRanges, memUpdate, payUpdate)
+	err = s.db.UpdatePost(r.Context(), uid, postID, req.Caption, req.IsNSFW, req.Visibility, req.ClearViewPassword, newPW, req.ViewPasswordScope, viewRanges, memUpdate)
 	if err != nil {
 		if errors.Is(err, repo.ErrForbidden) {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})

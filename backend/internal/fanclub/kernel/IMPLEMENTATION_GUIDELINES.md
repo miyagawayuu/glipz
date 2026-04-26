@@ -29,7 +29,7 @@ Add future providers by reusing this kernel package (keys + OAuth state helpers)
    - **Member** flows: check whether a viewer’s credentials satisfy the author’s required rule for a note. This may look nothing like Patreon’s “campaign + reward tier” model; that is fine.
 3. **Persistence**: either extend the schema (provider-specific columns, a generic `user_fanclub_connections` table, or JSONB) in `internal/migrate` and `internal/repo`. Keep token columns out of public JSON in API responses.
 4. **HTTP routes**: mount routes under `/api/v1/…`. Reuse `kernel` for OAuth `state` storage by passing your provider ID into `SaveOAuthState` / `GetDelOAuthState`.
-5. **Note paywall**: in `notePremiumProjection` (or equivalent), branch on the note’s (and author’s) paywall fields. A new provider adds its own entitlement check (or a single dispatcher reading `paywall_spec`).
+5. **Note membership gate**: in `notePremiumProjection` (or equivalent), branch on the note’s (and author’s) membership fields. A new provider adds its own entitlement check (or a single dispatcher reading a membership spec).
 6. **Cache**: use `kernel.EntitledCacheKey(provider, viewerUUID, authorUUID, scopeID, tierID)` (or repurpose the last two segments as opaque IDs if your site’s model differs; document the meaning in the provider package).
 7. **Config & deployment**: add env vars, document in `.env.example` / operator docs, and register routes in `internal/httpserver/server.go`.
 8. **OpenAPI & web**: add paths and UI only for the new provider; avoid hard-coding a single global “fan club shape” in the client.

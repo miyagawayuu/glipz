@@ -5,7 +5,6 @@ import { RouterLink } from "vue-router";
 import { useI18n } from "vue-i18n";
 import DMSettingsPanel from "../components/DMSettingsPanel.vue";
 import FanclubPatreonSettings from "../components/FanclubPatreonSettings.vue";
-import PaymentPayPalSettings from "../components/PaymentPayPalSettings.vue";
 import Icon from "../components/Icon.vue";
 import SecuritySettingsPanel from "../components/SecuritySettingsPanel.vue";
 import { securitySettingsKey, useSecuritySettings } from "../composables/useSecuritySettings";
@@ -17,7 +16,6 @@ type AppMe = {
   handle: string;
   is_site_admin?: boolean;
   fanclub_patreon_enabled?: boolean;
-  payment_paypal_enabled?: boolean;
 } | null;
 
 const { t, locale } = useI18n();
@@ -32,7 +30,6 @@ const profilePath = computed(() => (appMe?.value?.handle ? `/@${appMe.value.hand
 const showAdmin = computed(() => Boolean(appMe?.value?.is_site_admin));
 const showFanclubPatreon = computed(() => Boolean(appMe?.value?.fanclub_patreon_enabled));
 const showFanclub = computed(() => showFanclubPatreon.value);
-const showPayments = computed(() => Boolean(appMe?.value?.payment_paypal_enabled));
 
 const themeOptions = computed(() =>
   (["system", "light", "dark"] as const).map((value) => ({
@@ -142,13 +139,6 @@ onActivated(syncThemeFromStorage);
           {{ $t("views.settings.sections.fanclub") }}
         </h2>
         <FanclubPatreonSettings v-if="showFanclubPatreon" />
-      </section>
-
-      <section v-if="showPayments">
-        <h2 class="text-xs font-semibold uppercase tracking-wide text-neutral-500">
-          {{ $t("views.settings.sections.payments") }}
-        </h2>
-        <PaymentPayPalSettings />
       </section>
 
       <section>

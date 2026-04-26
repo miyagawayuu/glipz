@@ -49,7 +49,6 @@ const me = ref<{
   avatar_url: string | null;
   is_site_admin?: boolean;
   fanclub_patreon_enabled?: boolean;
-  payment_paypal_enabled?: boolean;
 } | null>(null);
 provide("appMe", me);
 /** Falls back to initials when loading an avatar URL fails. */
@@ -280,7 +279,6 @@ async function loadMe() {
       avatar_url?: string | null;
       is_site_admin?: boolean;
       fanclub_patreon_enabled?: boolean;
-      payment_paypal_enabled?: boolean;
     }>("/api/v1/me", {
       method: "GET",
       token,
@@ -295,7 +293,6 @@ async function loadMe() {
       avatar_url: safeHttpURL(u.avatar_url) || null,
       is_site_admin: !!u.is_site_admin,
       fanclub_patreon_enabled: !!u.fanclub_patreon_enabled,
-      payment_paypal_enabled: !!u.payment_paypal_enabled,
     };
     await refreshUnreadNotificationCount();
     await refreshUnreadDMCount();

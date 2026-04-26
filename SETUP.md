@@ -110,18 +110,6 @@ PATREON_CLIENT_SECRET=
 # PATREON_REDIRECT_URI=http://localhost:8080/api/v1/fanclub/patreon/callback
 ```
 
-### PayPal subscriptions (Optional)
-
-PayPal payment paywalls are disabled by default. Create a REST app in the PayPal Developer Dashboard, configure the webhook URLs shown in [.env.example](.env.example), then enable it explicitly:
-
-```env
-PAYPAL_ENABLED=true
-PAYPAL_CLIENT_ID=
-PAYPAL_CLIENT_SECRET=
-PAYPAL_WEBHOOK_ID=
-PAYPAL_ENV=sandbox
-```
-
 ### Production web build
 
 For `npm run build`, copy [web/.env.production.example](web/.env.production.example) to `web/.env.production` when you need `VITE_API_URL` (cross-origin API or Capacitor). Same-origin deployments can usually omit it.
@@ -271,7 +259,6 @@ These are disabled unless configured:
 | **Federation** | `GLIPZ_PROTOCOL_*`, optional `FEDERATION_POLICY_SUMMARY` |
 | **Legal documents** | `LEGAL_DOCS_DIR` |
 | **Patreon** | `PATREON_ENABLED=true`, `PATREON_CLIENT_ID`, `PATREON_CLIENT_SECRET`, optional `PATREON_REDIRECT_URI` |
-| **PayPal** | `PAYPAL_ENABLED=true`, `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID`, `PAYPAL_ENV` |
 
 See [.env.example](.env.example) for all options.
 
@@ -312,10 +299,10 @@ See [.env.example](.env.example) for all options.
 - Redirect URI in the Patreon developer console exactly matches `PATREON_REDIRECT_URI` or `{GLIPZ_PROTOCOL_PUBLIC_ORIGIN}/api/v1/fanclub/patreon/callback`
 - `GLIPZ_PROTOCOL_PUBLIC_ORIGIN` uses HTTPS in production
 
-### Patreon / PayPal UI is missing
+### Patreon UI is missing
 
-- The related provider flag is enabled: `PATREON_ENABLED=true` or `PAYPAL_ENABLED=true`
-- Credential-backed providers also have credentials set (`PATREON_*` or `PAYPAL_*`)
+- The related provider flag is enabled: `PATREON_ENABLED=true`
+- Credential-backed providers also have credentials set (`PATREON_*`)
 - Restart the backend after changing `.env`, then reload the frontend
 
 ### Emails not sending
@@ -336,7 +323,7 @@ Before going live:
 - [ ] `GLIPZ_PROTOCOL_PUBLIC_ORIGIN` set (if using federation)
 - [ ] Database and Redis secured
 - [ ] Real email provider configured (Mailgun, etc.)
-- [ ] Optional providers explicitly enabled only when configured (`PATREON_ENABLED`, `PAYPAL_ENABLED`)
+- [ ] Optional providers explicitly enabled only when configured (`PATREON_ENABLED`)
 - [ ] License file added (see LICENSE)
 
 ---

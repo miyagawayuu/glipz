@@ -88,7 +88,6 @@ const actionBusy = ref<string | null>(null);
 const repostModalOpen = ref(false);
 const repostTarget = ref<TimelinePost | null>(null);
 const actionToast = ref("");
-const paypalSubscriptionNotice = ref<"ok" | "cancelled" | "">("");
 let toastTimer: ReturnType<typeof setTimeout> | null = null;
 
 function showToast(msg: string) {
@@ -98,19 +97,6 @@ function showToast(msg: string) {
     actionToast.value = "";
     toastTimer = null;
   }, 2200);
-}
-
-function consumePayPalSubscriptionQuery() {
-  const raw = route.query.paypal_subscription;
-  const value = typeof raw === "string" ? raw : Array.isArray(raw) ? String(raw[0] ?? "") : "";
-  if (value !== "ok" && value !== "cancelled") return;
-  paypalSubscriptionNotice.value = value;
-  if (value === "ok") {
-    showToast(t("views.postDetail.paypalSubscriptionOkToast"));
-  }
-  const nextQuery = { ...route.query };
-  delete nextQuery.paypal_subscription;
-  void router.replace({ path: route.path, query: nextQuery, hash: route.hash });
 }
 
 function patchItem(id: string, patch: Partial<TimelinePost>) {
@@ -379,11 +365,6 @@ watch(
   },
 );
 
-watch(
-  () => route.query.paypal_subscription,
-  () => consumePayPalSubscriptionQuery(),
-);
-
 watch(lightbox, (v) => {
   if (v) {
     document.body.style.overflow = "hidden";
@@ -403,7 +384,6 @@ onBeforeUnmount(() => {
 onMounted(() => {
   void loadMe();
   void loadPost();
-  consumePayPalSubscriptionQuery();
 });
 </script>
 
@@ -426,27 +406,6 @@ onMounted(() => {
     <p v-if="actionToast" class="border-b border-lime-100 bg-lime-50 px-4 py-2 text-center text-sm text-lime-900">
       {{ actionToast }}
     </p>
-
-    <div
-      v-if="paypalSubscriptionNotice"
-      class="border-b px-4 py-3 text-sm"
-      :class="paypalSubscriptionNotice === 'ok' ? 'border-emerald-100 bg-emerald-50 text-emerald-950' : 'border-amber-100 bg-amber-50 text-amber-950'"
-    >
-      <p class="font-medium">
-        {{
-          paypalSubscriptionNotice === "ok"
-            ? t("views.postDetail.paypalSubscriptionOkTitle")
-            : t("views.postDetail.paypalSubscriptionCancelledTitle")
-        }}
-      </p>
-      <p class="mt-1 text-xs">
-        {{
-          paypalSubscriptionNotice === "ok"
-            ? t("views.postDetail.paypalSubscriptionOkBody")
-            : t("views.postDetail.paypalSubscriptionCancelledBody")
-        }}
-      </p>
-    </div>
 
     <div
       v-if="!loading && !err && item?.is_federated && safeExternalURL(item.remote_object_url)"

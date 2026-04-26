@@ -147,11 +147,6 @@ MAIL_FROM_NAME=Glipz
 # PATREON_CLIENT_ID=...
 # PATREON_CLIENT_SECRET=...
 # PATREON_REDIRECT_URI=https://your-domain.com/api/v1/fanclub/patreon/callback
-# PAYPAL_ENABLED=true
-# PAYPAL_CLIENT_ID=...
-# PAYPAL_CLIENT_SECRET=...
-# PAYPAL_WEBHOOK_ID=...
-# PAYPAL_ENV=live
 ```
 
 ### Key Configuration Notes
@@ -178,8 +173,6 @@ MAIL_FROM_NAME=Glipz
 | `GLIPZ_FEDERATION_DELIVERY_*` | Outbound federation delivery batch size, worker concurrency, and tick interval |
 | `PATREON_ENABLED` | Enables Patreon UI/routes; defaults to disabled |
 | `PATREON_*` | Patreon OAuth credentials; required when Patreon is enabled, and redirect URI must match your public API origin |
-| `PAYPAL_ENABLED` | Enables PayPal payment UI/routes; defaults to disabled |
-| `PAYPAL_*` | PayPal REST app and webhook credentials; required when PayPal is enabled |
 | `MAILGUN_API_BASE` | Optional Mailgun regional API base, for example `https://api.eu.mailgun.net` |
 
 Use `sslmode=require` or stronger for production PostgreSQL connections unless
@@ -204,7 +197,7 @@ The production image is built from the **repository root** with `backend/Dockerf
 
 When using CDN or direct object-storage media URLs, also set the frontend build-time allowlists in `web/.env.production`: `VITE_ALLOWED_MEDIA_BASE_URLS` for rendered media and `VITE_ALLOWED_DM_ATTACHMENT_BASE_URLS` for encrypted DM attachments. Use exact HTTPS path prefixes such as `https://cdn.example.com/media/`; root origins are rejected by the frontend safety checks. Configure the CDN/storage endpoint to reject or download active content types (`image/svg+xml`, `text/html`, XML, and JavaScript types) with `Content-Disposition: attachment` and `X-Content-Type-Options: nosniff`.
 
-Provider callback URLs use the API public origin, not necessarily the frontend origin. For example, Patreon callbacks and PayPal return/webhook URLs should be based on `GLIPZ_PROTOCOL_PUBLIC_ORIGIN`.
+Provider callback URLs use the API public origin, not necessarily the frontend origin. For example, Patreon callbacks should be based on `GLIPZ_PROTOCOL_PUBLIC_ORIGIN`.
 
 Mailgun's default API base works for the US region. Set `MAILGUN_API_BASE` when your Mailgun domain uses a regional API endpoint such as the EU region.
 
@@ -418,7 +411,6 @@ Run these checks after deployment:
 | **Federation** | Set `GLIPZ_PROTOCOL_*` variables |
 | **Web Push** | Set `WEB_PUSH_VAPID_*` variables |
 | **Patreon fan club** | Set `PATREON_ENABLED=true`, `PATREON_CLIENT_ID`, `PATREON_CLIENT_SECRET`, and `PATREON_REDIRECT_URI` (or rely on default derived from `GLIPZ_PROTOCOL_PUBLIC_ORIGIN`) |
-| **PayPal subscriptions** | Set `PAYPAL_ENABLED=true`, `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID`, and `PAYPAL_ENV` |
 
 ---
 

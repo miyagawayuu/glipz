@@ -83,10 +83,6 @@ function mapFeedItem(x: {
   membership_provider?: string;
   membership_creator_id?: string;
   membership_tier_id?: string;
-  has_payment_lock?: boolean;
-  payment_provider?: string;
-  payment_creator_id?: string;
-  payment_plan_id?: string;
   view_password_scope?: number;
   view_password_text_ranges?: { start?: number; end?: number }[];
   content_locked?: boolean;
@@ -142,10 +138,6 @@ function mapFeedItem(x: {
     membership_provider: typeof x.membership_provider === "string" ? x.membership_provider : undefined,
     membership_creator_id: typeof x.membership_creator_id === "string" ? x.membership_creator_id : undefined,
     membership_tier_id: typeof x.membership_tier_id === "string" ? x.membership_tier_id : undefined,
-    has_payment_lock: Boolean(x.has_payment_lock),
-    payment_provider: typeof x.payment_provider === "string" ? x.payment_provider : undefined,
-    payment_creator_id: typeof x.payment_creator_id === "string" ? x.payment_creator_id : undefined,
-    payment_plan_id: typeof x.payment_plan_id === "string" ? x.payment_plan_id : undefined,
     view_password_scope: typeof x.view_password_scope === "number" ? x.view_password_scope : 0,
     view_password_text_ranges: Array.isArray(x.view_password_text_ranges)
       ? x.view_password_text_ranges
