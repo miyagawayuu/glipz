@@ -384,6 +384,14 @@ export const enOverrides: DeepPartial<AppMessageSchema> = {
     federationGuidelines: "Federation Guidelines",
     apiReference: "API reference",
   },
+  seo: {
+    default: {
+      description: "Glipz is a social platform for short posts, media, and communities.",
+    },
+    about: {
+      description: "Glipz is a social platform for short posts, media, and communities.",
+    },
+  },
   auth: {
     apiBase: {
       label: "API URL (optional)",

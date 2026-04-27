@@ -12,5 +12,8 @@ declare module "vue-router" {
     requiresAdmin?: boolean;
     mobileOnly?: boolean;
     titleKey?: string;
+    descriptionKey?: string;
+    canonicalPath?: string;
+    noindex?: boolean;
   }
 }

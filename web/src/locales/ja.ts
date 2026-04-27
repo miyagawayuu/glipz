@@ -391,6 +391,14 @@ export const jaMessages = {
     federationGuidelines: "連合ガイドライン",
     apiReference: "API リファレンス",
   },
+  seo: {
+    default: {
+      description: "Glipz is a social platform for short posts, media, and communities.",
+    },
+    about: {
+      description: "Glipz is a social platform for short posts, media, and communities.",
+    },
+  },
   auth: {
     apiBase: {
       label: "API の URL（任意）",

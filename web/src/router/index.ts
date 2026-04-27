@@ -1,8 +1,9 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { getAccessToken } from "../auth";
-import { applyDocumentTitle } from "../i18n";
+import { applyDocumentTitle, translate } from "../i18n";
 import { api } from "../lib/api";
 import { isNativeApp } from "../lib/runtime";
+import { applySeoMeta } from "../lib/seo";
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -11,22 +12,22 @@ export const router = createRouter({
     {
       path: "/login",
       component: () => import("../views/LoginView.vue"),
-      meta: { titleKey: "routes.login" },
+      meta: { titleKey: "routes.login", noindex: true },
     },
     {
       path: "/register",
       component: () => import("../views/RegisterView.vue"),
-      meta: { titleKey: "routes.register" },
+      meta: { titleKey: "routes.register", noindex: true },
     },
     {
       path: "/register/verify",
       component: () => import("../views/RegisterVerifyView.vue"),
-      meta: { titleKey: "routes.registerVerify" },
+      meta: { titleKey: "routes.registerVerify", noindex: true },
     },
     {
       path: "/mfa",
       component: () => import("../views/MfaView.vue"),
-      meta: { titleKey: "routes.mfa" },
+      meta: { titleKey: "routes.mfa", noindex: true },
     },
     {
       path: "/remote/profile",
@@ -193,7 +194,13 @@ export const router = createRouter({
         {
           path: "/about",
           component: () => import("../views/AboutView.vue"),
-          meta: { requiresAuth: false, wideMain: true, titleKey: "routes.about" },
+          meta: {
+            requiresAuth: false,
+            wideMain: true,
+            titleKey: "routes.about",
+            descriptionKey: "seo.about.description",
+            canonicalPath: "/about",
+          },
         },
       ]
       : []),
@@ -225,5 +232,13 @@ router.beforeEach(async (to) => {
 });
 
 router.afterEach((to) => {
-  applyDocumentTitle(typeof to.meta.titleKey === "string" ? to.meta.titleKey : undefined);
+  const titleKey = typeof to.meta.titleKey === "string" ? to.meta.titleKey : undefined;
+  const descriptionKey = typeof to.meta.descriptionKey === "string" ? to.meta.descriptionKey : "seo.default.description";
+  applyDocumentTitle(titleKey);
+  applySeoMeta({
+    title: typeof document === "undefined" ? undefined : document.title,
+    description: translate(descriptionKey),
+    canonicalPath: typeof to.meta.canonicalPath === "string" ? to.meta.canonicalPath : to.path,
+    noindex: typeof to.meta.noindex === "boolean" ? to.meta.noindex : to.path !== "/about",
+  });
 });
