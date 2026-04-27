@@ -24,13 +24,24 @@ func (p *Pool) IsHandleAvailable(ctx context.Context, handle string) (bool, erro
 	var exists bool
 	if err := p.db.QueryRow(ctx, `
 		SELECT EXISTS (SELECT 1 FROM users WHERE lower(handle) = lower($1))
-			OR EXISTS (
-				SELECT 1 FROM pending_user_registrations
-				WHERE lower(handle) = lower($1)
-				  AND consumed_at IS NULL
-				  AND expires_at > NOW()
-			)
 	`, handle).Scan(&exists); err != nil {
+		return false, err
+	}
+	if exists {
+		return false, nil
+	}
+	if err := p.db.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM pending_user_registrations
+			WHERE lower(handle) = lower($1)
+			  AND consumed_at IS NULL
+			  AND expires_at > NOW()
+		)
+	`, handle).Scan(&exists); err != nil {
+		var pe *pgconn.PgError
+		if errors.As(err, &pe) && (pe.Code == "42P01" || pe.Code == "42703") {
+			return true, nil
+		}
 		return false, err
 	}
 	return !exists, nil

@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS posts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     reply_to_id UUID REFERENCES posts (id) ON DELETE CASCADE,
+    reply_to_remote_object_iri TEXT NOT NULL DEFAULT '',
     caption TEXT,
     media_type TEXT NOT NULL CHECK (media_type IN ('image', 'video', 'audio', 'none')),
     object_keys TEXT[] NOT NULL,
@@ -214,6 +215,29 @@ CREATE TABLE IF NOT EXISTS glipz_protocol_remote_followers (
     UNIQUE (local_user_id, remote_actor_id)
 );
 CREATE INDEX IF NOT EXISTS idx_glipz_protocol_remote_followers_local ON glipz_protocol_remote_followers (local_user_id);
+
+CREATE TABLE IF NOT EXISTS glipz_protocol_outbox_deliveries (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    author_user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    post_id UUID NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('create', 'update', 'delete', 'announce', 'post_created', 'post_updated', 'post_deleted', 'repost_created', 'post_liked', 'post_unliked', 'post_reaction_added', 'post_reaction_removed', 'poll_voted', 'poll_tally_updated', 'dm_invite', 'dm_accept', 'dm_reject', 'dm_message', 'account_moved')),
+    inbox_url TEXT NOT NULL,
+    payload JSONB NOT NULL,
+    attempt_count INT NOT NULL DEFAULT 0,
+    next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    locked_until TIMESTAMPTZ,
+    last_error TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'dead')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_glipz_protocol_outbox_pending
+    ON glipz_protocol_outbox_deliveries (next_attempt_at)
+    WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS idx_glipz_protocol_outbox_author
+    ON glipz_protocol_outbox_deliveries (author_user_id);
+CREATE INDEX IF NOT EXISTS idx_glipz_protocol_outbox_status_created
+    ON glipz_protocol_outbox_deliveries (status, created_at DESC);
 
 -- Idempotent Glipz-to-remote follow state table (for /api/v1/federation/remote-follow).
 CREATE TABLE IF NOT EXISTS federation_remote_follows (

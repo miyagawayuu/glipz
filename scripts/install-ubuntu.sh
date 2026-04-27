@@ -565,6 +565,7 @@ main() {
   configure_redis
   configure_host_firewall
   prepare_source
+  initialize_database_schema
   prepare_data_dirs
   write_glipz_env
 

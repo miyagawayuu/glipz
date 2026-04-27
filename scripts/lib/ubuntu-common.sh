@@ -178,6 +178,117 @@ docker_bridge_cidr() {
   printf '%s' "${cidr:-172.17.0.0/16}"
 }
 
+ensure_host_docker_access() {
+  local gateway cidr db_url pg_user pg_db pg_password hba_file redis_conf
+  gateway="$(docker_gateway_ip)"
+  cidr="$(docker_bridge_cidr)"
+
+  if ! grep -Eq '(^|[[:space:]])host\.docker\.internal([[:space:]]|$)' /etc/hosts; then
+    log "adding host.docker.internal host alias for local maintenance commands"
+    printf '127.0.0.1 host.docker.internal\n' >>/etc/hosts
+  fi
+
+  db_url="${DATABASE_URL:-}"
+  pg_user="${POSTGRES_USER:-glipz}"
+  pg_db="${POSTGRES_DB:-glipz}"
+  pg_password="${POSTGRES_PASSWORD:-}"
+  if [[ -z "${pg_password}" && "${db_url}" =~ ^postgres://([^:]+):([^@]+)@ ]]; then
+    pg_user="${BASH_REMATCH[1]}"
+    pg_password="${BASH_REMATCH[2]}"
+  fi
+  if [[ -z "${pg_db}" && "${db_url}" =~ /([^/?]+) ]]; then
+    pg_db="${BASH_REMATCH[1]}"
+  fi
+
+  if command -v psql >/dev/null 2>&1 && systemctl list-unit-files postgresql.service >/dev/null 2>&1; then
+    log "ensuring PostgreSQL listens on Docker bridge ${gateway}"
+    sudo -u postgres psql -v ON_ERROR_STOP=1 <<SQL
+ALTER SYSTEM SET listen_addresses TO 'localhost,${gateway}';
+DO \$\$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${pg_user}') THEN
+    CREATE ROLE ${pg_user} LOGIN PASSWORD '${pg_password}';
+  ELSIF '${pg_password}' <> '' THEN
+    ALTER ROLE ${pg_user} WITH LOGIN PASSWORD '${pg_password}';
+  END IF;
+END
+\$\$;
+SELECT 'CREATE DATABASE ${pg_db} OWNER ${pg_user}'
+WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = '${pg_db}')\\gexec
+GRANT ALL PRIVILEGES ON DATABASE ${pg_db} TO ${pg_user};
+SQL
+    hba_file="$(sudo -u postgres psql -tAc "SHOW hba_file;" | xargs)"
+    if ! grep -Eq "^[[:space:]]*host[[:space:]]+${pg_db}[[:space:]]+${pg_user}[[:space:]]+${cidr//./\\.}[[:space:]]+" "${hba_file}"; then
+      cat >>"${hba_file}" <<EOF
+# Allow the Glipz Docker container to reach the local PostgreSQL server.
+host    ${pg_db}    ${pg_user}    ${cidr}    scram-sha-256
+EOF
+    fi
+    systemctl restart postgresql
+  fi
+
+  redis_conf="/etc/redis/redis.conf"
+  if [[ -f "${redis_conf}" ]]; then
+    log "ensuring Redis listens on Docker bridge ${gateway}"
+    sed -i -E "s/^bind .*/bind 127.0.0.1 ::1 ${gateway}/" "${redis_conf}"
+    sed -i -E "s/^protected-mode .*/protected-mode yes/" "${redis_conf}"
+    if [[ -n "${REDIS_PASSWORD:-}" ]]; then
+      if grep -Eq '^[#[:space:]]*requirepass ' "${redis_conf}"; then
+        sed -i -E "s|^[#[:space:]]*requirepass .*|requirepass ${REDIS_PASSWORD}|" "${redis_conf}"
+      else
+        printf '\nrequirepass %s\n' "${REDIS_PASSWORD}" >>"${redis_conf}"
+      fi
+    fi
+    systemctl restart redis-server
+  fi
+
+  if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
+    log "allowing Docker bridge access to local PostgreSQL and Redis through UFW"
+    ufw allow in on docker0 from "${cidr}" to "${gateway}" port 5432 proto tcp >/dev/null || true
+    ufw allow in on docker0 from "${cidr}" to "${gateway}" port 6379 proto tcp >/dev/null || true
+  fi
+}
+
+initialize_database_schema() {
+  local init_sql="${GLIPZ_INSTALL_DIR}/infra/postgres/init.sql"
+  local has_users
+
+  [[ -f "${init_sql}" ]] || die "database init SQL not found: ${init_sql}"
+  has_users="$(sudo -u postgres psql -d "${POSTGRES_DB:-glipz}" -tAc "SELECT to_regclass('public.users') IS NOT NULL")"
+  if [[ "${has_users}" == "t" ]]; then
+    log "ensuring PostgreSQL schema ownership for ${POSTGRES_USER:-glipz}"
+  else
+    log "initializing PostgreSQL schema from ${init_sql}"
+    sudo -u postgres psql -v ON_ERROR_STOP=1 -d "${POSTGRES_DB:-glipz}" -f "${init_sql}"
+  fi
+
+  sudo -u postgres psql -v ON_ERROR_STOP=1 -d "${POSTGRES_DB:-glipz}" <<SQL
+ALTER DATABASE ${POSTGRES_DB:-glipz} OWNER TO ${POSTGRES_USER:-glipz};
+ALTER SCHEMA public OWNER TO ${POSTGRES_USER:-glipz};
+GRANT USAGE, CREATE ON SCHEMA public TO ${POSTGRES_USER:-glipz};
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO ${POSTGRES_USER:-glipz};
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO ${POSTGRES_USER:-glipz};
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO ${POSTGRES_USER:-glipz};
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO ${POSTGRES_USER:-glipz};
+DO \$\$
+DECLARE
+  r RECORD;
+BEGIN
+  FOR r IN
+    SELECT schemaname, tablename FROM pg_tables WHERE schemaname = 'public'
+  LOOP
+    EXECUTE format('ALTER TABLE %I.%I OWNER TO %I', r.schemaname, r.tablename, '${POSTGRES_USER:-glipz}');
+  END LOOP;
+  FOR r IN
+    SELECT schemaname, sequencename FROM pg_sequences WHERE schemaname = 'public'
+  LOOP
+    EXECUTE format('ALTER SEQUENCE %I.%I OWNER TO %I', r.schemaname, r.sequencename, '${POSTGRES_USER:-glipz}');
+  END LOOP;
+END
+\$\$;
+SQL
+}
+
 current_git_ref() {
   if git -C "${GLIPZ_INSTALL_DIR}" rev-parse --short HEAD >/dev/null 2>&1; then
     git -C "${GLIPZ_INSTALL_DIR}" rev-parse --short HEAD

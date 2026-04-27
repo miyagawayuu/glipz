@@ -202,6 +202,9 @@ main() {
   [[ -f "${GLIPZ_ENV_FILE}" ]] || die "environment file not found: ${GLIPZ_ENV_FILE}"
 
   prepare_source_for_update
+  load_env_file
+  ensure_host_docker_access
+  initialize_database_schema
 
   if [[ "${SKIP_BACKUP}" != "true" ]]; then
     backup_glipz

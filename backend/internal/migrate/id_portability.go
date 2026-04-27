@@ -67,10 +67,18 @@ BEGIN
     UPDATE federation_incoming_posts SET object_id = object_iri WHERE COALESCE(btrim(object_id), '') = '';
   END IF;
 END $$`,
-		`CREATE INDEX IF NOT EXISTS idx_federation_incoming_remote_account
-			ON federation_incoming_posts (remote_account_id) WHERE remote_account_id IS NOT NULL`,
-		`CREATE INDEX IF NOT EXISTS idx_federation_incoming_actor_portable
-			ON federation_incoming_posts (actor_portable_id) WHERE COALESCE(btrim(actor_portable_id), '') <> ''`,
+		`DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'federation_incoming_posts'
+  ) THEN
+    CREATE INDEX IF NOT EXISTS idx_federation_incoming_remote_account
+      ON federation_incoming_posts (remote_account_id) WHERE remote_account_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_federation_incoming_actor_portable
+      ON federation_incoming_posts (actor_portable_id) WHERE COALESCE(btrim(actor_portable_id), '') <> '';
+  END IF;
+END $$`,
 
 		`ALTER TABLE IF EXISTS federation_remote_follows ADD COLUMN IF NOT EXISTS remote_account_id UUID REFERENCES federation_remote_accounts (id) ON DELETE SET NULL`,
 		`ALTER TABLE IF EXISTS federation_remote_follows ADD COLUMN IF NOT EXISTS remote_current_acct TEXT NOT NULL DEFAULT ''`,
