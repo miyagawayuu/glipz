@@ -10,7 +10,8 @@ DOMAIN="${DOMAIN:-}"
 LETSENCRYPT_EMAIL="${LETSENCRYPT_EMAIL:-}"
 PROXY="${PROXY:-}"
 STORAGE_MODE="${STORAGE_MODE:-}"
-REPO_URL="${REPO_URL:-}"
+DEFAULT_REPO_URL="${DEFAULT_REPO_URL:-https://github.com/glipz-project/glipz}"
+REPO_URL="${REPO_URL:-${DEFAULT_REPO_URL}}"
 POSTGRES_USER="${POSTGRES_USER:-glipz}"
 POSTGRES_DB="${POSTGRES_DB:-glipz}"
 POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-}"
@@ -37,7 +38,7 @@ Options:
   --email EMAIL                Let's Encrypt account email
   --proxy nginx|caddy|none     Reverse proxy to configure
   --storage local|s3           Media storage mode
-  --repo-url URL               Clone or update this Git repository into /opt/glipz
+  --repo-url URL               Repository to clone, default https://github.com/glipz-project/glipz
   --install-dir PATH           Install directory, default /opt/glipz
   --env-file PATH              Environment file, default /etc/glipz/glipz.env
   --force-env                  Overwrite an existing environment file
@@ -108,7 +109,7 @@ validate_inputs() {
   else
     choose_option PROXY "Choose reverse proxy" "1" "1) nginx" "2) caddy" "3) none"
     choose_option STORAGE_MODE "Choose media storage" "1" "1) local" "2) s3"
-    prompt_optional REPO_URL "Git repository URL to clone into ${GLIPZ_INSTALL_DIR} (blank: use current directory)"
+    prompt_default REPO_URL "Git repository URL to clone into ${GLIPZ_INSTALL_DIR}" "${DEFAULT_REPO_URL}"
   fi
 
   case "${PROXY}" in

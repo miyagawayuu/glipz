@@ -6,7 +6,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/ubuntu-common.sh
 source "${SCRIPT_DIR}/lib/ubuntu-common.sh"
 
-REPO_URL="${REPO_URL:-}"
+DEFAULT_REPO_URL="${DEFAULT_REPO_URL:-https://github.com/glipz-project/glipz}"
+REPO_URL="${REPO_URL:-${DEFAULT_REPO_URL}}"
 SKIP_GIT_PULL="false"
 SKIP_BACKUP="false"
 ALLOW_DIRTY="false"
@@ -22,7 +23,7 @@ Run without options for an interactive updater.
 Options:
   --install-dir PATH     Install directory, default /opt/glipz
   --env-file PATH        Environment file, default /etc/glipz/glipz.env
-  --repo-url URL         Clone or update this Git repository if install-dir is missing
+  --repo-url URL         Repository to clone if install-dir is missing, default https://github.com/glipz-project/glipz
   --skip-git-pull        Rebuild the current working tree without pulling
   --allow-dirty          Allow updating with uncommitted changes in install-dir
   --skip-backup          Skip pg_dump/media/env backup
@@ -69,7 +70,7 @@ interactive_update_options() {
   prompt_default KEEP_IMAGES "Timestamped Docker images to keep" "${KEEP_IMAGES}"
 
   if [[ ! -d "${GLIPZ_INSTALL_DIR}/.git" ]]; then
-    prompt_optional REPO_URL "Git repository URL to clone if ${GLIPZ_INSTALL_DIR} is missing (blank: rebuild existing files)"
+    prompt_default REPO_URL "Git repository URL to clone if ${GLIPZ_INSTALL_DIR} is missing" "${DEFAULT_REPO_URL}"
   fi
 }
 
