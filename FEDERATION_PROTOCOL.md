@@ -10,6 +10,35 @@ For running a Glipz instance, start with [README.md](README.md) and [SETUP.md](S
 
 ---
 
+## Status of This Document
+
+This document is a protocol specification for Glipz-compatible federation peers. It is not an IETF RFC, but it uses RFC-style terminology so independent implementations can reason about interoperability, security requirements, and optional extensions.
+
+The reference implementation is the Glipz server in this repository. Where this document says "the reference implementation", it describes current Glipz behavior rather than a new requirement for all compatible software.
+
+---
+
+## Conformance Keywords
+
+The key words **MUST**, **MUST NOT**, **REQUIRED**, **SHOULD**, **SHOULD NOT**, **RECOMMENDED**, **MAY**, and **OPTIONAL** are to be interpreted as described in RFC 2119 and RFC 8174 when, and only when, they appear in all capitals.
+
+Implementations MAY expose additional fields, endpoints, or policy metadata. Receivers MUST ignore unknown JSON fields unless this document explicitly says otherwise.
+
+---
+
+## Terminology
+
+- **Instance:** a server identified by a stable host such as `social.example`.
+- **Origin:** the HTTPS scheme and authority used to dereference federation endpoints, such as `https://social.example`.
+- **Account:** a user identity represented by an acct string such as `alice@social.example`.
+- **Portable ID:** a stable account identifier such as `glipz:id:<public-key-fingerprint>` that can survive an account move.
+- **Inbox:** the target URL for signed event delivery, usually the peer's `events_url`.
+- **Event:** a signed JSON envelope delivered to `/federation/events`.
+- **Capability:** a feature or protocol surface advertised directly or inferred from discovery metadata.
+- **Policy:** an operator-controlled decision layer, such as domain blocks, remote follow acceptance, or gated media restrictions.
+
+---
+
 ## Overview
 
 Glipz federation has four core pieces:
@@ -69,42 +98,42 @@ Version 2 requires:
 
 Version 1 is retained only for compatibility with older Glipz deployments. New
 servers should prefer version 3, and operators should plan to phase out version
-1 peers because nonce-based replay protection is mandatory only in version 2.
+1 peers because nonce-based replay protection is mandatory only in version 2 and later.
 
 Event envelopes use schema version `3` in the `v` field.
 
 ---
 
-## Required Concepts
+## Identifiers and Addressing
 
-An **instance** is a server identified by a host such as `social.example`. The host appears in account names and in `X-Glipz-Instance`.
+This section summarizes the identifiers most often used on the wire. The normative definitions are in [Terminology](#terminology).
 
-An **account** is represented as an acct string:
+An account is represented as an acct string:
 
 ```text
 alice@social.example
 ```
 
-An **inbox** is the target URL for signed event delivery. In Glipz federation this is usually the remote instance's `events_url`, for example:
+An inbox is the target URL for signed event delivery. In Glipz federation this is usually the remote instance's `events_url`, for example:
 
 ```text
 https://social.example/federation/events
 ```
 
-An **event** is a signed JSON envelope describing a post, repost, delete, like, reaction, poll update, or DM action.
+An event is a signed JSON envelope describing a post, repost, delete, like, reaction, poll update, or DM action. Implementations SHOULD persist remote object IDs and event IDs separately: object IDs identify content, while event IDs identify delivery attempts and replay protection state.
 
 ---
 
 ## Discovery
 
-Every compatible server should expose:
+Every compatible server SHOULD expose:
 
 ```http
 GET /.well-known/glipz-federation
 GET /.well-known/glipz-federation?resource=alice@social.example
 ```
 
-The instance-level response contains a `server` object. If `resource` identifies a local account, the response also contains an `account` object.
+The instance-level response contains a `server` object. If `resource` identifies a local account, the response also contains an `account` object. `resource=instance@{host}` is accepted as an instance-level lookup and returns only the server object.
 
 Example:
 
@@ -139,6 +168,7 @@ Example:
     "display_name": "Alice",
     "summary": "Profile text",
     "avatar_url": "https://social.example/api/v1/media/object/avatar",
+    "header_url": "https://social.example/api/v1/media/object/header",
     "profile_url": "https://social.example/@alice",
     "posts_url": "https://social.example/federation/posts/alice",
     "public_key": "BASE64URL_ACCOUNT_PUBLIC_KEY",
@@ -150,17 +180,50 @@ Example:
 
 Discovery is also used to verify signed requests. A receiver fetches the sender's discovery document, checks the advertised key, and verifies that signed endpoint URLs belong to the advertised origin.
 
+`known_instances` is an operational hint that can help peers discover trusted or recently seen instances. It is not an automatic allowlist. `dm_keys_url`, when present, is the base URL for DM key lookup; append the local handle path segment, for example `/federation/dm-keys/alice`.
+
 For production federation, use HTTPS origins and stable hostnames. Local development may use different origins for testing, but public interoperability should assume HTTPS.
+
+---
+
+## Capability Negotiation
+
+Capability negotiation is discovery-driven. A sender MUST fetch the peer discovery document before sending mutating federation requests to a new peer or after a cached capability record expires.
+
+The current discovery document does not require a separate `capabilities` object. Instead, peers negotiate support from the following fields:
+
+| Discovery field | Negotiated meaning |
+| --- | --- |
+| `protocol_version` | Preferred protocol version advertised by the peer. |
+| `supported_protocol_versions` | Complete set of protocol versions the peer is willing to receive. |
+| `event_schema_version` | Highest event envelope schema version the peer expects. |
+| `events_url` | Peer can receive signed event envelopes. |
+| `follow_url` / `unfollow_url` | Peer can receive remote follow and unfollow requests. |
+| `dm_keys_url` | Peer advertises federated DM key lookup support. |
+| `known_instances` | Operational discovery hint; not an authorization decision. |
+
+When selecting a protocol version, a sender MUST choose the highest version that both peers support. If `supported_protocol_versions` is absent, the sender MAY treat `protocol_version` as the peer's only advertised version. New integrations SHOULD prefer `glipz-federation/3`.
+
+A sender SHOULD apply this negotiation procedure:
+
+1. Fetch `/.well-known/glipz-federation` for the peer host.
+2. Validate that `origin`, `events_url`, `follow_url`, and `unfollow_url` are HTTPS URLs under the advertised host for production federation.
+3. Select the highest mutually supported `glipz-federation/{major}` version.
+4. Require `X-Glipz-Nonce` and `event_id` when the selected version is 2 or later.
+5. Use schema version `3` for new event envelopes when the peer advertises `event_schema_version >= 3` or `glipz-federation/3`.
+6. Enable optional protocol surfaces only when their endpoint metadata is present. For example, federated DM clients SHOULD require `dm_keys_url` before sending `dm_*` events.
+
+Receivers MUST reject unsupported protocol versions. Receivers SHOULD treat missing optional endpoints as "capability not advertised" rather than as a hard discovery failure.
 
 ---
 
 ## Public HTTP Endpoints
 
-A Glipz-compatible server should expose these public federation endpoints:
+A Glipz-compatible server SHOULD expose these public federation endpoints:
 
 - `GET /.well-known/glipz-federation` for instance and account discovery.
 - `GET /federation/profile/{handle}` for public profile JSON.
-- `GET /federation/posts/{handle}?limit=20&cursor=...` for public posts.
+- `GET /federation/posts/{handle}?limit=30&cursor=...` for public posts. The reference implementation defaults to 30 and accepts up to 100.
 - `GET /federation/dm-keys/{handle}` for a user's federated DM public keys.
 - `POST /federation/follow` to accept a signed remote follow.
 - `POST /federation/unfollow` to accept a signed remote unfollow.
@@ -174,7 +237,9 @@ The authenticated user-facing REST API under `/api/v1/...` is separate from the 
 
 ## Configuring a Glipz Instance
 
-For the reference Glipz server, federation endpoints are mounted when a public federation origin is configured. In local development, the minimal federation configuration is:
+For the reference Glipz server, federation endpoints are mounted when a public federation origin is available. `GLIPZ_PROTOCOL_PUBLIC_ORIGIN` is preferred; if it is empty, `FRONTEND_ORIGIN` is used as a fallback. In production, set `GLIPZ_PROTOCOL_PUBLIC_ORIGIN` explicitly when the API/federation origin differs from the frontend origin.
+
+In local development, the minimal federation configuration is:
 
 ```env
 GLIPZ_PROTOCOL_PUBLIC_ORIGIN=http://localhost:8080
@@ -197,9 +262,28 @@ See [SETUP.md](SETUP.md) and [DEPLOY.md](DEPLOY.md) for the full environment fil
 
 ---
 
+## Federation Policy
+
+Federation policy is intentionally separate from protocol capability. A peer can be technically compatible and still be rejected by local operator policy.
+
+The reference implementation exposes a short policy summary through `FEDERATION_POLICY_SUMMARY` for human-readable instance guidance. Implementations MAY publish equivalent policy text in their UI or discovery-adjacent documentation, but protocol peers MUST NOT treat policy text as machine-enforceable authorization.
+
+Operators and implementations SHOULD define policy for at least these decisions:
+
+- **Domain blocks:** requests or deliveries involving blocked domains SHOULD be rejected or marked as dead delivery before user-visible state is changed.
+- **Remote follow acceptance:** `POST /federation/follow` MAY be rejected based on local moderation, account privacy, user blocks, or instance policy.
+- **Known instances:** `known_instances` MAY be used as a discovery hint, but MUST NOT grant trust automatically.
+- **User privacy:** user-level blocks, mutes, and privacy settings SHOULD be applied before displaying remote activity or accepting subscriptions.
+- **Gated media:** password-gated and membership-gated media MAY be advertised, but unlock requests MUST still be evaluated by the origin's policy.
+- **External entitlement providers:** if the origin cannot verify a remote viewer's external membership safely, it SHOULD reject entitlement minting rather than trust the remote claim.
+
+Policy failures SHOULD use stable JSON error codes where possible. A sender MUST treat policy rejection as final unless the error clearly indicates a transient delivery failure.
+
+---
+
 ## Signed Server-to-Server Requests
 
-All mutating server-to-server requests should be signed with Ed25519. Version 3 requests include these headers:
+All mutating server-to-server requests MUST be signed with Ed25519. Version 3 uses the same nonce-protected signature base as version 2 and includes these headers:
 
 ```http
 Content-Type: application/json
@@ -232,10 +316,10 @@ POST
 BASE64_SHA256_BODY
 ```
 
-Receivers should:
+Receivers MUST:
 
 - Require `X-Glipz-Instance`, `X-Glipz-Key-Id`, `X-Glipz-Protocol-Version`, `X-Glipz-Timestamp`, and `X-Glipz-Signature`.
-- Require `X-Glipz-Nonce` for protocol version 2.
+- Require `X-Glipz-Nonce` for protocol version 2 and later.
 - Reject timestamps more than 10 minutes away from receiver time.
 - Fetch `https://{X-Glipz-Instance}/.well-known/glipz-federation`.
 - Verify that the discovery `key_id` matches `X-Glipz-Key-Id`.
@@ -265,7 +349,7 @@ Federation events use this envelope:
   },
   "post": {
     "id": "550e8400-e29b-41d4-a716-446655440002",
-    "object_id": "glipz://glipz:id:BASE64URL_ACCOUNT_KEY_FINGERPRINT/posts/550e8400-e29b-41d4-a716-446655440002",
+    "object_id": "glipz://550e8400-e29b-41d4-a716-446655440002",
     "url": "https://social.example/posts/550e8400-e29b-41d4-a716-446655440002",
     "caption": "Hello from Glipz federation",
     "media_type": "image",
@@ -294,7 +378,7 @@ Supported event kinds include:
 
 `note_created`, `note_updated`, and `note_deleted` may be accepted for compatibility, but notes are no longer supported by the current Glipz social model.
 
-Unknown event kinds should be rejected as unsupported.
+Unknown event kinds SHOULD be rejected as unsupported.
 
 ---
 
@@ -304,12 +388,12 @@ Unknown event kinds should be rejected as unsupported.
 
 Post fields can include:
 
-- `id`, `url`, `caption`, `media_type`, `media_urls`, `is_nsfw`, and `published_at`.
+- `id`, `object_id`, `url`, `caption`, `media_type`, `media_urls`, `is_nsfw`, and `published_at`.
 - `like_count` for mirrored counts.
 - `poll` for poll options and tallies.
-- `reply_to_object_url` and `repost_of_object_url` for conversation and repost relationships.
-- `has_view_password`, `view_password_scope`, and `unlock_url` for password-gated media.
-- `has_membership_lock` and membership provider metadata in event payloads.
+- `reply_to_object_url`, `repost_of_object_url`, and `repost_comment` for conversation and repost relationships.
+- `has_view_password`, `view_password_scope`, `view_password_text_ranges`, and `unlock_url` for password-gated media.
+- `has_membership_lock`, `membership_provider`, `membership_creator_id`, and `membership_tier_id` in event payloads.
 
 If you are building non-Glipz software, store remote object URLs as stable IDs. Glipz can fall back to a `glipz://{acct}/posts/{id}` object ID when a URL is missing, but HTTPS URLs are preferred for interoperability.
 
@@ -351,7 +435,7 @@ An account move is delivered as a signed event:
 }
 ```
 
-Receivers should keep `acct` compatibility for older peers. If `id` is missing, store the actor as `legacy:{acct}` and do not merge it with a later portable account unless a verified move or account-key proof is available.
+Receivers SHOULD keep `acct` compatibility for older peers. If `id` is missing, store the actor as `legacy:{acct}` and do not merge it with a later portable account unless a verified move or account-key proof is available.
 
 The reference implementation can also expose a user-facing migration wizard.
 This wizard is an authenticated REST helper flow, not a federation event. The
@@ -363,7 +447,7 @@ Imported historical posts are not fanned out as new `post_created` events; after
 the user confirms the move, the source instance sends the normal
 `account_moved` event.
 
-Implementations should hash transfer tokens at rest, support expiry and
+Implementations SHOULD hash transfer tokens at rest, support expiry and
 revocation, verify the target origin, prevent SSRF when fetching a source URL,
 reject object keys not owned by the transfer session, and cap media size. DM
 history, poll votes, bookmarks, and follow graph migration require separate
@@ -395,7 +479,7 @@ Follow request body:
 
 Unfollow uses the same shape against `unfollow_url`.
 
-Receivers should check local block and moderation rules before accepting a follower.
+Receivers SHOULD check local block and moderation rules before accepting a follower.
 
 ---
 
@@ -424,6 +508,8 @@ Expose:
 ```http
 GET /federation/dm-keys/{handle}
 ```
+
+In discovery, `dm_keys_url` is advertised without the handle as a base endpoint. Clients append the escaped handle before fetching keys.
 
 DM event payloads include:
 
@@ -496,6 +582,9 @@ You can add DM keys, federated DMs, unlock flows, and richer interaction events 
 Use these checks before announcing compatibility:
 
 - Discovery returns the expected JSON for the instance and for a local account resource.
+- Capability negotiation selects the highest mutually supported protocol version.
+- Missing optional endpoints, such as `dm_keys_url`, disable only that optional capability.
+- Policy rejection is surfaced as a stable final error rather than retried indefinitely.
 - `key_id`, `origin`, `events_url`, `follow_url`, and `unfollow_url` use the same HTTPS host in production.
 - A receiver can fetch your discovery document and verify your signed request.
 - Timestamp skew rejection works.
@@ -514,6 +603,8 @@ For Glipz deployment and scaling details, see [SETUP.md](SETUP.md), [DEPLOY.md](
 - Glipz Federation Protocol is not ActivityPub and does not require ActivityStreams documents.
 - Public post federation is the primary content path.
 - Notes are no longer supported by the current Glipz model.
+- Capability negotiation currently uses discovery fields rather than a dedicated `capabilities` object.
+- Federation policy is operator-controlled and can reject otherwise compatible peers.
 - Origin-side remote membership entitlement minting for Patreon locks is not supported. Patreon cross-instance unlock is supported through the viewer-instance verification path described above.
 - Production federation should use HTTPS and stable public origins.
 - The authenticated `/api/v1/...` API is not part of the public server-to-server protocol, even when it starts federation actions locally.
