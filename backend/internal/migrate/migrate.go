@@ -9,6 +9,9 @@ import (
 
 // Run applies idempotent startup-time database adjustments such as posts.object_keys migration.
 func Run(ctx context.Context, pool *pgxpool.Pool) error {
+	if err := RunIDPortability(ctx, pool); err != nil {
+		return err
+	}
 	var n int
 	err := pool.QueryRow(ctx, `
 		SELECT COUNT(*)::int FROM information_schema.tables

@@ -107,10 +107,16 @@ func (p *Pool) CompletePendingUserRegistration(ctx context.Context, tokenSHA256 
 	if IsReservedHandle(handle) {
 		return uuid.Nil, ErrReservedHandle
 	}
+	identity, err := newPortableIdentity()
+	if err != nil {
+		return uuid.Nil, err
+	}
 	var userID uuid.UUID
 	err = tx.QueryRow(ctx,
-		`INSERT INTO users (email, password_hash, handle, birth_date) VALUES ($1, $2, $3, $4) RETURNING id`,
-		email, passwordHash, handle, birthDate,
+		`INSERT INTO users (
+			email, password_hash, handle, birth_date, portable_id, account_public_key, account_private_key_encrypted
+		) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+		email, passwordHash, handle, birthDate, identity.PortableID, identity.AccountPublicKey, identity.AccountPrivateKeyEncrypted,
 	).Scan(&userID)
 	if err != nil {
 		var pe *pgconn.PgError

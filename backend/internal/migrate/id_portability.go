@@ -84,6 +84,74 @@ END $$`,
 		`ALTER TABLE IF EXISTS federation_dm_threads ADD COLUMN IF NOT EXISTS remote_account_id UUID REFERENCES federation_remote_accounts (id) ON DELETE SET NULL`,
 		`ALTER TABLE IF EXISTS federation_user_blocks ADD COLUMN IF NOT EXISTS remote_account_id UUID REFERENCES federation_remote_accounts (id) ON DELETE SET NULL`,
 		`ALTER TABLE IF EXISTS federation_user_mutes ADD COLUMN IF NOT EXISTS remote_account_id UUID REFERENCES federation_remote_accounts (id) ON DELETE SET NULL`,
+
+		`CREATE TABLE IF NOT EXISTS identity_transfer_sessions (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+			portable_id TEXT NOT NULL DEFAULT '',
+			token_hash TEXT NOT NULL,
+			token_nonce TEXT NOT NULL DEFAULT '',
+			allowed_target_origin TEXT NOT NULL DEFAULT '',
+			include_private BOOLEAN NOT NULL DEFAULT FALSE,
+			include_gated BOOLEAN NOT NULL DEFAULT FALSE,
+			expires_at TIMESTAMPTZ NOT NULL,
+			used_at TIMESTAMPTZ,
+			revoked_at TIMESTAMPTZ,
+			created_ip_hash TEXT NOT NULL DEFAULT '',
+			last_used_ip_hash TEXT NOT NULL DEFAULT '',
+			attempt_count INTEGER NOT NULL DEFAULT 0,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			CONSTRAINT identity_transfer_sessions_token_hash_nonempty CHECK (char_length(btrim(token_hash)) > 0)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_identity_transfer_sessions_user
+			ON identity_transfer_sessions (user_id, created_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_identity_transfer_sessions_active
+			ON identity_transfer_sessions (id, expires_at)
+			WHERE revoked_at IS NULL AND used_at IS NULL`,
+
+		`CREATE TABLE IF NOT EXISTS identity_transfer_import_jobs (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+			source_origin TEXT NOT NULL,
+			target_origin TEXT NOT NULL DEFAULT '',
+			source_session_id UUID NOT NULL,
+			source_token_encrypted TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'running', 'completed', 'failed', 'cancelled')),
+			total_posts INTEGER NOT NULL DEFAULT 0,
+			imported_posts INTEGER NOT NULL DEFAULT 0,
+			failed_posts INTEGER NOT NULL DEFAULT 0,
+			next_cursor TEXT NOT NULL DEFAULT '',
+			attempt_count INTEGER NOT NULL DEFAULT 0,
+			next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			locked_until TIMESTAMPTZ,
+			last_error TEXT NOT NULL DEFAULT '',
+			include_private BOOLEAN NOT NULL DEFAULT FALSE,
+			include_gated BOOLEAN NOT NULL DEFAULT FALSE,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+		`ALTER TABLE IF EXISTS identity_transfer_import_jobs ADD COLUMN IF NOT EXISTS target_origin TEXT NOT NULL DEFAULT ''`,
+		`CREATE INDEX IF NOT EXISTS idx_identity_transfer_import_jobs_claim
+			ON identity_transfer_import_jobs (next_attempt_at, created_at)
+			WHERE status IN ('pending', 'running')`,
+		`CREATE INDEX IF NOT EXISTS idx_identity_transfer_import_jobs_user
+			ON identity_transfer_import_jobs (user_id, created_at DESC)`,
+
+		`CREATE TABLE IF NOT EXISTS identity_transfer_post_mappings (
+			job_id UUID NOT NULL REFERENCES identity_transfer_import_jobs (id) ON DELETE CASCADE,
+			user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+			source_post_id TEXT NOT NULL,
+			original_object_id TEXT NOT NULL,
+			new_post_id UUID REFERENCES posts (id) ON DELETE SET NULL,
+			status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'imported', 'failed', 'skipped')),
+			last_error TEXT NOT NULL DEFAULT '',
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			PRIMARY KEY (job_id, original_object_id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_identity_transfer_post_mappings_user
+			ON identity_transfer_post_mappings (user_id, created_at DESC)`,
 	}
 	for i, q := range steps {
 		if _, err := pool.Exec(ctx, q); err != nil {

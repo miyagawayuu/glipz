@@ -353,6 +353,22 @@ An account move is delivered as a signed event:
 
 Receivers should keep `acct` compatibility for older peers. If `id` is missing, store the actor as `legacy:{acct}` and do not merge it with a later portable account unless a verified move or account-key proof is available.
 
+The reference implementation can also expose a user-facing migration wizard.
+This wizard is an authenticated REST helper flow, not a federation event. The
+source instance creates an identity bundle v2 encrypted with a migration
+passphrase and issues a short-lived transfer token pinned to the target origin.
+The target instance uses that token to pull the manifest, post batches, and
+authorized media in a background import job with progress and retry tracking.
+Imported historical posts are not fanned out as new `post_created` events; after
+the user confirms the move, the source instance sends the normal
+`account_moved` event.
+
+Implementations should hash transfer tokens at rest, support expiry and
+revocation, verify the target origin, prevent SSRF when fetching a source URL,
+reject object keys not owned by the transfer session, and cap media size. DM
+history, poll votes, bookmarks, and follow graph migration require separate
+design because they involve E2EE material or remote-side state.
+
 ---
 
 ## Remote Follow Flow

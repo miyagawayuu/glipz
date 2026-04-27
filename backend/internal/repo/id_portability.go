@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -73,15 +74,23 @@ func PortableIDForRemote(acct, portableID string) string {
 	return LegacyPortableIDForAcct(acct)
 }
 
+func portableIDForPublicKey(pub ed25519.PublicKey) string {
+	sum := sha256.Sum256(pub)
+	return PortableIDPrefix + base64.RawURLEncoding.EncodeToString(sum[:])
+}
+
+func isLocalPlaceholderPortableID(id string) bool {
+	return strings.HasPrefix(strings.TrimSpace(id), PortableIDPrefix+"local-")
+}
+
 func newPortableIdentity() (PortableIdentity, error) {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		return PortableIdentity{}, err
 	}
-	sum := sha256.Sum256(pub)
 	enc := base64.RawURLEncoding
 	return PortableIdentity{
-		PortableID:                 PortableIDPrefix + enc.EncodeToString(sum[:]),
+		PortableID:                 portableIDForPublicKey(pub),
 		AccountPublicKey:           enc.EncodeToString(pub),
 		AccountPrivateKeyEncrypted: enc.EncodeToString(priv),
 	}, nil
@@ -100,14 +109,23 @@ func (p *Pool) EnsureUserPortableIdentity(ctx context.Context, userID uuid.UUID)
 		return PortableIdentity{}, err
 	}
 	if strings.TrimSpace(out.PortableID) != "" && strings.TrimSpace(out.AccountPublicKey) != "" && strings.TrimSpace(out.AccountPrivateKeyEncrypted) != "" {
+		pub, errPub := base64.RawURLEncoding.DecodeString(strings.TrimSpace(out.AccountPublicKey))
+		priv, errPriv := base64.RawURLEncoding.DecodeString(strings.TrimSpace(out.AccountPrivateKeyEncrypted))
+		if errPub == nil && errPriv == nil && len(pub) == ed25519.PublicKeySize && len(priv) == ed25519.PrivateKeySize &&
+			bytes.Equal(ed25519.PrivateKey(priv).Public().(ed25519.PublicKey), ed25519.PublicKey(pub)) {
+			expectedID := portableIDForPublicKey(ed25519.PublicKey(pub))
+			if out.PortableID != expectedID && isLocalPlaceholderPortableID(out.PortableID) {
+				if _, err := p.db.Exec(ctx, `UPDATE users SET portable_id = $2 WHERE id = $1`, userID, expectedID); err != nil {
+					return PortableIdentity{}, err
+				}
+				out.PortableID = expectedID
+			}
+		}
 		return out, nil
 	}
 	next, err := newPortableIdentity()
 	if err != nil {
 		return PortableIdentity{}, err
-	}
-	if strings.TrimSpace(out.PortableID) != "" {
-		next.PortableID = strings.TrimSpace(out.PortableID)
 	}
 	_, err = p.db.Exec(ctx, `
 		UPDATE users
@@ -133,10 +151,25 @@ func (p *Pool) SetUserPortableIdentity(ctx context.Context, userID uuid.UUID, id
 	identity.PortableID = NormalizePortableID(identity.PortableID)
 	identity.AccountPublicKey = strings.TrimSpace(identity.AccountPublicKey)
 	identity.AccountPrivateKeyEncrypted = strings.TrimSpace(identity.AccountPrivateKeyEncrypted)
-	if userID == uuid.Nil || identity.PortableID == "" || identity.AccountPublicKey == "" || identity.AccountPrivateKeyEncrypted == "" {
+	if userID == uuid.Nil || identity.AccountPublicKey == "" || identity.AccountPrivateKeyEncrypted == "" {
 		return fmt.Errorf("invalid portable identity")
 	}
-	_, err := p.db.Exec(ctx, `
+	pub, err := base64.RawURLEncoding.DecodeString(identity.AccountPublicKey)
+	if err != nil || len(pub) != ed25519.PublicKeySize {
+		return fmt.Errorf("invalid portable identity")
+	}
+	expectedID := portableIDForPublicKey(ed25519.PublicKey(pub))
+	if identity.PortableID == "" || isLocalPlaceholderPortableID(identity.PortableID) {
+		identity.PortableID = expectedID
+	}
+	if identity.PortableID != expectedID {
+		return fmt.Errorf("invalid portable identity")
+	}
+	priv, err := base64.RawURLEncoding.DecodeString(identity.AccountPrivateKeyEncrypted)
+	if err != nil || len(priv) != ed25519.PrivateKeySize || !bytes.Equal(ed25519.PrivateKey(priv).Public().(ed25519.PublicKey), ed25519.PublicKey(pub)) {
+		return fmt.Errorf("invalid portable identity")
+	}
+	_, err = p.db.Exec(ctx, `
 		UPDATE users
 		SET portable_id = $2,
 			account_public_key = $3,

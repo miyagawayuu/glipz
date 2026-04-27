@@ -129,6 +129,7 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c s3client.
 
 	s.mountGlipzFederation(r)
 	s.startFederationDeliveryWorker()
+	s.startIdentityTransferImportWorker()
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(limitAPIRequestBody)
@@ -152,6 +153,9 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c s3client.
 		r.Head("/media/object/*", s.handlePublicMediaObject)
 		r.Get("/media/remote", s.handlePublicRemoteMediaProxy)
 		r.Head("/media/remote", s.handlePublicRemoteMediaProxy)
+		r.Get("/identity/transfers/{sessionID}/manifest", s.handleIdentityTransferManifest)
+		r.Get("/identity/transfers/{sessionID}/posts", s.handleIdentityTransferPosts)
+		r.Get("/identity/transfers/{sessionID}/media", s.handleIdentityTransferMedia)
 		r.Get("/fanclub/patreon/callback", s.handlePatreonCallback)
 
 		// Optional login: attach the viewer context when a valid token is present, otherwise keep the request anonymous.
@@ -210,8 +214,17 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c s3client.
 			r.Get("/fanclub/patreon/campaigns", s.handlePatreonCampaigns)
 			r.Get("/me", s.handleMe)
 			r.Get("/me/identity/export", s.handleMeIdentityExport)
+			r.Post("/me/identity/export-secure", s.handleMeIdentityExportSecure)
 			r.Put("/me/identity/import", s.handleMeIdentityImport)
+			r.Put("/me/identity/import-secure", s.handleMeIdentityImportSecure)
 			r.Post("/me/identity/move", s.handleMeIdentityMove)
+			r.Post("/me/identity/transfer-sessions", s.handleMeIdentityTransferSessionCreate)
+			r.Get("/me/identity/transfer-sessions/{sessionID}", s.handleMeIdentityTransferSessionGet)
+			r.Delete("/me/identity/transfer-sessions/{sessionID}", s.handleMeIdentityTransferSessionRevoke)
+			r.Post("/me/identity/import-jobs", s.handleMeIdentityImportJobCreate)
+			r.Get("/me/identity/import-jobs/{jobID}", s.handleMeIdentityImportJobGet)
+			r.Post("/me/identity/import-jobs/{jobID}/retry", s.handleMeIdentityImportJobRetry)
+			r.Delete("/me/identity/import-jobs/{jobID}", s.handleMeIdentityImportJobCancel)
 			r.Get("/me/custom-emojis", s.handleMeListCustomEmojis)
 			r.Post("/me/custom-emojis", s.handleMeCreateCustomEmoji)
 			r.Patch("/me/custom-emojis/{emojiID}", s.handleMePatchCustomEmoji)

@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -12,15 +13,17 @@ import (
 )
 
 type identityBundle struct {
-	V                          int      `json:"v"`
-	PortableID                 string   `json:"portable_id"`
-	AccountPublicKey           string   `json:"account_public_key"`
-	AccountPrivateKeyEncrypted string   `json:"account_private_key_encrypted"`
-	Handle                     string   `json:"handle"`
-	DisplayName                string   `json:"display_name"`
-	Bio                        string   `json:"bio"`
-	AlsoKnownAs                []string `json:"also_known_as,omitempty"`
-	ExportedAt                 string   `json:"exported_at"`
+	V                          int                      `json:"v"`
+	PortableID                 string                   `json:"portable_id"`
+	AccountPublicKey           string                   `json:"account_public_key"`
+	AccountPrivateKeyEncrypted string                   `json:"account_private_key_encrypted,omitempty"`
+	PrivateKey                 *encryptedIdentitySecret `json:"private_key,omitempty"`
+	Handle                     string                   `json:"handle"`
+	DisplayName                string                   `json:"display_name"`
+	Bio                        string                   `json:"bio"`
+	AlsoKnownAs                []string                 `json:"also_known_as,omitempty"`
+	CreatedForOrigin           string                   `json:"created_for_origin,omitempty"`
+	ExportedAt                 string                   `json:"exported_at"`
 }
 
 func (s *Server) handleMeIdentityExport(w http.ResponseWriter, r *http.Request) {
@@ -88,7 +91,8 @@ func (s *Server) handleMeIdentityMove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	movedTo := repo.NormalizeFederationTargetAcct(req.MovedToAcct)
-	if _, _, err := splitAcct(movedTo); err != nil {
+	_, movedHost, err := splitAcct(movedTo)
+	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_moved_to_acct"})
 		return
 	}
@@ -101,6 +105,17 @@ func (s *Server) handleMeIdentityMove(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeServerError(w, "EnsureUserPortableIdentity move", err)
 		return
+	}
+	if !strings.EqualFold(movedHost, s.federationDisplayHost()) {
+		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+		defer cancel()
+		doc, err := fetchRemoteFederationAccount(ctx, movedTo)
+		if err != nil || doc.Account == nil ||
+			strings.TrimSpace(doc.Account.ID) != strings.TrimSpace(identity.PortableID) ||
+			strings.TrimSpace(doc.Account.PublicKey) != strings.TrimSpace(identity.AccountPublicKey) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "target_identity_mismatch"})
+			return
+		}
 	}
 	if err := s.db.MarkUserMoved(r.Context(), uid, movedTo); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_moved_to_acct"})

@@ -1,6 +1,6 @@
 /** Empty means same-origin, for example :5173, and requests reach the backend through Vite's /api proxy. */
 import { translate } from "../i18n";
-import { COOKIE_AUTH_TOKEN } from "../auth";
+import { COOKIE_AUTH_TOKEN, getAccessToken } from "../auth";
 import { isSafeComposerMediaFile } from "./composerMedia";
 import { isNativeApp } from "./runtime";
 
@@ -107,8 +107,9 @@ export async function api<T>(
   if (init?.json !== undefined) {
     headers.set("Content-Type", "application/json");
   }
-  if (init?.token) {
-    if (init.token !== COOKIE_AUTH_TOKEN) headers.set("Authorization", `Bearer ${init.token}`);
+  const authToken = init?.token ?? getAccessToken();
+  if (authToken) {
+    if (authToken !== COOKIE_AUTH_TOKEN) headers.set("Authorization", `Bearer ${authToken}`);
   }
   const requestInit = applyBrowserAuth({
     ...init,

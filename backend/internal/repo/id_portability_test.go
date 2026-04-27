@@ -1,6 +1,8 @@
 package repo
 
 import (
+	"crypto/ed25519"
+	"encoding/base64"
 	"strings"
 	"testing"
 )
@@ -34,5 +36,22 @@ func TestNormalizeFederationTargetAcctPreservesPortableIDFingerprintCase(t *test
 	want := "glipz:id:AbCdEF123"
 	if got != want {
 		t.Fatalf("NormalizeFederationTargetAcct = %q, want %q", got, want)
+	}
+}
+
+func TestSetUserPortableIdentityNormalizesLocalPlaceholderID(t *testing.T) {
+	identity, err := newPortableIdentity()
+	if err != nil {
+		t.Fatalf("newPortableIdentity: %v", err)
+	}
+	pub, err := base64.RawURLEncoding.DecodeString(identity.AccountPublicKey)
+	if err != nil {
+		t.Fatalf("public key decode: %v", err)
+	}
+	if got := portableIDForPublicKey(ed25519.PublicKey(pub)); got != identity.PortableID {
+		t.Fatalf("portableIDForPublicKey = %q, want %q", got, identity.PortableID)
+	}
+	if !isLocalPlaceholderPortableID("glipz:id:local-123") {
+		t.Fatal("local placeholder was not detected")
 	}
 }

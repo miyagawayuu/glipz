@@ -61,7 +61,7 @@ This repository contains the official Go implementation of the Glipz Federation 
 - **Glipz Protocol**: Lightweight federation between Glipz instances
 - Remote follow support
 - Inbound federation timeline and federated direct messages (instance-to-instance)
-- ID portability support with export/import identity bundles, account move declarations, portable account IDs, and stable federated object IDs
+- ID portability support with encrypted migration bundles, transfer-token protected post/media import jobs, account move declarations, portable account IDs, and stable federated object IDs
 - Delivery workers for reliable delivery
 - Admin-managed federation delivery monitoring, domain blocks, and known instances
 - Database-backed instance settings, including public server metadata and federation policy summary
@@ -234,21 +234,62 @@ OAuth client redirect URIs must be absolute `https://` URLs in production. `http
 
 ### Identity portability
 
-Authenticated users can export a portable identity bundle, import it on another instance, and declare that their account moved to a new acct. The bundle contains private key material, so handle it only in trusted places.
+Authenticated users can use the migration wizard to move their portable account
+identity to another instance, import their post/media history, and declare that
+their account moved to a new acct.
+
+The migration wizard creates an encrypted identity bundle v2 using a migration
+passphrase, issues a short-lived transfer token on the source instance, and
+starts a background import job on the target instance. The target instance pulls
+the source manifest, posts, and media sequentially through transfer-token
+protected endpoints. Imported historical posts are restored as profile history
+and are not fanned out as new `post_created` federation events; once the user
+confirms the move, the old instance sends the normal `account_moved` event.
+
+Migration security details:
+- The encrypted bundle v2 stores the account private key under Argon2id +
+  AES-GCM. The passphrase is required on the target instance to import the
+  identity.
+- Transfer tokens are short-lived, stored server-side only as hashes, encrypted
+  when saved in import jobs, and sent to source transfer endpoints as
+  `X-Glipz-Transfer-Token`.
+- Source transfer endpoints require `X-Glipz-Target-Origin` to match the
+  `target_origin` authorized when the source transfer session was created. If
+  the wizard creates a session for `http://localhost:5173` but the import job
+  runs from `https://example.com`, the source returns `401 Unauthorized`.
+- `http://` origins are accepted only for `localhost` or loopback IPs during
+  development. Public instances should use `https://` origins. Origins must not
+  include path, query, fragment, or userinfo.
+- Remote source URLs are checked before fetches to reduce SSRF risk; private,
+  loopback, link-local, unspecified, and multicast remote addresses are
+  rejected unless the origin is explicitly local development.
+
+Secure migration wizard APIs:
 
 ```bash
-curl -H "Authorization: Bearer $TOKEN" \
-  https://your-instance.com/api/v1/me/identity/export
-
-curl -X PUT -H "Authorization: Bearer $TOKEN" \
+# Source instance: create an encrypted bundle for the target origin.
+curl -X POST -H "Authorization: Bearer $SOURCE_TOKEN" \
   -H "Content-Type: application/json" \
-  https://your-new-instance.com/api/v1/me/identity/import \
-  -d @identity-bundle.json
+  https://your-old-instance.com/api/v1/me/identity/export-secure \
+  -d '{"passphrase":"long migration passphrase","target_origin":"https://your-new-instance.com"}'
 
-curl -X POST -H "Authorization: Bearer $TOKEN" \
+# Source instance: create a post/media transfer session and one-time transfer token.
+curl -X POST -H "Authorization: Bearer $SOURCE_TOKEN" \
   -H "Content-Type: application/json" \
-  https://your-old-instance.com/api/v1/me/identity/move \
-  -d '{"moved_to_acct":"alice@new.example"}'
+  https://your-old-instance.com/api/v1/me/identity/transfer-sessions \
+  -d '{"target_origin":"https://your-new-instance.com","include_private":false,"include_gated":false}'
+
+# Target instance: import the encrypted identity bundle.
+curl -X PUT -H "Authorization: Bearer $TARGET_TOKEN" \
+  -H "Content-Type: application/json" \
+  https://your-new-instance.com/api/v1/me/identity/import-secure \
+  -d '{"bundle":{...},"passphrase":"long migration passphrase"}'
+
+# Target instance: start the background post/media import job.
+curl -X POST -H "Authorization: Bearer $TARGET_TOKEN" \
+  -H "Content-Type: application/json" \
+  https://your-new-instance.com/api/v1/me/identity/import-jobs \
+  -d '{"source_origin":"https://your-old-instance.com","target_origin":"https://your-new-instance.com","source_session_id":"...","token":"...","include_private":false,"include_gated":false}'
 ```
 
 ### Example: Get home timeline

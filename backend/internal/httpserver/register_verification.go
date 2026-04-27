@@ -106,6 +106,14 @@ func (s *Server) handleRegisterVerify(w http.ResponseWriter, r *http.Request) {
 		writeServerError(w, "register verify SignAccess", err)
 		return
 	}
+	csrfToken, err := randomHex(32)
+	if err != nil {
+		writeServerError(w, "register verify csrf token", err)
+		return
+	}
+	accessTTL := 24 * time.Hour
+	s.setAccessCookie(w, r, tok, accessTTL)
+	s.setCSRFCookie(w, r, csrfToken, accessTTL)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"user_id":      userID.String(),
 		"access_token": tok,

@@ -375,15 +375,18 @@ func (p *Pool) CreateUser(ctx context.Context, email, passwordHash, handle strin
 	if handle == "" {
 		return uuid.Nil, fmt.Errorf("empty handle")
 	}
-	var id uuid.UUID
-	err := p.db.QueryRow(ctx,
-		`INSERT INTO users (email, password_hash, handle) VALUES ($1, $2, $3) RETURNING id`,
-		email, passwordHash, handle,
-	).Scan(&id)
+	identity, err := newPortableIdentity()
 	if err != nil {
 		return uuid.Nil, err
 	}
-	if _, err := p.EnsureUserPortableIdentity(ctx, id); err != nil {
+	var id uuid.UUID
+	err = p.db.QueryRow(ctx,
+		`INSERT INTO users (
+			email, password_hash, handle, portable_id, account_public_key, account_private_key_encrypted
+		) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+		email, passwordHash, handle, identity.PortableID, identity.AccountPublicKey, identity.AccountPrivateKeyEncrypted,
+	).Scan(&id)
+	if err != nil {
 		return uuid.Nil, err
 	}
 	return id, nil
