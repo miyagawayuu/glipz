@@ -20,6 +20,26 @@ Useful counters include:
 
 Slow HTTP requests and slow DB-facing operations are also logged with duration fields.
 
+## Federation Delivery Scaling
+
+Glipz Federation Protocol delivery is queue-backed. Outbound public events are
+sent as signed JSON `POST` requests to each remote subscriber's inbox, normally
+the peer's `/federation/events` URL discovered from `/.well-known/glipz-federation`.
+The protocol path is not ActivityPub shared-inbox delivery, so scale and monitor
+the `/federation/*` handlers directly.
+
+Important behavior to preserve when increasing throughput:
+
+- Select the highest mutually supported `glipz-federation/{major}` version from peer discovery; new peers should use `glipz-federation/3`.
+- Keep `X-Glipz-Nonce` replay protection durable enough for the 15 minute nonce TTL used by the reference implementation.
+- Keep processed `event_id` records long enough to reject duplicate event delivery; the reference implementation keeps them for 7 days.
+- Retry transient delivery failures with exponential backoff starting at 30 seconds, capped at 1 hour, and stop after 10 attempts.
+- Treat domain-blocked inboxes as dead deliveries instead of retrying them indefinitely.
+
+Tune `GLIPZ_FEDERATION_DELIVERY_*` values gradually. Watch delivery success and
+failure counts, queue age, Redis latency, remote 429/5xx rates, and database
+write pressure from nonce/event dedupe tables before adding more workers.
+
 ## Feed Query Profiling
 
 Run these against production-like data before and after changing indexes. Use `EXPLAIN (ANALYZE, BUFFERS)` and compare planning time, execution time, shared buffer reads, and row estimates.

@@ -155,8 +155,9 @@ MAIL_FROM_NAME=Glipz
 |----------|-------------|
 | `JWT_SECRET` | Use a cryptographically secure random string (64+ characters) |
 | `FRONTEND_ORIGIN` | Your public web app URL |
-| `GLIPZ_PROTOCOL_PUBLIC_ORIGIN` | Backend API URL (can be same as frontend if behind same proxy) |
-| `GLIPZ_PROTOCOL_MEDIA_PUBLIC_BASE` | Media proxy URL for federation |
+| `GLIPZ_PROTOCOL_PUBLIC_ORIGIN` | Public API/federation origin advertised in `/.well-known/glipz-federation`; can be same as frontend if behind the same proxy |
+| `GLIPZ_PROTOCOL_HOST` | Stable federation host peers use to verify discovery and signed request metadata |
+| `GLIPZ_PROTOCOL_MEDIA_PUBLIC_BASE` | Public media base URL used in federated profile and post documents |
 | `GLIPZ_STORAGE_MODE` | `local` stores media on the server; `s3` uses S3-compatible storage |
 | `GLIPZ_LOCAL_STORAGE_PATH` | Local media directory; back it up if using `GLIPZ_STORAGE_MODE=local` |
 | `GLIPZ_ADMIN_USER_IDS` | Built-in moderation / admin API access and `/admin` control panel access |
@@ -198,6 +199,14 @@ The production image is built from the **repository root** with `backend/Dockerf
 When using CDN or direct object-storage media URLs, also set the frontend build-time allowlists in `web/.env.production`: `VITE_ALLOWED_MEDIA_BASE_URLS` for rendered media and `VITE_ALLOWED_DM_ATTACHMENT_BASE_URLS` for encrypted DM attachments. Use exact HTTPS path prefixes such as `https://cdn.example.com/media/`; root origins are rejected by the frontend safety checks. Configure the CDN/storage endpoint to reject or download active content types (`image/svg+xml`, `text/html`, XML, and JavaScript types) with `Content-Disposition: attachment` and `X-Content-Type-Options: nosniff`.
 
 Provider callback URLs use the API public origin, not necessarily the frontend origin. For example, Patreon callbacks should be based on `GLIPZ_PROTOCOL_PUBLIC_ORIGIN`.
+
+For federation, production deployments should expose HTTPS URLs for
+`/.well-known/glipz-federation` and `/federation/*`. The reference server
+advertises `glipz-federation/3` for new integrations, signs mutating
+server-to-server requests with Ed25519 `X-Glipz-*` headers, and requires nonce
+and `event_id` replay protection for version 2 and later. `JWT_SECRET` feeds the
+instance signing key material, so changing it after federation is live changes
+the advertised public key and peer trust relationship.
 
 Mailgun's default API base works for the US region. Set `MAILGUN_API_BASE` when your Mailgun domain uses a regional API endpoint such as the EU region.
 
@@ -375,6 +384,11 @@ Ensure these paths are proxied correctly:
 | `/.well-known/glipz-federation` | Glipz Federation discovery |
 | `/federation/*` | Glipz Federation endpoints |
 
+Glipz federation does not use ActivityPub shared-inbox delivery as its primary
+interoperability path. Do not route peers to `/ap` for Glipz protocol delivery;
+ensure signed JSON requests reach `/federation/events`, `/federation/follow`,
+and `/federation/unfollow`.
+
 ---
 
 ## Step 6: Verify Deployment
@@ -388,6 +402,8 @@ Run these checks after deployment:
 | Login | Try registering a test account | Email received |
 | Media Upload | Upload an image | URL returned |
 | API | `curl -H "Authorization: Bearer $TOKEN" https://your-domain.com/api/v1/users/me` | User data |
+| Federation discovery | `curl https://your-domain.com/.well-known/glipz-federation` | `protocol_version`, `public_key`, and endpoint URLs |
+| Federation inbox path | `curl -i https://your-domain.com/federation/events` | Non-GET response from Glipz backend, not a proxy 404 |
 
 ---
 
@@ -401,6 +417,7 @@ Run these checks after deployment:
 - [ ] Redis is not exposed to the internet
 - [ ] HTTPS is enabled and working
 - [ ] `FRONTEND_ORIGIN` matches your actual domain
+- [ ] `GLIPZ_PROTOCOL_PUBLIC_ORIGIN`, `GLIPZ_PROTOCOL_HOST`, and federation endpoint URLs are HTTPS and match your public routing
 - [ ] S3 bucket blocks public access
 - [ ] Federation settings reviewed (if enabled)
 

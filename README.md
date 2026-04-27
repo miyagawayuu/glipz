@@ -14,11 +14,14 @@ Glipz is a **social platform for independently operated communities** and a **hi
 Unlike generic protocols, Glipz is designed for speed, security (Ed25519), and optional gated post media (Unlock). It serves as both a full-featured social network and a reference implementation for the Glipz Federation Protocol.
 
 ### The Glipz Federation Protocol
-This repository contains the official Go implementation of the Glipz Federation Protocol. Key features include:
-- **High-Speed Sync:** Event-driven architecture for near-instant data propagation.
-- **Strong Security:** Ed25519 signatures and mandatory nonce-based replay protection.
-- **ID portability:** Stable portable account IDs, account move events, and stable federated object IDs.
-- **Gated post media:** Optional view password or membership-based unlock over federation.
+This repository contains the reference Go implementation of the Glipz Federation Protocol. It is a JSON-over-HTTP server-to-server protocol, not ActivityPub. Compatible peers discover each other at `/.well-known/glipz-federation` and deliver signed events to `/federation/events`.
+
+Key features include:
+- **Discovery-driven capability negotiation:** peers advertise `glipz-federation/3`, endpoint URLs, schema version, DM key lookup support, and known-instance hints.
+- **Strong security:** Ed25519 `X-Glipz-*` signatures with nonce and event ID replay protection.
+- **Public social delivery:** remote follows, public posts, reposts, edits, deletes, likes, reactions, poll updates, and federated timeline ingestion.
+- **ID portability:** stable portable account IDs, account move events, and stable federated object IDs.
+- **Federated DMs and gated media:** signed `dm_*` events, DM public-key lookup, and optional password or membership unlock flows.
 
 ### Who is Glipz for?
 
@@ -58,12 +61,14 @@ This repository contains the official Go implementation of the Glipz Federation 
 
 ### Federation
 
-- **Glipz Protocol**: Lightweight federation between Glipz instances
-- Remote follow support
-- Inbound federation timeline and federated direct messages (instance-to-instance)
+- **Glipz Federation Protocol v3**: JSON-over-HTTP federation between Glipz-compatible instances
+- Discovery at `/.well-known/glipz-federation` with public Ed25519 key, endpoint URLs, protocol versions, and optional DM key endpoint metadata
+- Signed server-to-server requests using `X-Glipz-*` headers, nonces, and idempotent `event_id` values
+- Remote follow/unfollow support and outbound public event delivery to `/federation/events`
+- Inbound federation timeline and federated direct messages (`dm_*` events, instance-to-instance)
 - ID portability support with encrypted migration bundles, transfer-token protected post/media import jobs, account move declarations, portable account IDs, and stable federated object IDs
-- Delivery workers for reliable delivery
-- Admin-managed federation delivery monitoring, domain blocks, and known instances
+- Delivery workers for reliable delivery with retries and duplicate-event protection
+- Admin-managed federation delivery monitoring, domain blocks, and known instances; known instances are discovery hints, not automatic trust grants
 - Database-backed instance settings, including public server metadata and federation policy summary
 - Operator-editable Markdown legal pages (`LEGAL_DOCS_DIR`) or admin-configured external legal document URLs
 
@@ -304,7 +309,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 Posts can carry a view password or membership lock. **Unlock** reveals the protected media/caption for that post:
 
 - **Password unlock**: viewer enters a password.
-- **Membership unlock (federation)**: viewer requests a short-lived, verifiable `entitlement_jwt` (JWS) from the origin instance and uses it to unlock.
+- **Membership unlock (federation)**: viewer obtains a short-lived, verifiable `entitlement_jwt` through the supported provider path and uses it to unlock.
 
 #### Local post unlock (password)
 
@@ -321,7 +326,7 @@ If a federated incoming post is membership-locked, the viewer instance tries to 
 
 For Patreon, the viewer instance does not ask the origin to verify Patreon directly. Instead, when Patreon is enabled and the viewer connected Patreon on the viewer instance, it verifies the viewer's Patreon campaign/tier locally against Patreon's API and mints an `entitlement_jwt` for the origin post.
 
-For other federation membership providers, the viewer instance may ask the origin for an entitlement token:
+For other federation membership providers, the viewer instance may ask the origin for an entitlement token only when the origin can safely verify the remote viewer's membership:
 
 1. `POST {unlock_url_without_suffix}/entitlement` (federation-signed) to obtain `entitlement_jwt`
 2. `POST unlock_url` with `entitlement_jwt`
@@ -346,7 +351,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
   -d '{"post_id":"'"$POST_ID"'","viewer_acct":"alice@viewer.example"}'
 ```
 
-Membership entitlement over Glipz federation (`POST .../federation/posts/{postID}/entitlement`) is allowed for any caller that passes `verifyFederationRequest` (valid instance discovery + signature) and whose `ViewerAcct` host matches `X-Glipz-Instance`, **except** where the origin post is locked to an external provider that the origin cannot safely verify for the remote viewer. Patreon uses the viewer-instance verification path described above.
+Membership entitlement over Glipz federation (`POST .../federation/posts/{postID}/entitlement`) requires a valid Glipz federation signature, a `ViewerAcct` host that matches `X-Glipz-Instance`, and origin policy approval. If the origin cannot safely verify a remote viewer's external membership, it should reject entitlement minting. Patreon uses the viewer-instance verification path described above and is not minted by the origin entitlement endpoint.
 
 ---
 
@@ -361,7 +366,9 @@ Membership entitlement over Glipz federation (`POST .../federation/posts/{postID
 | `GLIPZ_LOCAL_STORAGE_PATH` | Folder used when `GLIPZ_STORAGE_MODE=local`; default is `data/media` | Required for local storage |
 | `S3_*` | S3 storage configuration | Required when `GLIPZ_STORAGE_MODE=s3` |
 | `FRONTEND_ORIGIN` | Frontend origin(s) for CORS; comma-separated if apex + www | Recommended |
-| `GLIPZ_PROTOCOL_*` | Federation / discovery / media URLs | Optional |
+| `GLIPZ_PROTOCOL_PUBLIC_ORIGIN` | Public API/federation origin advertised in discovery; falls back to `FRONTEND_ORIGIN` when empty | Recommended for federation |
+| `GLIPZ_PROTOCOL_HOST` | Stable federation host advertised to peers | Recommended for federation |
+| `GLIPZ_PROTOCOL_MEDIA_PUBLIC_BASE` | Public base URL for federated media URLs | Recommended for federation |
 | `GLIPZ_METRICS_ENABLED` | Exposes lightweight expvar metrics at `/debug/vars` | Optional |
 | `GLIPZ_ACCESS_LOG_ENABLED` | Enables per-request access logs; disabled by default for throughput | Optional |
 | `GLIPZ_SLOW_REQUEST_LOG_MS` | Logs HTTP requests over this threshold in ms; `0` disables slow request logs | Optional |

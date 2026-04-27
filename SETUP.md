@@ -93,6 +93,19 @@ GLIPZ_PROTOCOL_MEDIA_PUBLIC_BASE=http://localhost:8080/api/v1/media/object
 # FEDERATION_POLICY_SUMMARY=Short text shown as your instance federation policy
 ```
 
+These values enable Glipz Federation Protocol discovery at
+`/.well-known/glipz-federation` and advertise the local `/federation/*`
+endpoints. The reference server uses `glipz-federation/3` for new peers while
+retaining older protocol versions for compatibility. Mutating federation
+requests are signed with Ed25519 `X-Glipz-*` headers and use nonces plus
+`event_id` values for replay protection.
+
+In production, use HTTPS origins and a stable public host. Set
+`GLIPZ_PROTOCOL_PUBLIC_ORIGIN` explicitly when the API/federation origin differs
+from the frontend origin. The instance signing key is derived from `JWT_SECRET`,
+so treat `JWT_SECRET` as stable production configuration after federation is
+enabled.
+
 For production, prefer the backend media proxy (`GLIPZ_MEDIA_PROXY_MODE=proxy`).
 It forces active content types such as SVG, HTML, XML, and JavaScript to download
 instead of rendering inline. If you switch to direct object-storage or CDN media
@@ -163,7 +176,7 @@ Vite proxies these routes to the backend (override backend host with `VITE_PROXY
 
 - `/api` → Backend API (including SSE: feed, notifications, DMs)
 - `/.well-known` → Federation discovery
-- `/ap` → Federation endpoints
+- `/federation` → Glipz Federation endpoints
 
 ---
 
@@ -291,6 +304,9 @@ See [.env.example](.env.example) for all options.
 - `GLIPZ_PROTOCOL_PUBLIC_ORIGIN` is set
 - `GLIPZ_PROTOCOL_HOST` is set
 - `GLIPZ_PROTOCOL_MEDIA_PUBLIC_BASE` is set
+- `/.well-known/glipz-federation` returns a discovery document with `glipz-federation/3`, `events_url`, `follow_url`, and `unfollow_url`
+- `/federation/events`, `/federation/follow`, and `/federation/unfollow` are reachable through the reverse proxy
+- Public federation uses HTTPS and stable hostnames outside local development
 - Reverse proxy buffering is disabled for SSE endpoints listed earlier in this guide
 
 ### Patreon OAuth errors after deploy
@@ -321,6 +337,7 @@ Before going live:
 - [ ] Media storage configured (`GLIPZ_STORAGE_MODE=local` with a backed-up folder, or `GLIPZ_STORAGE_MODE=s3` with valid S3 credentials)
 - [ ] `FRONTEND_ORIGIN` set to your public URL
 - [ ] `GLIPZ_PROTOCOL_PUBLIC_ORIGIN` set (if using federation)
+- [ ] `GLIPZ_PROTOCOL_HOST` and `GLIPZ_PROTOCOL_MEDIA_PUBLIC_BASE` set (if using federation)
 - [ ] Database and Redis secured
 - [ ] Real email provider configured (Mailgun, etc.)
 - [ ] Optional providers explicitly enabled only when configured (`PATREON_ENABLED`)
@@ -338,14 +355,19 @@ Before going live:
 ---
 
 ### Federation Setup (Optional)
-To enable federation between instances, configure these variables in your `.env`:
+To enable Glipz Federation Protocol between instances, configure these variables
+in your `.env`:
 
 | Variable | Description |
 |----------|-------------|
-| `GLIPZ_PROTOCOL_PUBLIC_ORIGIN` | Your instance's public API URL (e.g., https://api.social.com) |
-| `GLIPZ_PROTOCOL_HOST` | Your display hostname (e.g., social.com) |
-| `GLIPZ_PROTOCOL_MEDIA_PUBLIC_BASE` | Base URL for serving media assets |
+| `GLIPZ_PROTOCOL_PUBLIC_ORIGIN` | Public API/federation origin used for discovery and endpoint URLs (for example, `https://api.social.example`) |
+| `GLIPZ_PROTOCOL_HOST` | Stable federation host advertised to peers (for example, `social.example`) |
+| `GLIPZ_PROTOCOL_MEDIA_PUBLIC_BASE` | Base URL for federated media assets, usually ending in `/api/v1/media/object` unless using direct CDN delivery |
 
-> **Note:** Federation between public instances expects HTTPS and stable hostnames. Signing keys are managed by the server (see federation code under `backend/internal/`).
+> **Note:** Federation between public instances expects HTTPS and stable
+> hostnames. Glipz federation is not ActivityPub; proxy `/.well-known/glipz-federation`
+> and `/federation/*`, and do not rely on `/ap` shared-inbox delivery for
+> interoperability. Signing keys are managed by the server and are tied to
+> stable production configuration.
 
 For **adding another fan-club provider** (not Patreon-specific), follow [backend/internal/fanclub/kernel/IMPLEMENTATION_GUIDELINES.md](backend/internal/fanclub/kernel/IMPLEMENTATION_GUIDELINES.md).
