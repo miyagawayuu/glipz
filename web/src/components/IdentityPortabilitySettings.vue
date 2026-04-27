@@ -58,6 +58,21 @@ const canCreateTransferSession = computed(() =>
   && passphrase.value.trim().length >= 12
   && passphrase.value === passphraseConfirm.value,
 );
+const secureBundleOriginWarning = computed(() => {
+  if (!secureBundleText.value.trim() || !currentOrigin()) return "";
+  try {
+    const parsed = JSON.parse(secureBundleText.value) as IdentityBundle;
+    if (parsed.created_for_origin && normalizeOrigin(parsed.created_for_origin) !== normalizeOrigin(currentOrigin())) {
+      return t("components.identityPortability.transferWizard.bundleOriginWarning", {
+        expected: parsed.created_for_origin,
+        actual: currentOrigin(),
+      });
+    }
+  } catch {
+    return "";
+  }
+  return "";
+});
 const visibleJobError = computed(() => {
   const lastError = job.value?.last_error?.trim() ?? "";
   if (lastError.includes("source status 401")) {
@@ -131,13 +146,6 @@ async function onImportSecureBundle() {
     error.value = t("components.identityPortability.transferWizard.missingPassphrase");
     return;
   }
-  if (parsed.created_for_origin && currentOrigin() && normalizeOrigin(parsed.created_for_origin) !== normalizeOrigin(currentOrigin())) {
-    error.value = t("components.identityPortability.transferWizard.targetOriginMismatch", {
-      expected: parsed.created_for_origin,
-      actual: currentOrigin(),
-    });
-    return;
-  }
   busy.value = true;
   try {
     await importSecureIdentityBundle(parsed, passphrase.value);
@@ -153,13 +161,6 @@ async function onCreateImportJob() {
   clearStatus();
   if (!sourceOrigin.value.trim() || !sourceSessionID.value.trim() || !transferToken.value.trim()) {
     error.value = t("components.identityPortability.transferWizard.missingSource");
-    return;
-  }
-  if (targetOrigin.value.trim() && currentOrigin() && normalizeOrigin(targetOrigin.value) !== normalizeOrigin(currentOrigin())) {
-    error.value = t("components.identityPortability.transferWizard.targetOriginMismatch", {
-      expected: targetOrigin.value.trim(),
-      actual: currentOrigin(),
-    });
     return;
   }
   busy.value = true;
@@ -394,6 +395,7 @@ onMounted(() => {
         class="min-h-32 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 font-mono text-xs text-neutral-900 outline-none ring-lime-500/30 transition focus:border-lime-400 focus:ring-2 focus:ring-lime-400/40"
         :placeholder="$t('components.identityPortability.transferWizard.secureBundlePlaceholder')"
       ></textarea>
+      <p v-if="secureBundleOriginWarning" class="text-xs text-amber-700">{{ secureBundleOriginWarning }}</p>
 
       <div v-if="job" class="space-y-2 rounded-xl border border-neutral-200 bg-white p-3">
         <div class="flex items-center justify-between text-xs text-neutral-600">

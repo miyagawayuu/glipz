@@ -146,7 +146,7 @@ export const enOverrides: DeepPartial<AppMessageSchema> = {
         missingSource: "Enter the source URL, session ID, and migration token.",
         missingPassphrase: "Enter the migration passphrase.",
         loginRequired: "Log in on the target instance before importing.",
-        targetOriginMismatch: "The migration session target URL does not match the current URL. Recreate the session on the source instance with target_origin set to {actual} (current bundle: {expected}).",
+        bundleOriginWarning: "This bundle was created for {expected}. The current origin is {actual}. If post import returns 401, create a new migration session on the source instance with the target URL set to {actual}.",
         sourceUnauthorizedHint: "The source instance rejected authorization. Check that the session ID, migration token, and target URL match, then create a new migration session with the target URL set to this instance origin.",
         sessionCreated: "Migration session created. Use the session ID, token, and encrypted bundle on the target instance.",
         jobStarted: "Post import job started.",
