@@ -34,6 +34,18 @@ const secureBundleText = ref("");
 const job = ref<IdentityTransferImportJob | null>(null);
 let pollTimer: number | undefined;
 
+function currentOrigin(): string {
+  return typeof window !== "undefined" ? window.location.origin : "";
+}
+
+function normalizeOrigin(raw: string): string {
+  try {
+    return new URL(raw.trim()).origin.replace(/\/+$/, "");
+  } catch {
+    return raw.trim().replace(/\/+$/, "");
+  }
+}
+
 const progressPct = computed(() => {
   if (!job.value || job.value.total_posts <= 0) return 0;
   return Math.min(100, Math.round((job.value.imported_posts / job.value.total_posts) * 100));
@@ -46,6 +58,13 @@ const canCreateTransferSession = computed(() =>
   && passphrase.value.trim().length >= 12
   && passphrase.value === passphraseConfirm.value,
 );
+const visibleJobError = computed(() => {
+  const lastError = job.value?.last_error?.trim() ?? "";
+  if (lastError.includes("source status 401")) {
+    return t("components.identityPortability.transferWizard.sourceUnauthorizedHint");
+  }
+  return lastError;
+});
 
 function clearStatus() {
   message.value = "";
@@ -112,6 +131,13 @@ async function onImportSecureBundle() {
     error.value = t("components.identityPortability.transferWizard.missingPassphrase");
     return;
   }
+  if (parsed.created_for_origin && currentOrigin() && normalizeOrigin(parsed.created_for_origin) !== normalizeOrigin(currentOrigin())) {
+    error.value = t("components.identityPortability.transferWizard.targetOriginMismatch", {
+      expected: parsed.created_for_origin,
+      actual: currentOrigin(),
+    });
+    return;
+  }
   busy.value = true;
   try {
     await importSecureIdentityBundle(parsed, passphrase.value);
@@ -129,11 +155,18 @@ async function onCreateImportJob() {
     error.value = t("components.identityPortability.transferWizard.missingSource");
     return;
   }
+  if (targetOrigin.value.trim() && currentOrigin() && normalizeOrigin(targetOrigin.value) !== normalizeOrigin(currentOrigin())) {
+    error.value = t("components.identityPortability.transferWizard.targetOriginMismatch", {
+      expected: targetOrigin.value.trim(),
+      actual: currentOrigin(),
+    });
+    return;
+  }
   busy.value = true;
   try {
     job.value = await createIdentityImportJob({
       source_origin: sourceOrigin.value.trim(),
-      target_origin: typeof window !== "undefined" ? window.location.origin : targetOrigin.value.trim(),
+      target_origin: currentOrigin() || targetOrigin.value.trim(),
       source_session_id: sourceSessionID.value.trim(),
       token: transferToken.value.trim(),
       include_private: includePrivate.value,
@@ -370,7 +403,7 @@ onMounted(() => {
         <div class="h-2 overflow-hidden rounded-full bg-neutral-100">
           <div class="h-full bg-lime-500 transition-all" :style="{ width: `${progressPct}%` }"></div>
         </div>
-        <p v-if="job.last_error" class="text-xs text-red-600">{{ job.last_error }}</p>
+        <p v-if="visibleJobError" class="text-xs text-red-600">{{ visibleJobError }}</p>
         <div class="flex gap-2">
           <button
             type="button"
