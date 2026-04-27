@@ -45,9 +45,9 @@ export function handleFromEmail(email: string): string {
 }
 
 /** Display-ready @handle, preferring the API-provided user_handle. */
-export function handleAt(it: Pick<TimelinePost, "user_handle" | "user_email">): string {
+export function handleAt(it: Pick<TimelinePost, "user_handle"> & Partial<Pick<TimelinePost, "user_email">>): string {
   const h = it.user_handle?.trim();
-  if (!h) return handleFromEmail(it.user_email);
+	if (!h) return handleFromEmail(it.user_email ?? "");
   return fullHandleAt(h);
 }
 

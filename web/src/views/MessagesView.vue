@@ -436,6 +436,7 @@ async function loadActiveFederationThreadAndMessages() {
     if (remoteAcct) {
       const keyDoc = await api<any>(`/api/v1/federation/dm/keys?acct=${encodeURIComponent(remoteAcct)}`, { method: "GET", token });
       peerPublicJwk = (keyDoc?.public_jwk ?? null) as JsonWebKey | null;
+      const rows = (msgs.items ?? []).slice().reverse();
       if (peerPublicJwk && !(await ensurePeerKeyTrusted(`fed:${remoteAcct}`, peerPublicJwk))) {
         fedMessages.value = rows.map((m) => ({
           id: m.message_id,
@@ -1176,7 +1177,7 @@ onBeforeUnmount(() => {
                 :aria-label="$t('views.messages.backToThreadsAria')"
                 @click="router.push('/messages')"
               >
-                <Icon name="back" class="h-5 w-5" stroke-width="2" />
+                <Icon name="back" class="h-5 w-5" :stroke-width="2" />
               </button>
               <div>
                 <div class="flex flex-wrap items-center gap-2">

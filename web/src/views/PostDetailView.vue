@@ -469,7 +469,7 @@ onMounted(() => {
             :aria-label="t('views.feed.lightboxClose')"
             @click="closeLightbox"
           >
-            <Icon name="close" class="h-6 w-6" stroke-width="2" />
+            <Icon name="close" class="h-6 w-6" :stroke-width="2" />
           </button>
         </div>
         <div class="relative flex min-h-0 flex-1 items-stretch justify-center px-0 pb-4 sm:px-2">

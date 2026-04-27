@@ -259,7 +259,7 @@ function safeExternalURL(raw: unknown): string {
 function formatRepostedAt(iso: string): string {
   const t = Date.parse(iso);
   if (Number.isNaN(t)) return "";
-  return formatAbsoluteDateTime(t, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return formatAbsoluteDateTime(iso, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 function hasCommentedRepost(it: TimelinePost): boolean {

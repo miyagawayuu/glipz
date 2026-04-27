@@ -41,10 +41,10 @@ function getScrollableParent(el: HTMLElement | null): HTMLElement | Window {
 
 function getScrollTop(target: HTMLElement | Window | null): number {
   if (!target) return 0;
-  if (target === window) {
-    return window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
+  if (target instanceof HTMLElement) {
+    return target.scrollTop;
   }
-  return target.scrollTop;
+  return window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
 }
 
 function resetPull() {

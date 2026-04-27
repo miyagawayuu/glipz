@@ -47,7 +47,7 @@ const safeHtml = (value: string) => sanitizeInlineHtml(value);
 <template>
   <div class="w-full min-w-0 px-4 py-8 text-neutral-900 sm:px-6 lg:px-8">
     <div class="mx-auto flex w-full max-w-6xl flex-col gap-8">
-      <RouterLink :to="backLink.to" class="text-sm font-medium text-lime-700 hover:text-lime-800" @click="backLink.onClick">{{ backLink.label }}</RouterLink>
+      <RouterLink :to="backLink.to.value" class="text-sm font-medium text-lime-700 hover:text-lime-800" @click="backLink.onClick">{{ backLink.label }}</RouterLink>
 
       <section class="overflow-hidden rounded-[2rem] border border-lime-200 bg-white dark:border-lime-800/70 dark:bg-neutral-950">
         <div class="grid gap-8 px-6 py-10 sm:px-8 lg:grid-cols-[minmax(0,1.1fr)_24rem] lg:items-center lg:px-10">

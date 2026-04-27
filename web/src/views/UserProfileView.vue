@@ -1236,7 +1236,7 @@ watch(handleParam, () => void loadAll());
               v-else-if="tile.media_type === 'audio' && tile.preview_url"
               class="flex h-full w-full flex-col items-center justify-center gap-1 bg-neutral-800 px-1 text-lime-400"
             >
-              <Icon name="note" class="h-8 w-8 opacity-90" stroke-width="1.5" />
+              <Icon name="note" class="h-8 w-8 opacity-90" :stroke-width="1.5" />
               <span class="text-[10px] font-medium uppercase tracking-wide text-lime-300/90">{{
                 $t("views.userProfile.mediaTileAudio")
               }}</span>
@@ -1245,7 +1245,7 @@ watch(handleParam, () => void loadAll());
               v-else
               class="flex h-full w-full flex-col items-center justify-center gap-1 bg-neutral-200 px-1 text-center text-xs text-neutral-600"
             >
-              <Icon name="lock" class="h-6 w-6 text-neutral-500" stroke-width="1.5" />
+              <Icon name="lock" class="h-6 w-6 text-neutral-500" :stroke-width="1.5" />
               <span v-if="tile.locked">{{ $t("views.userProfile.mediaLocked") }}</span>
               <span v-else>—</span>
             </div>
@@ -1278,7 +1278,7 @@ watch(handleParam, () => void loadAll());
             :aria-label="$t('views.feed.lightboxClose')"
             @click="closeLightbox"
           >
-            <Icon name="close" class="h-6 w-6" stroke-width="2" />
+            <Icon name="close" class="h-6 w-6" :stroke-width="2" />
           </button>
         </div>
         <div class="relative flex min-h-0 flex-1 items-stretch justify-center px-0 pb-4 sm:px-2">
@@ -1400,7 +1400,7 @@ watch(handleParam, () => void loadAll());
             :disabled="saving"
             @click="closeProfileEditModal"
           >
-            <Icon name="close" class="h-5 w-5" stroke-width="2" />
+            <Icon name="close" class="h-5 w-5" :stroke-width="2" />
           </button>
         </div>
         <p v-if="profileModalErr" class="mt-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-200">

@@ -141,7 +141,7 @@ watch(
             class="mx-0.5 inline-flex h-7 min-w-[8rem] select-none items-center justify-center rounded-md border border-neutral-400/70 bg-[repeating-linear-gradient(-45deg,_#d4d4d8,_#d4d4d8_8px,_#c4c4ca_8px,_#c4c4ca_16px)] px-3 align-middle text-neutral-700 shadow-inner"
           >
             <span class="sr-only">{{ segment.value }}</span>
-            <Icon name="lock" class="h-4 w-4" stroke-width="2" />
+            <Icon name="lock" class="h-4 w-4" :stroke-width="2" />
           </span>
           <template v-else>{{ segment.value }}</template>
         </template>
