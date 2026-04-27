@@ -23,6 +23,10 @@ type registerVerifyReq struct {
 	Token string `json:"token"`
 }
 
+type registerResendReq struct {
+	Email string `json:"email"`
+}
+
 func newRegistrationToken() (raw string, sha256Hex string, err error) {
 	buf := make([]byte, 32)
 	if _, err := rand.Read(buf); err != nil {
@@ -61,6 +65,58 @@ func (s *Server) sendRegistrationVerificationEmail(email, verifyURL string, expi
 		return nil
 	}
 	return mailer.SendText(cfg, email, "Glipz メール認証", body)
+}
+
+func (s *Server) handleRegisterResend(w http.ResponseWriter, r *http.Request) {
+	siteSettings, err := s.db.GetSiteSettings(r.Context())
+	if err != nil {
+		writeServerError(w, "register resend GetSiteSettings", err)
+		return
+	}
+	if !siteSettings.RegistrationsEnabled {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "registrations_disabled"})
+		return
+	}
+	limitRequestBody(w, r, smallJSONRequestBodyMaxBytes)
+	var req registerResendReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_json"})
+		return
+	}
+	email := strings.TrimSpace(strings.ToLower(req.Email))
+	if !strings.Contains(email, "@") {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_email"})
+		return
+	}
+	if _, err := s.db.UserByEmail(r.Context(), email); err == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+		return
+	} else if !errors.Is(err, repo.ErrNotFound) {
+		writeServerError(w, "register resend UserByEmail", err)
+		return
+	}
+	rawToken, tokenSHA256, err := newRegistrationToken()
+	if err != nil {
+		writeServerError(w, "register resend newRegistrationToken", err)
+		return
+	}
+	expiresAt := time.Now().UTC().Add(s.cfg.RegistrationVerifyTTL)
+	expiresAt, ok, err := s.db.RefreshPendingUserRegistrationToken(r.Context(), email, tokenSHA256, expiresAt)
+	if err != nil {
+		writeServerError(w, "register resend RefreshPendingUserRegistrationToken", err)
+		return
+	}
+	if ok {
+		if err := s.sendRegistrationVerificationEmail(email, s.registrationVerificationLink(rawToken), expiresAt); err != nil {
+			writeServerError(w, "register resend sendRegistrationVerificationEmail", err)
+			return
+		}
+	}
+	out := map[string]any{"ok": true}
+	if ok {
+		out["expires_at"] = expiresAt.Format(time.RFC3339)
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) handleRegisterVerify(w http.ResponseWriter, r *http.Request) {

@@ -424,6 +424,9 @@ export const enOverrides: DeepPartial<AppMessageSchema> = {
       submittedTitle: "Verification email sent.",
       submittedBody: "Open the link sent to {email} to complete sign up.",
       submittedHint: "If you cannot find the email, check your spam folder too.",
+      resend: "Resend verification email",
+      resending: "Resending…",
+      resendSent: "Verification email sent again.",
       errors: {
         registerFailed: "Failed to sign up",
         invalidHandle: "The user ID format is invalid",

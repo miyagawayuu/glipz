@@ -65,6 +65,33 @@ func (p *Pool) UpsertPendingUserRegistration(ctx context.Context, email, passwor
 	return err
 }
 
+func (p *Pool) RefreshPendingUserRegistrationToken(ctx context.Context, email, tokenSHA256 string, expiresAt time.Time) (time.Time, bool, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	if email == "" || strings.TrimSpace(tokenSHA256) == "" || expiresAt.IsZero() {
+		return time.Time{}, false, ErrNotFound
+	}
+	var nextExpiresAt time.Time
+	err := p.db.QueryRow(ctx, `
+		UPDATE pending_user_registrations
+		SET token_sha256 = $2,
+			expires_at = $3,
+			consumed_at = NULL,
+			verified_user_id = NULL,
+			updated_at = NOW()
+		WHERE lower(email) = lower($1)
+		  AND consumed_at IS NULL
+		  AND verified_user_id IS NULL
+		RETURNING expires_at
+	`, email, strings.TrimSpace(tokenSHA256), expiresAt.UTC()).Scan(&nextExpiresAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return time.Time{}, false, nil
+	}
+	if err != nil {
+		return time.Time{}, false, err
+	}
+	return nextExpiresAt.UTC(), true, nil
+}
+
 func (p *Pool) CompletePendingUserRegistration(ctx context.Context, tokenSHA256 string) (uuid.UUID, error) {
 	tx, err := p.db.Begin(ctx)
 	if err != nil {

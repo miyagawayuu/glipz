@@ -22,6 +22,8 @@ const err = ref("");
 const loading = ref(false);
 const submitted = ref(false);
 const expiresAt = ref("");
+const resendLoading = ref(false);
+const resendMessage = ref("");
 const handleTouched = ref(false);
 const handleBusy = ref(false);
 const legalDocumentUrls = ref<LegalDocumentURLSettings>({});
@@ -237,6 +239,26 @@ async function submit() {
     loading.value = false;
   }
 }
+
+async function resendVerificationEmail() {
+  err.value = "";
+  resendMessage.value = "";
+  resendLoading.value = true;
+  try {
+    const res = await api<{ ok: true; expires_at?: string }>("/api/v1/auth/register/resend", {
+      method: "POST",
+      json: { email: email.value },
+    });
+    if (res.expires_at) {
+      expiresAt.value = res.expires_at;
+    }
+    resendMessage.value = t("auth.register.resendSent");
+  } catch (e: unknown) {
+    err.value = messageForError(e);
+  } finally {
+    resendLoading.value = false;
+  }
+}
 </script>
 
 <template>
@@ -421,6 +443,16 @@ async function submit() {
       <p class="text-neutral-600">
         {{ $t("auth.register.submittedHint") }}
       </p>
+      <button
+        type="button"
+        class="rounded-md border border-lime-300 bg-white px-3 py-2 text-sm font-medium text-lime-800 hover:bg-lime-50 disabled:opacity-50"
+        :disabled="resendLoading"
+        @click="resendVerificationEmail"
+      >
+        {{ resendLoading ? $t("auth.register.resending") : $t("auth.register.resend") }}
+      </button>
+      <p v-if="resendMessage" class="text-lime-700">{{ resendMessage }}</p>
+      <p v-if="err" class="text-red-600">{{ err }}</p>
     </div>
   </div>
 </template>

@@ -135,6 +135,7 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c s3client.
 		r.Use(limitAPIRequestBody)
 		r.Post("/auth/register", s.handleRegister)
 		r.Get("/auth/handle-availability", s.handleRegisterHandleAvailability)
+		r.Post("/auth/register/resend", s.handleRegisterResend)
 		r.Post("/auth/register/verify", s.handleRegisterVerify)
 		r.Post("/auth/login", s.handleLogin)
 		r.Post("/auth/mfa/verify", s.handleMFAVerify)

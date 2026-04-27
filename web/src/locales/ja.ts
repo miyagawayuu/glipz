@@ -432,6 +432,9 @@ export const jaMessages = {
       submittedTitle: "認証メールを送信しました。",
       submittedBody: "{email} 宛てのリンクにアクセスすると登録が完了します。",
       submittedHint: "メールが見つからない場合は迷惑メールフォルダも確認してください。",
+      resend: "認証メールを再送",
+      resending: "再送中…",
+      resendSent: "認証メールを再送しました。",
       errors: {
         registerFailed: "登録に失敗しました",
         invalidHandle: "ユーザーIDの形式が正しくありません",
