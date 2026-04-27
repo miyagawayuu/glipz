@@ -143,6 +143,7 @@ export const jaMessages = {
         missingPassphrase: "移転パスフレーズを入力してください。",
         loginRequired: "移転先インスタンスでログインしてからインポートしてください。",
         bundleOriginWarning: "このbundleは {expected} 向けに作成されています。現在のOriginは {actual} です。投稿移行で401になる場合は、移転元で移転先URLを {actual} にして新しい移転セッションを作成してください。",
+        sourceOriginCurrentWarning: "移転元URLが現在のインスタンスと同じです。別インスタンスから移行する場合は、ここに移転元のURLを入力してください。",
         sourceUnauthorizedHint: "移転元が認可を拒否しました。移転元で作成したセッションID・移転トークン・移転先URLが一致しているか確認し、移転先URLをこのインスタンスのOriginにして新しい移転セッションを作成してください。",
         sessionCreated: "移転セッションを作成しました。セッションID、トークン、暗号化bundleを移転先で使用してください。",
         jobStarted: "投稿移行ジョブを開始しました。",

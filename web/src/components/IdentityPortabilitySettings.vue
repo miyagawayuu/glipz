@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import {
   cancelIdentityImportJob,
@@ -73,6 +73,11 @@ const secureBundleOriginWarning = computed(() => {
   }
   return "";
 });
+const sourceOriginLooksCurrent = computed(() =>
+  sourceOrigin.value.trim().length > 0
+  && currentOrigin().length > 0
+  && normalizeOrigin(sourceOrigin.value) === normalizeOrigin(currentOrigin()),
+);
 const visibleJobError = computed(() => {
   const lastError = job.value?.last_error?.trim() ?? "";
   if (lastError.includes("source status 401")) {
@@ -249,12 +254,6 @@ async function onMove() {
 onBeforeUnmount(() => {
   if (pollTimer) window.clearInterval(pollTimer);
 });
-
-onMounted(() => {
-  if (typeof window !== "undefined" && !sourceOrigin.value) {
-    sourceOrigin.value = window.location.origin;
-  }
-});
 </script>
 
 <template>
@@ -298,6 +297,9 @@ onMounted(() => {
             class="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none ring-lime-500/30 transition focus:border-lime-400 focus:ring-2 focus:ring-lime-400/40"
             placeholder="https://old.example"
           />
+          <span v-if="sourceOriginLooksCurrent" class="mt-1 block text-xs text-amber-700">
+            {{ $t("components.identityPortability.transferWizard.sourceOriginCurrentWarning") }}
+          </span>
         </label>
       </div>
 
