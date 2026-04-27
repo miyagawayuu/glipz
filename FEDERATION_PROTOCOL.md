@@ -441,17 +441,20 @@ The reference implementation can also expose a user-facing migration wizard.
 This wizard is an authenticated REST helper flow, not a federation event. The
 source instance creates an identity bundle v2 encrypted with a migration
 passphrase and issues a short-lived transfer token pinned to the target origin.
-The target instance uses that token to pull the manifest, post batches, and
-authorized media in a background import job with progress and retry tracking.
-Imported historical posts are not fanned out as new `post_created` events; after
-the user confirms the move, the source instance sends the normal
-`account_moved` event.
+The target instance uses that token to pull the manifest, profile, post batches,
+follow graph, bookmarks, and authorized media in a background import job with
+progress and retry tracking. Imported historical posts are not fanned out as new
+`post_created` events; after the user confirms the move, the source instance
+sends the normal `account_moved` event.
 
 Implementations SHOULD hash transfer tokens at rest, support expiry and
 revocation, verify the target origin, prevent SSRF when fetching a source URL,
-reject object keys not owned by the transfer session, and cap media size. DM
-history, poll votes, bookmarks, and follow graph migration require separate
-design because they involve E2EE material or remote-side state.
+reject object keys not owned by the transfer session, and cap media size. The
+reference import treats follow graph and bookmark restoration as best-effort:
+remote inboxes should be revalidated where possible, unresolved rows are
+skipped, and progress is reported through per-category import stats. DM history,
+notification history, passwords, OAuth/PAT credentials, TOTP secrets, raw IP
+data, and poll votes are not transferred by this helper flow.
 
 ---
 

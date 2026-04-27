@@ -66,7 +66,7 @@ Key features include:
 - Signed server-to-server requests using `X-Glipz-*` headers, nonces, and idempotent `event_id` values
 - Remote follow/unfollow support and outbound public event delivery to `/federation/events`
 - Inbound federation timeline and federated direct messages (`dm_*` events, instance-to-instance)
-- ID portability support with encrypted migration bundles, transfer-token protected post/media import jobs, account move declarations, portable account IDs, and stable federated object IDs
+- ID portability support with encrypted migration bundles, transfer-token protected data import jobs, account move declarations, portable account IDs, and stable federated object IDs
 - Delivery workers for reliable delivery with retries and duplicate-event protection
 - Admin-managed federation delivery monitoring, domain blocks, and known instances; known instances are discovery hints, not automatic trust grants
 - Database-backed instance settings, including public server metadata and federation policy summary
@@ -240,16 +240,32 @@ OAuth client redirect URIs must be absolute `https://` URLs in production. `http
 ### Identity portability
 
 Authenticated users can use the migration wizard to move their portable account
-identity to another instance, import their post/media history, and declare that
-their account moved to a new acct.
+identity to another instance, import their profile, post/media history, follow
+relationships, and bookmarks, and declare that their account moved to a new
+acct.
 
 The migration wizard creates an encrypted identity bundle v2 using a migration
 passphrase, issues a short-lived transfer token on the source instance, and
 starts a background import job on the target instance. The target instance pulls
-the source manifest, posts, and media sequentially through transfer-token
-protected endpoints. Imported historical posts are restored as profile history
-and are not fanned out as new `post_created` federation events; once the user
-confirms the move, the old instance sends the normal `account_moved` event.
+the source manifest, profile, post batches, follow graph, bookmarks, and
+authorized media sequentially through transfer-token protected endpoints.
+Imported historical posts are restored as profile history and are not fanned out
+as new `post_created` federation events; once the user confirms the move, the
+old instance sends the normal `account_moved` event.
+
+Migrated data:
+- Portable identity keys and profile fields (`display_name`, `bio`,
+  `also_known_as`, avatar/header media when present)
+- Eligible posts, polls, and attached media
+- Local and remote following rows that can be resolved safely
+- Remote follower/subscriber rows used for Glipz Protocol delivery
+- Local bookmarks for migrated posts and federated bookmarks that can be
+  resolved on the target
+
+Not migrated:
+- Password hashes, TOTP secrets, OAuth clients/tokens, personal access tokens,
+  DM threads/messages, notification history, raw IP data, and unrelated account
+  security material
 
 Migration security details:
 - The encrypted bundle v2 stores the account private key under Argon2id +
@@ -268,6 +284,12 @@ Migration security details:
 - Remote source URLs are checked before fetches to reduce SSRF risk; private,
   loopback, link-local, unspecified, and multicast remote addresses are
   rejected unless the origin is explicitly local development.
+- Follow and bookmark imports are best-effort and idempotent. Rows that cannot
+  be resolved or safely revalidated on the target are skipped and reflected in
+  import job `stats`.
+- Import job progress includes both legacy `total_posts` / `imported_posts` and
+  aggregate `total_items` / `imported_items` plus category `stats` for profile,
+  posts, following, followers, and bookmarks.
 
 Secure migration wizard APIs:
 
@@ -278,7 +300,7 @@ curl -X POST -H "Authorization: Bearer $SOURCE_TOKEN" \
   https://your-old-instance.com/api/v1/me/identity/export-secure \
   -d '{"passphrase":"long migration passphrase","target_origin":"https://your-new-instance.com"}'
 
-# Source instance: create a post/media transfer session and one-time transfer token.
+# Source instance: create a data transfer session and one-time transfer token.
 curl -X POST -H "Authorization: Bearer $SOURCE_TOKEN" \
   -H "Content-Type: application/json" \
   https://your-old-instance.com/api/v1/me/identity/transfer-sessions \
@@ -290,7 +312,7 @@ curl -X PUT -H "Authorization: Bearer $TARGET_TOKEN" \
   https://your-new-instance.com/api/v1/me/identity/import-secure \
   -d '{"bundle":{...},"passphrase":"long migration passphrase"}'
 
-# Target instance: start the background post/media import job.
+# Target instance: start the background data import job.
 curl -X POST -H "Authorization: Bearer $TARGET_TOKEN" \
   -H "Content-Type: application/json" \
   https://your-new-instance.com/api/v1/me/identity/import-jobs \

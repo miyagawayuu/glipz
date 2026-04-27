@@ -74,6 +74,10 @@ func (s *Server) handleMeIdentityImport(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_identity_bundle"})
 		return
 	}
+	if err := s.applyIdentityBundleProfile(r.Context(), uid, req); err != nil {
+		writeServerError(w, "apply identity bundle profile", err)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -147,4 +151,23 @@ func (s *Server) handleMeIdentityMove(w http.ResponseWriter, r *http.Request) {
 		s.enqueueFederationPayload(r.Context(), uid, uuid.New(), inboxes, ev)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "moved_to_acct": movedTo})
+}
+
+func (s *Server) applyIdentityBundleProfile(ctx context.Context, uid uuid.UUID, bundle identityBundle) error {
+	current, err := s.db.UserByID(ctx, uid)
+	if err != nil {
+		return err
+	}
+	avatarKey, headerKey := "", ""
+	if current.AvatarObjectKey != nil {
+		avatarKey = *current.AvatarObjectKey
+	}
+	if current.HeaderObjectKey != nil {
+		headerKey = *current.HeaderObjectKey
+	}
+	return s.db.UpdateUserTransferProfile(ctx, uid, repo.TransferProfilePayload{
+		DisplayName: bundle.DisplayName,
+		Bio:         bundle.Bio,
+		AlsoKnownAs: append([]string(nil), bundle.AlsoKnownAs...),
+	}, avatarKey, headerKey)
 }

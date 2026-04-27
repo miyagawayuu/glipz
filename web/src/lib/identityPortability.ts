@@ -41,6 +41,15 @@ export type IdentityTransferImportJob = {
   total_posts: number;
   imported_posts: number;
   failed_posts: number;
+  total_items: number;
+  imported_items: number;
+  stats?: {
+    profile?: IdentityTransferCategoryStats;
+    posts?: IdentityTransferCategoryStats;
+    following?: IdentityTransferCategoryStats;
+    followers?: IdentityTransferCategoryStats;
+    bookmarks?: IdentityTransferCategoryStats;
+  };
   next_cursor: string;
   attempt_count: number;
   next_attempt_at: string;
@@ -49,6 +58,13 @@ export type IdentityTransferImportJob = {
   include_gated: boolean;
   created_at: string;
   updated_at: string;
+};
+
+export type IdentityTransferCategoryStats = {
+  total: number;
+  imported: number;
+  skipped: number;
+  failed: number;
 };
 
 export async function exportSecureIdentityBundle(passphrase: string, targetOrigin: string): Promise<IdentityBundle> {

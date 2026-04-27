@@ -24,6 +24,7 @@ const (
 	identityTransferSessionTTL       = 24 * time.Hour
 	identityTransferMaxTokenAttempts = 20
 	identityTransferPostBatchLimit   = 20
+	identityTransferDataBatchLimit   = 100
 	identityTransferMediaMaxBytes    = mediaUploadMaxBytes
 )
 
@@ -53,6 +54,24 @@ type identityTransferPostsResponse struct {
 	Posts      []repo.TransferPostPayload `json:"posts"`
 	NextCursor string                     `json:"next_cursor"`
 	Done       bool                       `json:"done"`
+}
+
+type identityTransferFollowingResponse struct {
+	Items      []repo.TransferFollowingPayload `json:"items"`
+	NextCursor string                          `json:"next_cursor"`
+	Done       bool                            `json:"done"`
+}
+
+type identityTransferFollowersResponse struct {
+	Items      []repo.TransferFollowerPayload `json:"items"`
+	NextCursor string                         `json:"next_cursor"`
+	Done       bool                           `json:"done"`
+}
+
+type identityTransferBookmarksResponse struct {
+	Items      []repo.TransferBookmarkPayload `json:"items"`
+	NextCursor string                         `json:"next_cursor"`
+	Done       bool                           `json:"done"`
 }
 
 type identityTransferImportJobCreateRequest struct {
@@ -153,6 +172,10 @@ func (s *Server) handleMeIdentityImportSecure(w http.ResponseWriter, r *http.Req
 		AccountPrivateKeyEncrypted: privateKey,
 	}); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_identity_bundle"})
+		return
+	}
+	if err := s.applyIdentityBundleProfile(r.Context(), uid, req.Bundle); err != nil {
+		writeServerError(w, "apply secure identity bundle profile", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
@@ -322,6 +345,92 @@ func (s *Server) handleIdentityTransferPosts(w http.ResponseWriter, r *http.Requ
 		nextCursor = strconv.Itoa(next)
 	}
 	writeJSON(w, http.StatusOK, identityTransferPostsResponse{Posts: posts, NextCursor: nextCursor, Done: done})
+}
+
+func (s *Server) handleIdentityTransferProfile(w http.ResponseWriter, r *http.Request) {
+	session, ok := s.authenticatedTransferSession(r)
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	profile, err := s.db.IdentityTransferProfile(r.Context(), session.UserID)
+	if err != nil {
+		writeServerError(w, "IdentityTransferProfile", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, profile)
+}
+
+func (s *Server) handleIdentityTransferFollowing(w http.ResponseWriter, r *http.Request) {
+	session, ok := s.authenticatedTransferSession(r)
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	offset, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("cursor")))
+	limit, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("limit")))
+	if limit <= 0 || limit > identityTransferDataBatchLimit {
+		limit = identityTransferDataBatchLimit
+	}
+	items, next, err := s.db.ListIdentityTransferFollowing(r.Context(), session.UserID, offset, limit)
+	if err != nil {
+		writeServerError(w, "ListIdentityTransferFollowing", err)
+		return
+	}
+	done := len(items) < limit
+	nextCursor := ""
+	if !done {
+		nextCursor = strconv.Itoa(next)
+	}
+	writeJSON(w, http.StatusOK, identityTransferFollowingResponse{Items: items, NextCursor: nextCursor, Done: done})
+}
+
+func (s *Server) handleIdentityTransferFollowers(w http.ResponseWriter, r *http.Request) {
+	session, ok := s.authenticatedTransferSession(r)
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	offset, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("cursor")))
+	limit, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("limit")))
+	if limit <= 0 || limit > identityTransferDataBatchLimit {
+		limit = identityTransferDataBatchLimit
+	}
+	items, next, err := s.db.ListIdentityTransferFollowers(r.Context(), session.UserID, offset, limit)
+	if err != nil {
+		writeServerError(w, "ListIdentityTransferFollowers", err)
+		return
+	}
+	done := len(items) < limit
+	nextCursor := ""
+	if !done {
+		nextCursor = strconv.Itoa(next)
+	}
+	writeJSON(w, http.StatusOK, identityTransferFollowersResponse{Items: items, NextCursor: nextCursor, Done: done})
+}
+
+func (s *Server) handleIdentityTransferBookmarks(w http.ResponseWriter, r *http.Request) {
+	session, ok := s.authenticatedTransferSession(r)
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	offset, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("cursor")))
+	limit, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("limit")))
+	if limit <= 0 || limit > identityTransferDataBatchLimit {
+		limit = identityTransferDataBatchLimit
+	}
+	items, next, err := s.db.ListIdentityTransferBookmarks(r.Context(), session.UserID, offset, limit)
+	if err != nil {
+		writeServerError(w, "ListIdentityTransferBookmarks", err)
+		return
+	}
+	done := len(items) < limit
+	nextCursor := ""
+	if !done {
+		nextCursor = strconv.Itoa(next)
+	}
+	writeJSON(w, http.StatusOK, identityTransferBookmarksResponse{Items: items, NextCursor: nextCursor, Done: done})
 }
 
 func (s *Server) handleIdentityTransferMedia(w http.ResponseWriter, r *http.Request) {
@@ -502,6 +611,32 @@ func (s *Server) processIdentityTransferImportJob(ctx context.Context, job repo.
 		s.failIdentityTransferImportJob(ctx, job, err)
 		return
 	}
+	stats := repo.IdentityTransferStats{
+		Profile:   repo.IdentityTransferCategoryStats{Total: int(manifest.ProfileItems)},
+		Posts:     repo.IdentityTransferCategoryStats{Total: int(manifest.TotalPosts), Imported: job.ImportedPosts},
+		Following: repo.IdentityTransferCategoryStats{Total: int(manifest.FollowingItems)},
+		Followers: repo.IdentityTransferCategoryStats{Total: int(manifest.FollowerItems)},
+		Bookmarks: repo.IdentityTransferCategoryStats{Total: int(manifest.BookmarkItems)},
+	}
+	totalItems := int(manifest.TotalItems)
+	importedItems := job.ImportedItems
+	if importedItems < job.ImportedPosts {
+		importedItems = job.ImportedPosts
+	}
+	profile, err := s.fetchTransferProfile(ctx, job, token)
+	if err != nil {
+		s.failIdentityTransferImportJob(ctx, job, err)
+		return
+	}
+	if err := s.importTransferProfile(ctx, job, token, profile); err != nil {
+		stats.Profile.Failed++
+		s.failIdentityTransferImportJob(ctx, job, err)
+		return
+	}
+	if stats.Profile.Total > 0 {
+		stats.Profile.Imported = 1
+		importedItems++
+	}
 	cursor := strings.TrimSpace(job.NextCursor)
 	imported := job.ImportedPosts
 	for {
@@ -516,9 +651,11 @@ func (s *Server) processIdentityTransferImportJob(ctx context.Context, job repo.
 				return
 			}
 			imported++
+			stats.Posts.Imported = imported
+			importedItems++
 		}
 		cursor = strings.TrimSpace(resp.NextCursor)
-		if err := s.db.ProgressIdentityTransferImportJob(ctx, job.ID, int(manifest.TotalPosts), imported, cursor); err != nil {
+		if err := s.db.ProgressIdentityTransferImportJob(ctx, job.ID, int(manifest.TotalPosts), imported, totalItems, importedItems, cursor, stats); err != nil {
 			log.Printf("identity transfer progress %s: %v", job.ID, err)
 		}
 		if resp.Done || cursor == "" {
@@ -530,7 +667,19 @@ func (s *Server) processIdentityTransferImportJob(ctx context.Context, job repo.
 		default:
 		}
 	}
-	if err := s.db.CompleteIdentityTransferImportJob(ctx, job.ID, int(manifest.TotalPosts), imported); err != nil {
+	if err := s.importTransferFollowing(ctx, job, token, &stats, &importedItems); err != nil {
+		s.failIdentityTransferImportJob(ctx, job, err)
+		return
+	}
+	if err := s.importTransferFollowers(ctx, job, token, &stats, &importedItems); err != nil {
+		s.failIdentityTransferImportJob(ctx, job, err)
+		return
+	}
+	if err := s.importTransferBookmarks(ctx, job, token, &stats, &importedItems); err != nil {
+		s.failIdentityTransferImportJob(ctx, job, err)
+		return
+	}
+	if err := s.db.CompleteIdentityTransferImportJob(ctx, job.ID, int(manifest.TotalPosts), imported, totalItems, importedItems, stats); err != nil {
 		log.Printf("identity transfer complete %s: %v", job.ID, err)
 	}
 }
@@ -566,6 +715,107 @@ func (s *Server) importOneTransferPost(ctx context.Context, job repo.IdentityTra
 	}
 	_, _, err := s.db.InsertMigratedPost(ctx, job.UserID, job.ID, post, objectKeys, replyTo)
 	return err
+}
+
+func (s *Server) importTransferProfile(ctx context.Context, job repo.IdentityTransferImportJob, token string, profile repo.TransferProfilePayload) error {
+	avatarKey := strings.TrimSpace(profile.AvatarObjectKey)
+	if avatarKey != "" {
+		next, err := s.copyTransferMedia(ctx, job, token, avatarKey)
+		if err != nil {
+			return err
+		}
+		avatarKey = next
+	}
+	headerKey := strings.TrimSpace(profile.HeaderObjectKey)
+	if headerKey != "" {
+		next, err := s.copyTransferMedia(ctx, job, token, headerKey)
+		if err != nil {
+			return err
+		}
+		headerKey = next
+	}
+	return s.db.UpdateUserTransferProfile(ctx, job.UserID, profile, avatarKey, headerKey)
+}
+
+func (s *Server) importTransferFollowing(ctx context.Context, job repo.IdentityTransferImportJob, token string, stats *repo.IdentityTransferStats, importedItems *int) error {
+	cursor := ""
+	for {
+		resp, err := s.fetchTransferFollowing(ctx, job, token, cursor)
+		if err != nil {
+			return err
+		}
+		for _, item := range resp.Items {
+			imported, err := s.db.ImportTransferFollowing(ctx, job.UserID, item)
+			if err != nil {
+				stats.Following.Failed++
+				return err
+			}
+			if imported {
+				stats.Following.Imported++
+				(*importedItems)++
+			} else {
+				stats.Following.Skipped++
+			}
+		}
+		cursor = strings.TrimSpace(resp.NextCursor)
+		if resp.Done || cursor == "" {
+			return nil
+		}
+	}
+}
+
+func (s *Server) importTransferFollowers(ctx context.Context, job repo.IdentityTransferImportJob, token string, stats *repo.IdentityTransferStats, importedItems *int) error {
+	cursor := ""
+	for {
+		resp, err := s.fetchTransferFollowers(ctx, job, token, cursor)
+		if err != nil {
+			return err
+		}
+		for _, item := range resp.Items {
+			imported, err := s.db.ImportTransferFollower(ctx, job.UserID, item)
+			if err != nil {
+				stats.Followers.Failed++
+				return err
+			}
+			if imported {
+				stats.Followers.Imported++
+				(*importedItems)++
+			} else {
+				stats.Followers.Skipped++
+			}
+		}
+		cursor = strings.TrimSpace(resp.NextCursor)
+		if resp.Done || cursor == "" {
+			return nil
+		}
+	}
+}
+
+func (s *Server) importTransferBookmarks(ctx context.Context, job repo.IdentityTransferImportJob, token string, stats *repo.IdentityTransferStats, importedItems *int) error {
+	cursor := ""
+	for {
+		resp, err := s.fetchTransferBookmarks(ctx, job, token, cursor)
+		if err != nil {
+			return err
+		}
+		for _, item := range resp.Items {
+			imported, err := s.db.ImportTransferBookmark(ctx, job.UserID, job.ID, item)
+			if err != nil {
+				stats.Bookmarks.Failed++
+				return err
+			}
+			if imported {
+				stats.Bookmarks.Imported++
+				(*importedItems)++
+			} else {
+				stats.Bookmarks.Skipped++
+			}
+		}
+		cursor = strings.TrimSpace(resp.NextCursor)
+		if resp.Done || cursor == "" {
+			return nil
+		}
+	}
 }
 
 func (s *Server) copyTransferMedia(ctx context.Context, job repo.IdentityTransferImportJob, token, objectKey string) (string, error) {
@@ -619,12 +869,48 @@ func (s *Server) fetchTransferManifest(ctx context.Context, job repo.IdentityTra
 	return out, err
 }
 
+func (s *Server) fetchTransferProfile(ctx context.Context, job repo.IdentityTransferImportJob, token string) (repo.TransferProfilePayload, error) {
+	var out repo.TransferProfilePayload
+	err := s.fetchTransferJSON(ctx, job, token, "/api/v1/identity/transfers/"+job.SourceSessionID.String()+"/profile", &out)
+	return out, err
+}
+
 func (s *Server) fetchTransferPosts(ctx context.Context, job repo.IdentityTransferImportJob, token, cursor string) (identityTransferPostsResponse, error) {
 	p := "/api/v1/identity/transfers/" + job.SourceSessionID.String() + "/posts?limit=" + strconv.Itoa(identityTransferPostBatchLimit)
 	if strings.TrimSpace(cursor) != "" {
 		p += "&cursor=" + url.QueryEscape(cursor)
 	}
 	var out identityTransferPostsResponse
+	err := s.fetchTransferJSON(ctx, job, token, p, &out)
+	return out, err
+}
+
+func (s *Server) fetchTransferFollowing(ctx context.Context, job repo.IdentityTransferImportJob, token, cursor string) (identityTransferFollowingResponse, error) {
+	p := "/api/v1/identity/transfers/" + job.SourceSessionID.String() + "/following?limit=" + strconv.Itoa(identityTransferDataBatchLimit)
+	if strings.TrimSpace(cursor) != "" {
+		p += "&cursor=" + url.QueryEscape(cursor)
+	}
+	var out identityTransferFollowingResponse
+	err := s.fetchTransferJSON(ctx, job, token, p, &out)
+	return out, err
+}
+
+func (s *Server) fetchTransferFollowers(ctx context.Context, job repo.IdentityTransferImportJob, token, cursor string) (identityTransferFollowersResponse, error) {
+	p := "/api/v1/identity/transfers/" + job.SourceSessionID.String() + "/followers?limit=" + strconv.Itoa(identityTransferDataBatchLimit)
+	if strings.TrimSpace(cursor) != "" {
+		p += "&cursor=" + url.QueryEscape(cursor)
+	}
+	var out identityTransferFollowersResponse
+	err := s.fetchTransferJSON(ctx, job, token, p, &out)
+	return out, err
+}
+
+func (s *Server) fetchTransferBookmarks(ctx context.Context, job repo.IdentityTransferImportJob, token, cursor string) (identityTransferBookmarksResponse, error) {
+	p := "/api/v1/identity/transfers/" + job.SourceSessionID.String() + "/bookmarks?limit=" + strconv.Itoa(identityTransferDataBatchLimit)
+	if strings.TrimSpace(cursor) != "" {
+		p += "&cursor=" + url.QueryEscape(cursor)
+	}
+	var out identityTransferBookmarksResponse
 	err := s.fetchTransferJSON(ctx, job, token, p, &out)
 	return out, err
 }

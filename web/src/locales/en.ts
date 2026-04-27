@@ -110,7 +110,7 @@ export const enOverrides: DeepPartial<AppMessageSchema> = {
     identityPortability: {
       title: "ID portability",
       description:
-        "Use the migration wizard to bring your portable identity to another instance and move posts and media sequentially.",
+        "Use the migration wizard to bring your portable identity to another instance and move your profile, posts, follows, followers, and bookmarks sequentially.",
       imported: "ID bundle imported.",
       invalidJson: "The JSON is invalid.",
       failed: "ID portability operation failed.",
@@ -122,7 +122,8 @@ export const enOverrides: DeepPartial<AppMessageSchema> = {
       transferWizard: {
         title: "Migration wizard",
         description:
-          "Encrypt the private key with a migration passphrase and move posts and media sequentially with a short-lived token. The token is shown only once.",
+          "Encrypt the private key with a migration passphrase and move your profile, posts, follows, followers, and bookmarks sequentially with a short-lived token. The token is shown only once.",
+        securityNotice: "Migrated data includes profile details, posts/media, follow relationships, and bookmarks. Passwords, two-factor secrets, OAuth/PAT credentials, DMs, notifications, and IP data are not migrated. Data access is allowed only for the target origin you enter here.",
         targetOrigin: "Target instance URL",
         sourceOrigin: "Source instance URL",
         passphrase: "Migration passphrase",
@@ -133,11 +134,19 @@ export const enOverrides: DeepPartial<AppMessageSchema> = {
         createSession: "Create migration session",
         creatingSession: "Creating migration session...",
         importSecureBundle: "Import encrypted bundle",
-        startImport: "Start post import",
+        startImport: "Start data import",
         sessionId: "Migration session ID",
         transferToken: "Migration token",
         secureBundlePlaceholder: "Encrypted ID bundle v2 appears here. Paste it on the target instance.",
         jobStatus: "Job status",
+        stats: {
+          profile: "Profile",
+          posts: "Posts",
+          following: "Following",
+          followers: "Followers",
+          bookmarks: "Bookmarks",
+        },
+        skipped: "skipped {count}",
         retry: "Retry",
         cancel: "Cancel",
         weakPassphrase: "Use a migration passphrase with at least 12 characters.",
@@ -150,7 +159,7 @@ export const enOverrides: DeepPartial<AppMessageSchema> = {
         sourceOriginCurrentWarning: "The source URL is the same as the current instance. If you are importing from another instance, enter the source instance URL here.",
         sourceUnauthorizedHint: "The source instance rejected authorization. Check that the session ID, migration token, and target URL match, then create a new migration session with the target URL set to this instance origin.",
         sessionCreated: "Migration session created. Use the session ID, token, and encrypted bundle on the target instance.",
-        jobStarted: "Post import job started.",
+        jobStarted: "Data import job started.",
       },
     },
     postTimeline: {

@@ -428,9 +428,9 @@ Protocol version 3 では、portable account identity と現在の account addre
 
 Receiver は古い peer との互換性のため `acct` を引き続き保存するべきです（SHOULD）。`id` がない場合は `legacy:{acct}` として扱い、検証済み move または account-key proof がない限り、あとから現れた portable account と自動的に統合しないでください。
 
-参照実装では、ユーザー向けの移転ウィザードも提供できます。このウィザードは federation event そのものではなく、認証済みREST API上の補助フローです。移転元は migration passphrase で暗号化した identity bundle v2 と、宛先 origin に固定された短命 transfer token を発行します。移転先はその token で manifest、投稿バッチ、許可されたメディアだけを順次 pull し、専用ジョブで進捗と再試行を管理します。過去投稿のインポートは通常の `post_created` として大量配送せず、移転完了時に従来通り `account_moved` を配送します。
+参照実装では、ユーザー向けの移転ウィザードも提供できます。このウィザードは federation event そのものではなく、認証済みREST API上の補助フローです。移転元は migration passphrase で暗号化した identity bundle v2 と、宛先 origin に固定された短命 transfer token を発行します。移転先はその token で manifest、プロフィール、投稿バッチ、フォロー関係、ブックマーク、許可されたメディアを順次 pull し、専用ジョブで進捗と再試行を管理します。過去投稿のインポートは通常の `post_created` として大量配送せず、移転完了時に従来通り `account_moved` を配送します。
 
-実装時は、transfer token のハッシュ保存、期限・取り消し、宛先 origin 検証、SSRF 対策、所有外 object key の拒否、過大メディアの拒否を行うべきです（SHOULD）。DM、投票済み票、ブックマーク、フォロー関係の移行は、E2EE鍵や相手側状態を伴うため別設計として扱います。
+実装時は、transfer token のハッシュ保存、期限・取り消し、宛先 origin 検証、SSRF 対策、所有外 object key の拒否、過大メディアの拒否を行うべきです（SHOULD）。フォロー関係とブックマークの復元は best-effort とし、可能な範囲で remote inbox を再検証し、解決できない行は skip してカテゴリ別 stats に記録します。DM履歴、通知履歴、パスワード、OAuth/PAT資格情報、TOTP secret、生IP情報、投票済み票はこの補助フローでは移転しません。
 
 ---
 

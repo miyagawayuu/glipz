@@ -44,5 +44,11 @@ END $$`,
 			return fmt.Errorf("migrate step %d: %w", i+1, err)
 		}
 	}
+	if err := RunIDPortability(ctx, pool); err != nil {
+		return err
+	}
+	if err := RunBookmarks(ctx, pool); err != nil {
+		return err
+	}
 	return nil
 }

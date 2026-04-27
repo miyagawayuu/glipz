@@ -155,7 +155,11 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c s3client.
 		r.Get("/media/remote", s.handlePublicRemoteMediaProxy)
 		r.Head("/media/remote", s.handlePublicRemoteMediaProxy)
 		r.Get("/identity/transfers/{sessionID}/manifest", s.handleIdentityTransferManifest)
+		r.Get("/identity/transfers/{sessionID}/profile", s.handleIdentityTransferProfile)
 		r.Get("/identity/transfers/{sessionID}/posts", s.handleIdentityTransferPosts)
+		r.Get("/identity/transfers/{sessionID}/following", s.handleIdentityTransferFollowing)
+		r.Get("/identity/transfers/{sessionID}/followers", s.handleIdentityTransferFollowers)
+		r.Get("/identity/transfers/{sessionID}/bookmarks", s.handleIdentityTransferBookmarks)
 		r.Get("/identity/transfers/{sessionID}/media", s.handleIdentityTransferMedia)
 		r.Get("/fanclub/patreon/callback", s.handlePatreonCallback)
 

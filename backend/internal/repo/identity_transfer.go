@@ -43,9 +43,29 @@ type IdentityTransferSession struct {
 }
 
 type IdentityTransferManifest struct {
-	TotalPosts int64 `json:"total_posts"`
-	MediaItems int64 `json:"media_items"`
-	MediaBytes int64 `json:"media_bytes"`
+	TotalPosts     int64 `json:"total_posts"`
+	MediaItems     int64 `json:"media_items"`
+	MediaBytes     int64 `json:"media_bytes"`
+	ProfileItems   int64 `json:"profile_items"`
+	FollowingItems int64 `json:"following_items"`
+	FollowerItems  int64 `json:"follower_items"`
+	BookmarkItems  int64 `json:"bookmark_items"`
+	TotalItems     int64 `json:"total_items"`
+}
+
+type IdentityTransferCategoryStats struct {
+	Total    int `json:"total"`
+	Imported int `json:"imported"`
+	Skipped  int `json:"skipped"`
+	Failed   int `json:"failed"`
+}
+
+type IdentityTransferStats struct {
+	Profile   IdentityTransferCategoryStats `json:"profile"`
+	Posts     IdentityTransferCategoryStats `json:"posts"`
+	Following IdentityTransferCategoryStats `json:"following"`
+	Followers IdentityTransferCategoryStats `json:"followers"`
+	Bookmarks IdentityTransferCategoryStats `json:"bookmarks"`
 }
 
 type TransferPollPayload struct {
@@ -73,6 +93,40 @@ type TransferPostPayload struct {
 	Poll                   *TransferPollPayload    `json:"poll,omitempty"`
 }
 
+type TransferProfilePayload struct {
+	Handle          string   `json:"handle,omitempty"`
+	DisplayName     string   `json:"display_name"`
+	Bio             string   `json:"bio"`
+	AlsoKnownAs     []string `json:"also_known_as,omitempty"`
+	AvatarObjectKey string   `json:"avatar_object_key,omitempty"`
+	HeaderObjectKey string   `json:"header_object_key,omitempty"`
+}
+
+type TransferFollowingPayload struct {
+	Kind               string    `json:"kind"`
+	FolloweePortableID string    `json:"followee_portable_id,omitempty"`
+	FolloweeHandle     string    `json:"followee_handle,omitempty"`
+	RemoteActorID      string    `json:"remote_actor_id,omitempty"`
+	RemoteInbox        string    `json:"remote_inbox,omitempty"`
+	RemoteCurrentAcct  string    `json:"remote_current_acct,omitempty"`
+	State              string    `json:"state,omitempty"`
+	CreatedAt          time.Time `json:"created_at"`
+}
+
+type TransferFollowerPayload struct {
+	RemoteActorID     string    `json:"remote_actor_id"`
+	RemoteInbox       string    `json:"remote_inbox"`
+	RemoteCurrentAcct string    `json:"remote_current_acct,omitempty"`
+	CreatedAt         time.Time `json:"created_at"`
+}
+
+type TransferBookmarkPayload struct {
+	Kind             string    `json:"kind"`
+	OriginalObjectID string    `json:"original_object_id,omitempty"`
+	RemoteObjectIRI  string    `json:"remote_object_iri,omitempty"`
+	CreatedAt        time.Time `json:"created_at"`
+}
+
 type IdentityTransferImportJobInsert struct {
 	UserID               uuid.UUID
 	SourceOrigin         string
@@ -84,24 +138,27 @@ type IdentityTransferImportJobInsert struct {
 }
 
 type IdentityTransferImportJob struct {
-	ID                   uuid.UUID `json:"id"`
-	UserID               uuid.UUID `json:"-"`
-	SourceOrigin         string    `json:"source_origin"`
-	TargetOrigin         string    `json:"target_origin"`
-	SourceSessionID      uuid.UUID `json:"source_session_id"`
-	SourceTokenEncrypted string    `json:"-"`
-	Status               string    `json:"status"`
-	TotalPosts           int       `json:"total_posts"`
-	ImportedPosts        int       `json:"imported_posts"`
-	FailedPosts          int       `json:"failed_posts"`
-	NextCursor           string    `json:"next_cursor"`
-	AttemptCount         int       `json:"attempt_count"`
-	NextAttemptAt        time.Time `json:"next_attempt_at"`
-	LastError            string    `json:"last_error"`
-	IncludePrivate       bool      `json:"include_private"`
-	IncludeGated         bool      `json:"include_gated"`
-	CreatedAt            time.Time `json:"created_at"`
-	UpdatedAt            time.Time `json:"updated_at"`
+	ID                   uuid.UUID             `json:"id"`
+	UserID               uuid.UUID             `json:"-"`
+	SourceOrigin         string                `json:"source_origin"`
+	TargetOrigin         string                `json:"target_origin"`
+	SourceSessionID      uuid.UUID             `json:"source_session_id"`
+	SourceTokenEncrypted string                `json:"-"`
+	Status               string                `json:"status"`
+	TotalPosts           int                   `json:"total_posts"`
+	ImportedPosts        int                   `json:"imported_posts"`
+	FailedPosts          int                   `json:"failed_posts"`
+	TotalItems           int                   `json:"total_items"`
+	ImportedItems        int                   `json:"imported_items"`
+	Stats                IdentityTransferStats `json:"stats"`
+	NextCursor           string                `json:"next_cursor"`
+	AttemptCount         int                   `json:"attempt_count"`
+	NextAttemptAt        time.Time             `json:"next_attempt_at"`
+	LastError            string                `json:"last_error"`
+	IncludePrivate       bool                  `json:"include_private"`
+	IncludeGated         bool                  `json:"include_gated"`
+	CreatedAt            time.Time             `json:"created_at"`
+	UpdatedAt            time.Time             `json:"updated_at"`
 }
 
 func (p *Pool) CreateIdentityTransferSession(ctx context.Context, in IdentityTransferSessionInsert) (IdentityTransferSession, error) {
@@ -177,7 +234,23 @@ func (p *Pool) IdentityTransferManifest(ctx context.Context, userID uuid.UUID, i
 		SELECT COUNT(*)::bigint, COALESCE(SUM(cardinality(object_keys)), 0)::bigint
 		FROM posts
 		WHERE user_id = $1 `+where, userID).Scan(&out.TotalPosts, &out.MediaItems)
-	return out, err
+	if err != nil {
+		return out, err
+	}
+	out.ProfileItems = 1
+	err = p.db.QueryRow(ctx, `
+		SELECT
+			(SELECT COUNT(*)::bigint FROM user_follows WHERE follower_id = $1) +
+			(SELECT COUNT(*)::bigint FROM federation_remote_follows WHERE local_user_id = $1),
+			(SELECT COUNT(*)::bigint FROM glipz_protocol_remote_followers WHERE local_user_id = $1),
+			(SELECT COUNT(*)::bigint FROM post_bookmarks WHERE user_id = $1) +
+			(SELECT COUNT(*)::bigint FROM federation_incoming_post_bookmarks WHERE user_id = $1)
+	`, userID).Scan(&out.FollowingItems, &out.FollowerItems, &out.BookmarkItems)
+	if err != nil {
+		return out, err
+	}
+	out.TotalItems = out.ProfileItems + out.TotalPosts + out.FollowingItems + out.FollowerItems + out.BookmarkItems
+	return out, nil
 }
 
 func identityTransferPostWhere(includePrivate, includeGated bool) string {
@@ -275,15 +348,166 @@ func (p *Pool) TransferObjectKeyAllowed(ctx context.Context, userID uuid.UUID, o
 	where := identityTransferPostWhere(includePrivate, includeGated)
 	var ok bool
 	err := p.db.QueryRow(ctx, `
-		SELECT true
-		FROM posts
-		WHERE user_id = $1 AND $2 = ANY(object_keys) `+where+`
+		SELECT EXISTS (
+			SELECT 1
+			FROM posts
+			WHERE user_id = $1 AND $2 = ANY(object_keys) `+where+`
+		) OR EXISTS (
+			SELECT 1
+			FROM users
+			WHERE id = $1 AND (avatar_object_key = $2 OR header_object_key = $2)
+		)
 		LIMIT 1
 	`, userID, objectKey).Scan(&ok)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
 	return ok, err
+}
+
+func (p *Pool) IdentityTransferProfile(ctx context.Context, userID uuid.UUID) (TransferProfilePayload, error) {
+	u, err := p.UserByID(ctx, userID)
+	if err != nil {
+		return TransferProfilePayload{}, err
+	}
+	out := TransferProfilePayload{
+		Handle:      u.Handle,
+		DisplayName: u.DisplayName,
+		Bio:         u.Bio,
+		AlsoKnownAs: append([]string(nil), u.AlsoKnownAs...),
+	}
+	if u.AvatarObjectKey != nil {
+		out.AvatarObjectKey = strings.TrimSpace(*u.AvatarObjectKey)
+	}
+	if u.HeaderObjectKey != nil {
+		out.HeaderObjectKey = strings.TrimSpace(*u.HeaderObjectKey)
+	}
+	return out, nil
+}
+
+func (p *Pool) UpdateUserTransferProfile(ctx context.Context, userID uuid.UUID, in TransferProfilePayload, avatarKey, headerKey string) error {
+	if len([]rune(in.Bio)) > 500 {
+		return fmt.Errorf("bio too long")
+	}
+	if len([]rune(in.DisplayName)) > 50 {
+		return fmt.Errorf("display name too long")
+	}
+	_, err := p.db.Exec(ctx, `
+		UPDATE users
+		SET display_name = $2,
+			bio = $3,
+			also_known_as = COALESCE($4, '{}'::text[]),
+			avatar_object_key = NULLIF(trim($5), ''),
+			header_object_key = NULLIF(trim($6), '')
+		WHERE id = $1
+	`, userID, in.DisplayName, in.Bio, in.AlsoKnownAs, avatarKey, headerKey)
+	return err
+}
+
+func (p *Pool) ListIdentityTransferFollowing(ctx context.Context, userID uuid.UUID, offset, limit int) ([]TransferFollowingPayload, int, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	rows, err := p.db.Query(ctx, `
+		SELECT kind, followee_portable_id, followee_handle, remote_actor_id, remote_inbox, remote_current_acct, state, created_at
+		FROM (
+			SELECT 'local' AS kind, COALESCE(u.portable_id, '') AS followee_portable_id, u.handle AS followee_handle,
+				'' AS remote_actor_id, '' AS remote_inbox, '' AS remote_current_acct, 'accepted' AS state, f.created_at
+			FROM user_follows f
+			JOIN users u ON u.id = f.followee_id
+			WHERE f.follower_id = $1
+			UNION ALL
+			SELECT 'remote' AS kind, '' AS followee_portable_id, '' AS followee_handle,
+				remote_actor_id, remote_inbox, COALESCE(remote_current_acct, ''), state, created_at
+			FROM federation_remote_follows
+			WHERE local_user_id = $1
+		) x
+		ORDER BY created_at DESC
+		LIMIT $2 OFFSET $3
+	`, userID, limit, offset)
+	if err != nil {
+		return nil, offset, err
+	}
+	defer rows.Close()
+	out := []TransferFollowingPayload{}
+	for rows.Next() {
+		var r TransferFollowingPayload
+		if err := rows.Scan(&r.Kind, &r.FolloweePortableID, &r.FolloweeHandle, &r.RemoteActorID, &r.RemoteInbox, &r.RemoteCurrentAcct, &r.State, &r.CreatedAt); err != nil {
+			return nil, offset, err
+		}
+		out = append(out, r)
+	}
+	return out, offset + len(out), rows.Err()
+}
+
+func (p *Pool) ListIdentityTransferFollowers(ctx context.Context, userID uuid.UUID, offset, limit int) ([]TransferFollowerPayload, int, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	rows, err := p.db.Query(ctx, `
+		SELECT remote_actor_id, remote_inbox, COALESCE(remote_current_acct, ''), created_at
+		FROM glipz_protocol_remote_followers
+		WHERE local_user_id = $1
+		ORDER BY created_at DESC
+		LIMIT $2 OFFSET $3
+	`, userID, limit, offset)
+	if err != nil {
+		return nil, offset, err
+	}
+	defer rows.Close()
+	out := []TransferFollowerPayload{}
+	for rows.Next() {
+		var r TransferFollowerPayload
+		if err := rows.Scan(&r.RemoteActorID, &r.RemoteInbox, &r.RemoteCurrentAcct, &r.CreatedAt); err != nil {
+			return nil, offset, err
+		}
+		out = append(out, r)
+	}
+	return out, offset + len(out), rows.Err()
+}
+
+func (p *Pool) ListIdentityTransferBookmarks(ctx context.Context, userID uuid.UUID, offset, limit int) ([]TransferBookmarkPayload, int, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	rows, err := p.db.Query(ctx, `
+		SELECT kind, original_object_id, remote_object_iri, created_at
+		FROM (
+			SELECT 'local' AS kind, 'glipz://' || post_id::text AS original_object_id, '' AS remote_object_iri, created_at
+			FROM post_bookmarks
+			WHERE user_id = $1
+			UNION ALL
+			SELECT 'remote' AS kind, '' AS original_object_id,
+				COALESCE(NULLIF(f.object_id, ''), f.object_iri) AS remote_object_iri, fb.created_at
+			FROM federation_incoming_post_bookmarks fb
+			JOIN federation_incoming_posts f ON f.id = fb.federation_incoming_post_id
+			WHERE fb.user_id = $1 AND f.deleted_at IS NULL
+		) x
+		ORDER BY created_at DESC
+		LIMIT $2 OFFSET $3
+	`, userID, limit, offset)
+	if err != nil {
+		return nil, offset, err
+	}
+	defer rows.Close()
+	out := []TransferBookmarkPayload{}
+	for rows.Next() {
+		var r TransferBookmarkPayload
+		if err := rows.Scan(&r.Kind, &r.OriginalObjectID, &r.RemoteObjectIRI, &r.CreatedAt); err != nil {
+			return nil, offset, err
+		}
+		out = append(out, r)
+	}
+	return out, offset + len(out), rows.Err()
 }
 
 func (p *Pool) CreateIdentityTransferImportJob(ctx context.Context, in IdentityTransferImportJobInsert) (IdentityTransferImportJob, error) {
@@ -296,12 +520,14 @@ func (p *Pool) CreateIdentityTransferImportJob(ctx context.Context, in IdentityT
 			user_id, source_origin, target_origin, source_session_id, source_token_encrypted, include_private, include_gated
 		) VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id, user_id, source_origin, target_origin, source_session_id, source_token_encrypted, status,
-			total_posts, imported_posts, failed_posts, next_cursor, attempt_count, next_attempt_at,
+			total_posts, imported_posts, failed_posts, total_items, imported_items,
+			COALESCE(stats, '{}'::jsonb)::text, next_cursor, attempt_count, next_attempt_at,
 			last_error, include_private, include_gated, created_at, updated_at
 	`, in.UserID, strings.TrimRight(strings.TrimSpace(in.SourceOrigin), "/"), strings.TrimRight(strings.TrimSpace(in.TargetOrigin), "/"),
 		in.SourceSessionID, strings.TrimSpace(in.SourceTokenEncrypted), in.IncludePrivate, in.IncludeGated).Scan(&row.ID, &row.UserID,
 		&row.SourceOrigin, &row.TargetOrigin, &row.SourceSessionID, &row.SourceTokenEncrypted,
-		&row.Status, &row.TotalPosts, &row.ImportedPosts, &row.FailedPosts, &row.NextCursor, &row.AttemptCount,
+		&row.Status, &row.TotalPosts, &row.ImportedPosts, &row.FailedPosts, &row.TotalItems, &row.ImportedItems,
+		statsScanner(&row.Stats), &row.NextCursor, &row.AttemptCount,
 		&row.NextAttemptAt, &row.LastError, &row.IncludePrivate, &row.IncludeGated, &row.CreatedAt, &row.UpdatedAt)
 	return row, err
 }
@@ -310,12 +536,14 @@ func (p *Pool) IdentityTransferImportJobByID(ctx context.Context, userID, id uui
 	var row IdentityTransferImportJob
 	err := p.db.QueryRow(ctx, `
 		SELECT id, user_id, source_origin, target_origin, source_session_id, source_token_encrypted, status,
-			total_posts, imported_posts, failed_posts, next_cursor, attempt_count, next_attempt_at,
+			total_posts, imported_posts, failed_posts, total_items, imported_items,
+			COALESCE(stats, '{}'::jsonb)::text, next_cursor, attempt_count, next_attempt_at,
 			last_error, include_private, include_gated, created_at, updated_at
 		FROM identity_transfer_import_jobs
 		WHERE id = $1 AND user_id = $2
 	`, id, userID).Scan(&row.ID, &row.UserID, &row.SourceOrigin, &row.TargetOrigin, &row.SourceSessionID, &row.SourceTokenEncrypted,
-		&row.Status, &row.TotalPosts, &row.ImportedPosts, &row.FailedPosts, &row.NextCursor, &row.AttemptCount,
+		&row.Status, &row.TotalPosts, &row.ImportedPosts, &row.FailedPosts, &row.TotalItems, &row.ImportedItems,
+		statsScanner(&row.Stats), &row.NextCursor, &row.AttemptCount,
 		&row.NextAttemptAt, &row.LastError, &row.IncludePrivate, &row.IncludeGated, &row.CreatedAt, &row.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return IdentityTransferImportJob{}, ErrNotFound
@@ -344,7 +572,8 @@ func (p *Pool) ClaimIdentityTransferImportJobs(ctx context.Context, limit int) (
 		FROM cte
 		WHERE j.id = cte.id
 		RETURNING j.id, j.user_id, j.source_origin, j.target_origin, j.source_session_id, j.source_token_encrypted, j.status,
-			j.total_posts, j.imported_posts, j.failed_posts, j.next_cursor, j.attempt_count, j.next_attempt_at,
+			j.total_posts, j.imported_posts, j.failed_posts, j.total_items, j.imported_items,
+			COALESCE(j.stats, '{}'::jsonb)::text, j.next_cursor, j.attempt_count, j.next_attempt_at,
 			j.last_error, j.include_private, j.include_gated, j.created_at, j.updated_at
 	`, IdentityTransferJobMaxAttempts, limit)
 	if err != nil {
@@ -355,7 +584,8 @@ func (p *Pool) ClaimIdentityTransferImportJobs(ctx context.Context, limit int) (
 	for rows.Next() {
 		var row IdentityTransferImportJob
 		if err := rows.Scan(&row.ID, &row.UserID, &row.SourceOrigin, &row.TargetOrigin, &row.SourceSessionID, &row.SourceTokenEncrypted,
-			&row.Status, &row.TotalPosts, &row.ImportedPosts, &row.FailedPosts, &row.NextCursor, &row.AttemptCount,
+			&row.Status, &row.TotalPosts, &row.ImportedPosts, &row.FailedPosts, &row.TotalItems, &row.ImportedItems,
+			statsScanner(&row.Stats), &row.NextCursor, &row.AttemptCount,
 			&row.NextAttemptAt, &row.LastError, &row.IncludePrivate, &row.IncludeGated, &row.CreatedAt, &row.UpdatedAt); err != nil {
 			return nil, err
 		}
@@ -364,21 +594,32 @@ func (p *Pool) ClaimIdentityTransferImportJobs(ctx context.Context, limit int) (
 	return out, rows.Err()
 }
 
-func (p *Pool) CompleteIdentityTransferImportJob(ctx context.Context, id uuid.UUID, total, imported int) error {
-	_, err := p.db.Exec(ctx, `
+func (p *Pool) CompleteIdentityTransferImportJob(ctx context.Context, id uuid.UUID, totalPosts, importedPosts, totalItems, importedItems int, stats IdentityTransferStats) error {
+	statsJSON, err := marshalIdentityTransferStats(stats)
+	if err != nil {
+		return err
+	}
+	_, err = p.db.Exec(ctx, `
 		UPDATE identity_transfer_import_jobs
-		SET status = 'completed', total_posts = $2, imported_posts = $3, locked_until = NULL, last_error = '', updated_at = NOW()
+		SET status = 'completed', total_posts = $2, imported_posts = $3,
+			total_items = $4, imported_items = $5, stats = $6::jsonb,
+			locked_until = NULL, last_error = '', updated_at = NOW()
 		WHERE id = $1
-	`, id, total, imported)
+	`, id, totalPosts, importedPosts, totalItems, importedItems, string(statsJSON))
 	return err
 }
 
-func (p *Pool) ProgressIdentityTransferImportJob(ctx context.Context, id uuid.UUID, total, imported int, nextCursor string) error {
-	_, err := p.db.Exec(ctx, `
+func (p *Pool) ProgressIdentityTransferImportJob(ctx context.Context, id uuid.UUID, totalPosts, importedPosts, totalItems, importedItems int, nextCursor string, stats IdentityTransferStats) error {
+	statsJSON, err := marshalIdentityTransferStats(stats)
+	if err != nil {
+		return err
+	}
+	_, err = p.db.Exec(ctx, `
 		UPDATE identity_transfer_import_jobs
-		SET total_posts = $2, imported_posts = $3, next_cursor = $4, locked_until = NOW() + INTERVAL '3 minutes', updated_at = NOW()
+		SET total_posts = $2, imported_posts = $3, total_items = $4, imported_items = $5,
+			next_cursor = $6, stats = $7::jsonb, locked_until = NOW() + INTERVAL '3 minutes', updated_at = NOW()
 		WHERE id = $1
-	`, id, total, imported, strings.TrimSpace(nextCursor))
+	`, id, totalPosts, importedPosts, totalItems, importedItems, strings.TrimSpace(nextCursor), string(statsJSON))
 	return err
 }
 
@@ -424,6 +665,116 @@ func (p *Pool) RetryIdentityTransferImportJob(ctx context.Context, userID, id uu
 		return ErrNotFound
 	}
 	return nil
+}
+
+func (p *Pool) ImportTransferFollowing(ctx context.Context, userID uuid.UUID, in TransferFollowingPayload) (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(in.Kind)) {
+	case "local":
+		portableID := NormalizePortableID(in.FolloweePortableID)
+		if portableID == "" {
+			return false, nil
+		}
+		var followeeID uuid.UUID
+		err := p.db.QueryRow(ctx, `SELECT id FROM users WHERE portable_id = $1`, portableID).Scan(&followeeID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		if followeeID == userID {
+			return false, nil
+		}
+		_, err = p.db.Exec(ctx, `
+			INSERT INTO user_follows (follower_id, followee_id, created_at)
+			VALUES ($1, $2, COALESCE($3::timestamptz, NOW()))
+			ON CONFLICT (follower_id, followee_id) DO NOTHING
+		`, userID, followeeID, safeTransferTime(in.CreatedAt))
+		return true, err
+	case "remote":
+		actorID := strings.TrimSpace(in.RemoteActorID)
+		inbox := strings.TrimSpace(in.RemoteInbox)
+		if actorID == "" || inbox == "" {
+			return false, nil
+		}
+		state := strings.ToLower(strings.TrimSpace(in.State))
+		if state != "pending" && state != "accepted" {
+			state = "accepted"
+		}
+		_, err := p.db.Exec(ctx, `
+			INSERT INTO federation_remote_follows (local_user_id, remote_actor_id, remote_inbox, remote_current_acct, state, created_at)
+			VALUES ($1, $2, $3, $4, $5, COALESCE($6::timestamptz, NOW()))
+			ON CONFLICT (local_user_id, remote_actor_id) DO UPDATE SET
+				remote_inbox = EXCLUDED.remote_inbox,
+				remote_current_acct = COALESCE(NULLIF(EXCLUDED.remote_current_acct, ''), federation_remote_follows.remote_current_acct),
+				state = CASE
+					WHEN federation_remote_follows.state = 'accepted' THEN 'accepted'
+					ELSE EXCLUDED.state
+				END,
+				updated_at = NOW()
+		`, userID, actorID, inbox, NormalizeFederationTargetAcct(in.RemoteCurrentAcct), state, safeTransferTime(in.CreatedAt))
+		return true, err
+	default:
+		return false, nil
+	}
+}
+
+func (p *Pool) ImportTransferFollower(ctx context.Context, userID uuid.UUID, in TransferFollowerPayload) (bool, error) {
+	actorID := strings.TrimSpace(in.RemoteActorID)
+	inbox := strings.TrimSpace(in.RemoteInbox)
+	if actorID == "" || inbox == "" {
+		return false, nil
+	}
+	_, err := p.db.Exec(ctx, `
+		INSERT INTO glipz_protocol_remote_followers (local_user_id, remote_actor_id, remote_inbox, remote_current_acct, created_at)
+		VALUES ($1, $2, $3, $4, COALESCE($5::timestamptz, NOW()))
+		ON CONFLICT (local_user_id, remote_actor_id) DO UPDATE SET
+			remote_inbox = EXCLUDED.remote_inbox,
+			remote_current_acct = COALESCE(NULLIF(EXCLUDED.remote_current_acct, ''), glipz_protocol_remote_followers.remote_current_acct)
+	`, userID, actorID, inbox, NormalizeFederationTargetAcct(in.RemoteCurrentAcct), safeTransferTime(in.CreatedAt))
+	return true, err
+}
+
+func (p *Pool) ImportTransferBookmark(ctx context.Context, userID, jobID uuid.UUID, in TransferBookmarkPayload) (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(in.Kind)) {
+	case "local":
+		mapped, err := p.MigratedPostIDByOriginal(ctx, jobID, in.OriginalObjectID)
+		if err != nil || mapped == nil {
+			return false, err
+		}
+		_, err = p.db.Exec(ctx, `
+			INSERT INTO post_bookmarks (user_id, post_id, created_at)
+			VALUES ($1, $2, COALESCE($3::timestamptz, NOW()))
+			ON CONFLICT (user_id, post_id) DO NOTHING
+		`, userID, *mapped, safeTransferTime(in.CreatedAt))
+		return true, err
+	case "remote":
+		iri := strings.TrimSpace(in.RemoteObjectIRI)
+		if iri == "" {
+			return false, nil
+		}
+		var incomingID uuid.UUID
+		err := p.db.QueryRow(ctx, `
+			SELECT id
+			FROM federation_incoming_posts
+			WHERE deleted_at IS NULL AND (object_iri = $1 OR object_id = $1)
+			LIMIT 1
+		`, iri).Scan(&incomingID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		_, err = p.db.Exec(ctx, `
+			INSERT INTO federation_incoming_post_bookmarks (user_id, federation_incoming_post_id, created_at)
+			VALUES ($1, $2, COALESCE($3::timestamptz, NOW()))
+			ON CONFLICT (user_id, federation_incoming_post_id) DO NOTHING
+		`, userID, incomingID, safeTransferTime(in.CreatedAt))
+		return true, err
+	default:
+		return false, nil
+	}
 }
 
 func (p *Pool) InsertMigratedPost(ctx context.Context, userID, jobID uuid.UUID, payload TransferPostPayload, objectKeys []string, replyTo *uuid.UUID) (uuid.UUID, bool, error) {
@@ -502,6 +853,56 @@ func truncateString(s string, max int) string {
 		return s
 	}
 	return s[:max]
+}
+
+type identityTransferStatsScanner struct {
+	stats *IdentityTransferStats
+}
+
+func statsScanner(stats *IdentityTransferStats) identityTransferStatsScanner {
+	return identityTransferStatsScanner{stats: stats}
+}
+
+func (s identityTransferStatsScanner) Scan(src any) error {
+	if s.stats == nil {
+		return nil
+	}
+	var raw []byte
+	switch v := src.(type) {
+	case nil:
+		*s.stats = IdentityTransferStats{}
+		return nil
+	case string:
+		raw = []byte(v)
+	case []byte:
+		raw = v
+	default:
+		return fmt.Errorf("unsupported identity transfer stats type %T", src)
+	}
+	if len(raw) == 0 {
+		*s.stats = IdentityTransferStats{}
+		return nil
+	}
+	if err := json.Unmarshal(raw, s.stats); err != nil {
+		return err
+	}
+	return nil
+}
+
+func marshalIdentityTransferStats(stats IdentityTransferStats) ([]byte, error) {
+	b, err := json.Marshal(stats)
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+func safeTransferTime(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+	u := t.UTC()
+	return &u
 }
 
 func unmarshalTransferViewPasswordTextRanges(raw string) []ViewPasswordTextRange {

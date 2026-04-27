@@ -150,7 +150,8 @@ This starts:
 
 On first startup, the backend:
 - Connects to PostgreSQL and Redis
-- Runs database migrations
+- Runs database migrations, including ID portability transfer tables and
+  bookmark/follow portability support for existing databases
 - Initializes the configured media store (`local` folder or S3-compatible storage)
 - Starts the HTTP server
 

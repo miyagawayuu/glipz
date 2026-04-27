@@ -106,7 +106,7 @@ export const jaMessages = {
     identityPortability: {
       title: "IDポータビリティ",
       description:
-        "移転ウィザードで恒久IDを別インスタンスへ持ち込み、投稿とメディアを順番に移行できます。",
+        "移転ウィザードで恒久IDを別インスタンスへ持ち込み、プロフィール、投稿、フォロー、フォロワー、ブックマークを順番に移行できます。",
       imported: "ID bundle をインポートしました。",
       invalidJson: "JSON の形式が正しくありません。",
       failed: "IDポータビリティ操作に失敗しました。",
@@ -118,7 +118,8 @@ export const jaMessages = {
       transferWizard: {
         title: "移転ウィザード",
         description:
-          "移転パスフレーズで秘密鍵を暗号化し、短命トークンで投稿とメディアを順番に移行します。トークンは一度しか表示されません。",
+          "移転パスフレーズで秘密鍵を暗号化し、短命トークンでプロフィール、投稿、フォロー、フォロワー、ブックマークを順番に移行します。トークンは一度しか表示されません。",
+        securityNotice: "移行されるのはプロフィール、投稿/メディア、フォロー関係、ブックマークです。パスワード、二段階認証、OAuth/PAT、DM、通知、IP情報は移行されません。データ取得はここで指定した移転先Originにだけ許可されます。",
         targetOrigin: "移転先インスタンスURL",
         sourceOrigin: "移転元インスタンスURL",
         passphrase: "移転パスフレーズ",
@@ -129,11 +130,19 @@ export const jaMessages = {
         createSession: "移転セッションを作成",
         creatingSession: "移転セッションを作成中...",
         importSecureBundle: "暗号化bundleをインポート",
-        startImport: "投稿移行を開始",
+        startImport: "データ移行を開始",
         sessionId: "移転セッションID",
         transferToken: "移転トークン",
         secureBundlePlaceholder: "暗号化されたID bundle v2がここに表示されます。移転先ではここへ貼り付けます。",
         jobStatus: "ジョブ状態",
+        stats: {
+          profile: "プロフィール",
+          posts: "投稿",
+          following: "フォロー中",
+          followers: "フォロワー",
+          bookmarks: "ブックマーク",
+        },
+        skipped: "skip {count}",
         retry: "再試行",
         cancel: "キャンセル",
         weakPassphrase: "移転パスフレーズは12文字以上にしてください。",
@@ -146,7 +155,7 @@ export const jaMessages = {
         sourceOriginCurrentWarning: "移転元URLが現在のインスタンスと同じです。別インスタンスから移行する場合は、ここに移転元のURLを入力してください。",
         sourceUnauthorizedHint: "移転元が認可を拒否しました。移転元で作成したセッションID・移転トークン・移転先URLが一致しているか確認し、移転先URLをこのインスタンスのOriginにして新しい移転セッションを作成してください。",
         sessionCreated: "移転セッションを作成しました。セッションID、トークン、暗号化bundleを移転先で使用してください。",
-        jobStarted: "投稿移行ジョブを開始しました。",
+        jobStarted: "データ移行ジョブを開始しました。",
       },
     },
     postTimeline: {

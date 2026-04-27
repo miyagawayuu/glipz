@@ -47,8 +47,35 @@ function normalizeOrigin(raw: string): string {
 }
 
 const progressPct = computed(() => {
-  if (!job.value || job.value.total_posts <= 0) return 0;
-  return Math.min(100, Math.round((job.value.imported_posts / job.value.total_posts) * 100));
+  if (!job.value) return 0;
+  const total = job.value.total_items > 0 ? job.value.total_items : job.value.total_posts;
+  const imported = job.value.total_items > 0 ? job.value.imported_items : job.value.imported_posts;
+  if (total <= 0) return 0;
+  return Math.min(100, Math.round((imported / total) * 100));
+});
+const jobProgressLabel = computed(() => {
+  if (!job.value) return "";
+  const total = job.value.total_items > 0 ? job.value.total_items : job.value.total_posts;
+  const imported = job.value.total_items > 0 ? job.value.imported_items : job.value.imported_posts;
+  return `${imported} / ${total}`;
+});
+const jobStatsSummary = computed(() => {
+  if (!job.value?.stats) return [];
+  const stats = job.value.stats;
+  return ([
+    ["profile", stats.profile],
+    ["posts", stats.posts],
+    ["following", stats.following],
+    ["followers", stats.followers],
+    ["bookmarks", stats.bookmarks],
+  ] as const).flatMap(([key, value]) => {
+    if (!value || value.total <= 0) return [];
+    return [{
+      key: String(key),
+      label: t(`components.identityPortability.transferWizard.stats.${key}`),
+      value: `${value.imported}/${value.total}${value.skipped ? ` (${t("components.identityPortability.transferWizard.skipped", { count: value.skipped })})` : ""}`,
+    }];
+  });
 });
 const passphraseTooShort = computed(() => passphrase.value.trim().length > 0 && passphrase.value.trim().length < 12);
 const passphraseMismatch = computed(() => passphraseConfirm.value.length > 0 && passphrase.value !== passphraseConfirm.value);
@@ -273,6 +300,9 @@ onBeforeUnmount(() => {
         <p class="mt-1 text-xs leading-5 text-neutral-600">
           {{ $t("components.identityPortability.transferWizard.description") }}
         </p>
+        <p class="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
+          {{ $t("components.identityPortability.transferWizard.securityNotice") }}
+        </p>
       </div>
 
       <div v-if="message || error" class="rounded-xl border px-3 py-2 text-xs"
@@ -402,10 +432,16 @@ onBeforeUnmount(() => {
       <div v-if="job" class="space-y-2 rounded-xl border border-neutral-200 bg-white p-3">
         <div class="flex items-center justify-between text-xs text-neutral-600">
           <span>{{ $t("components.identityPortability.transferWizard.jobStatus") }}: {{ job.status }}</span>
-          <span>{{ job.imported_posts }} / {{ job.total_posts }}</span>
+          <span>{{ jobProgressLabel }}</span>
         </div>
         <div class="h-2 overflow-hidden rounded-full bg-neutral-100">
           <div class="h-full bg-lime-500 transition-all" :style="{ width: `${progressPct}%` }"></div>
+        </div>
+        <div v-if="jobStatsSummary.length" class="grid gap-1 text-xs text-neutral-600 sm:grid-cols-2">
+          <div v-for="item in jobStatsSummary" :key="item.key" class="flex justify-between gap-2 rounded-lg bg-neutral-50 px-2 py-1">
+            <span>{{ item.label }}</span>
+            <span>{{ item.value }}</span>
+          </div>
         </div>
         <p v-if="visibleJobError" class="text-xs text-red-600">{{ visibleJobError }}</p>
         <div class="flex gap-2">

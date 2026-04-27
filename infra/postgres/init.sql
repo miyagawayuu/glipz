@@ -10,11 +10,18 @@ CREATE TABLE IF NOT EXISTS users (
     bio TEXT NOT NULL DEFAULT '',
     avatar_object_key TEXT,
     header_object_key TEXT,
+    portable_id TEXT,
+    account_public_key TEXT NOT NULL DEFAULT '',
+    account_private_key_encrypted TEXT NOT NULL DEFAULT '',
+    moved_to_acct TEXT NOT NULL DEFAULT '',
+    moved_at TIMESTAMPTZ,
+    also_known_as TEXT[] NOT NULL DEFAULT '{}',
     totp_secret TEXT,
     totp_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE UNIQUE INDEX IF NOT EXISTS users_handle_lower ON users (lower(handle));
+CREATE UNIQUE INDEX IF NOT EXISTS users_portable_id_unique ON users (portable_id) WHERE portable_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS pending_user_registrations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -170,6 +177,16 @@ CREATE INDEX IF NOT EXISTS idx_post_reposts_created_at ON post_reposts (created_
 CREATE INDEX IF NOT EXISTS idx_post_reposts_created_desc ON post_reposts (created_at DESC, user_id, post_id);
 CREATE INDEX IF NOT EXISTS idx_post_reposts_user_created_at ON post_reposts (user_id, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS post_bookmarks (
+    user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    post_id UUID NOT NULL REFERENCES posts (id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_id, post_id)
+);
+CREATE INDEX IF NOT EXISTS idx_post_bookmarks_created_at ON post_bookmarks (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_post_bookmarks_user_created_at ON post_bookmarks (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_post_bookmarks_post_id ON post_bookmarks (post_id);
+
 CREATE TABLE IF NOT EXISTS user_follows (
     follower_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     followee_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
@@ -199,6 +216,27 @@ ALTER TABLE notifications ADD CONSTRAINT notifications_kind_check
     CHECK (kind IN ('reply', 'like', 'repost', 'follow', 'dm_invite'));
 
 -- Glipz Protocol tables used by federation follow + remote follower counts.
+CREATE TABLE IF NOT EXISTS federation_remote_accounts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    portable_id TEXT NOT NULL,
+    current_acct TEXT NOT NULL DEFAULT '',
+    profile_url TEXT NOT NULL DEFAULT '',
+    posts_url TEXT NOT NULL DEFAULT '',
+    inbox_url TEXT NOT NULL DEFAULT '',
+    public_key TEXT NOT NULL DEFAULT '',
+    moved_to TEXT NOT NULL DEFAULT '',
+    moved_from TEXT NOT NULL DEFAULT '',
+    also_known_as TEXT[] NOT NULL DEFAULT '{}',
+    last_verified_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT federation_remote_accounts_portable_nonempty CHECK (char_length(btrim(portable_id)) > 0)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_federation_remote_accounts_portable
+    ON federation_remote_accounts (portable_id);
+CREATE INDEX IF NOT EXISTS idx_federation_remote_accounts_current_acct
+    ON federation_remote_accounts (lower(current_acct)) WHERE COALESCE(btrim(current_acct), '') <> '';
+
 CREATE TABLE IF NOT EXISTS user_glipz_protocol_keys (
     user_id UUID PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
     private_key_pem TEXT NOT NULL,
@@ -211,6 +249,8 @@ CREATE TABLE IF NOT EXISTS glipz_protocol_remote_followers (
     local_user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     remote_actor_id TEXT NOT NULL,
     remote_inbox TEXT NOT NULL,
+    remote_account_id UUID REFERENCES federation_remote_accounts (id) ON DELETE SET NULL,
+    remote_current_acct TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (local_user_id, remote_actor_id)
 );
@@ -245,6 +285,8 @@ CREATE TABLE IF NOT EXISTS federation_remote_follows (
     local_user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     remote_actor_id TEXT NOT NULL,
     remote_inbox TEXT NOT NULL,
+    remote_account_id UUID REFERENCES federation_remote_accounts (id) ON DELETE SET NULL,
+    remote_current_acct TEXT NOT NULL DEFAULT '',
     state TEXT NOT NULL CHECK (state IN ('pending', 'accepted')),
     follow_activity_id TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -301,3 +343,73 @@ CREATE TABLE IF NOT EXISTS api_personal_access_tokens (
     last_used_at TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS idx_api_pat_user ON api_personal_access_tokens (user_id);
+
+CREATE TABLE IF NOT EXISTS identity_transfer_sessions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    portable_id TEXT NOT NULL DEFAULT '',
+    token_hash TEXT NOT NULL,
+    token_nonce TEXT NOT NULL DEFAULT '',
+    allowed_target_origin TEXT NOT NULL DEFAULT '',
+    include_private BOOLEAN NOT NULL DEFAULT FALSE,
+    include_gated BOOLEAN NOT NULL DEFAULT FALSE,
+    expires_at TIMESTAMPTZ NOT NULL,
+    used_at TIMESTAMPTZ,
+    revoked_at TIMESTAMPTZ,
+    created_ip_hash TEXT NOT NULL DEFAULT '',
+    last_used_ip_hash TEXT NOT NULL DEFAULT '',
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT identity_transfer_sessions_token_hash_nonempty CHECK (char_length(btrim(token_hash)) > 0)
+);
+CREATE INDEX IF NOT EXISTS idx_identity_transfer_sessions_user
+    ON identity_transfer_sessions (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_identity_transfer_sessions_active
+    ON identity_transfer_sessions (id, expires_at)
+    WHERE revoked_at IS NULL AND used_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS identity_transfer_import_jobs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    source_origin TEXT NOT NULL,
+    target_origin TEXT NOT NULL DEFAULT '',
+    source_session_id UUID NOT NULL,
+    source_token_encrypted TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'running', 'completed', 'failed', 'cancelled')),
+    total_posts INTEGER NOT NULL DEFAULT 0,
+    imported_posts INTEGER NOT NULL DEFAULT 0,
+    failed_posts INTEGER NOT NULL DEFAULT 0,
+    total_items INTEGER NOT NULL DEFAULT 0,
+    imported_items INTEGER NOT NULL DEFAULT 0,
+    stats JSONB NOT NULL DEFAULT '{}'::jsonb,
+    next_cursor TEXT NOT NULL DEFAULT '',
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    locked_until TIMESTAMPTZ,
+    last_error TEXT NOT NULL DEFAULT '',
+    include_private BOOLEAN NOT NULL DEFAULT FALSE,
+    include_gated BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_identity_transfer_import_jobs_claim
+    ON identity_transfer_import_jobs (next_attempt_at, created_at)
+    WHERE status IN ('pending', 'running');
+CREATE INDEX IF NOT EXISTS idx_identity_transfer_import_jobs_user
+    ON identity_transfer_import_jobs (user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS identity_transfer_post_mappings (
+    job_id UUID NOT NULL REFERENCES identity_transfer_import_jobs (id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    source_post_id TEXT NOT NULL,
+    original_object_id TEXT NOT NULL,
+    new_post_id UUID REFERENCES posts (id) ON DELETE SET NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'imported', 'failed', 'skipped')),
+    last_error TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (job_id, original_object_id)
+);
+CREATE INDEX IF NOT EXISTS idx_identity_transfer_post_mappings_user
+    ON identity_transfer_post_mappings (user_id, created_at DESC);
