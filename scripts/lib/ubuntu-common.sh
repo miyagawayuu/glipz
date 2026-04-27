@@ -246,6 +246,24 @@ wait_for_health() {
   return 1
 }
 
+print_container_diagnostics() {
+  local name="${1:-${GLIPZ_CONTAINER_NAME}}"
+  local port="${2:-${GLIPZ_HOST_PORT}}"
+
+  warn "container diagnostics for ${name}"
+  docker ps -a --filter "name=^/${name}$" || true
+  docker inspect --format 'status={{.State.Status}} exit={{.State.ExitCode}} error={{.State.Error}} started={{.State.StartedAt}} finished={{.State.FinishedAt}}' "${name}" 2>/dev/null || true
+
+  warn "recent container logs"
+  docker logs --tail 200 "${name}" >&2 || true
+
+  warn "host listeners"
+  ss -ltnp 2>/dev/null | grep -E "(:${port}|:5432|:6379)[[:space:]]" >&2 || true
+
+  warn "local health probe"
+  curl -v --max-time 5 "http://127.0.0.1:${port}/health" >&2 || true
+}
+
 backup_glipz() {
   local stamp backup_path db_url db_name
   stamp="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -259,6 +277,7 @@ backup_glipz() {
   fi
 
   db_url="${DATABASE_URL:-}"
+  db_url="${db_url//@host.docker.internal:/@127.0.0.1:}"
   if [[ -n "${db_url}" ]]; then
     log "backing up PostgreSQL database"
     pg_dump "${db_url}" | gzip -9 >"${backup_path}/postgres.sql.gz"

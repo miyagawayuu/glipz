@@ -148,7 +148,7 @@ deploy_new_image() {
   fi
 
   warn "updated container failed health checks"
-  docker logs --tail 160 "${GLIPZ_CONTAINER_NAME}" >&2 || true
+  print_container_diagnostics "${GLIPZ_CONTAINER_NAME}" "${GLIPZ_HOST_PORT}"
   rollback_container
   die "update failed and rollback was attempted"
 }
@@ -165,7 +165,7 @@ rollback_container() {
   if wait_for_health "http://127.0.0.1:${GLIPZ_HOST_PORT}/health" 30 2; then
     warn "rollback container is healthy"
   else
-    docker logs --tail 160 "${GLIPZ_CONTAINER_NAME}" >&2 || true
+    print_container_diagnostics "${GLIPZ_CONTAINER_NAME}" "${GLIPZ_HOST_PORT}"
     die "rollback container did not become healthy"
   fi
 }
@@ -201,13 +201,14 @@ main() {
 
   [[ -f "${GLIPZ_ENV_FILE}" ]] || die "environment file not found: ${GLIPZ_ENV_FILE}"
 
+  prepare_source_for_update
+
   if [[ "${SKIP_BACKUP}" != "true" ]]; then
     backup_glipz
   else
     warn "skipping backup by request"
   fi
 
-  prepare_source_for_update
   deploy_new_image
 
   log "update completed"

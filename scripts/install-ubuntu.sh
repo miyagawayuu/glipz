@@ -199,6 +199,24 @@ install_base_packages() {
   apt-get install -y ca-certificates curl gnupg lsb-release openssl git rsync iproute2 tar gzip sudo
 }
 
+download_gpg_key() {
+  local url="$1"
+  local out="$2"
+  local tmp
+  tmp="$(mktemp)"
+  if ! curl -4fsSL --retry 5 --retry-delay 2 --retry-connrefused --retry-all-errors "${url}" -o "${tmp}"; then
+    rm -f "${tmp}"
+    return 1
+  fi
+  rm -f "${out}"
+  if ! gpg --batch --yes --dearmor -o "${out}" "${tmp}"; then
+    rm -f "${tmp}" "${out}"
+    return 1
+  fi
+  rm -f "${tmp}"
+  chmod a+r "${out}"
+}
+
 check_ubuntu() {
   [[ -f /etc/os-release ]] || die "/etc/os-release not found"
   # shellcheck disable=SC1091
@@ -220,37 +238,51 @@ install_docker() {
 
   log "installing Docker from the official apt repository"
   install -m 0755 -d /etc/apt/keyrings
-  curl -fsSL "https://download.docker.com/linux/ubuntu/gpg" | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-  chmod a+r /etc/apt/keyrings/docker.gpg
 
   local codename arch
   codename="$(. /etc/os-release && printf '%s' "${VERSION_CODENAME}")"
   arch="$(dpkg --print-architecture)"
 
-  cat >/etc/apt/sources.list.d/docker.list <<EOF
+  if download_gpg_key "https://download.docker.com/linux/ubuntu/gpg" /etc/apt/keyrings/docker.gpg; then
+    cat >/etc/apt/sources.list.d/docker.list <<EOF
 deb [arch=${arch} signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu ${codename} stable
 EOF
 
+    if apt-get update && apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin; then
+      systemctl enable --now docker
+      return
+    fi
+  fi
+
+  warn "Docker official apt repository failed; falling back to Ubuntu's docker.io package"
+  rm -f /etc/apt/sources.list.d/docker.list /etc/apt/keyrings/docker.gpg
   apt-get update
-  apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  apt-get install -y docker.io
   systemctl enable --now docker
 }
 
 install_postgres_redis() {
   log "installing PostgreSQL 16 and Redis"
   install -m 0755 -d /etc/apt/keyrings
-  curl -fsSL "https://www.postgresql.org/media/keys/ACCC4CF8.asc" | gpg --dearmor -o /etc/apt/keyrings/postgresql.gpg
-  chmod a+r /etc/apt/keyrings/postgresql.gpg
 
   local codename
   codename="$(. /etc/os-release && printf '%s' "${VERSION_CODENAME}")"
 
-  cat >/etc/apt/sources.list.d/pgdg.list <<EOF
+  if download_gpg_key "https://www.postgresql.org/media/keys/ACCC4CF8.asc" /etc/apt/keyrings/postgresql.gpg; then
+    cat >/etc/apt/sources.list.d/pgdg.list <<EOF
 deb [signed-by=/etc/apt/keyrings/postgresql.gpg] https://apt.postgresql.org/pub/repos/apt ${codename}-pgdg main
 EOF
 
+    if apt-get update && apt-get install -y postgresql-16 postgresql-client-16 redis-server; then
+      systemctl enable --now postgresql redis-server
+      return
+    fi
+  fi
+
+  warn "PostgreSQL official apt repository failed; falling back to Ubuntu's PostgreSQL package"
+  rm -f /etc/apt/sources.list.d/pgdg.list /etc/apt/keyrings/postgresql.gpg
   apt-get update
-  apt-get install -y postgresql-16 postgresql-client-16 redis-server
+  apt-get install -y postgresql postgresql-client redis-server
   systemctl enable --now postgresql redis-server
 }
 
@@ -306,6 +338,23 @@ configure_redis() {
   fi
 
   systemctl restart redis-server
+}
+
+configure_host_firewall() {
+  local gateway cidr
+  gateway="$(docker_gateway_ip)"
+  cidr="$(docker_bridge_cidr)"
+
+  if ! grep -Eq '(^|[[:space:]])host\.docker\.internal([[:space:]]|$)' /etc/hosts; then
+    log "adding host.docker.internal host alias for local maintenance commands"
+    printf '127.0.0.1 host.docker.internal\n' >>/etc/hosts
+  fi
+
+  if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
+    log "allowing Docker bridge access to local PostgreSQL and Redis through UFW"
+    ufw allow in on docker0 from "${cidr}" to "${gateway}" port 5432 proto tcp >/dev/null || true
+    ufw allow in on docker0 from "${cidr}" to "${gateway}" port 6379 proto tcp >/dev/null || true
+  fi
 }
 
 prepare_source() {
@@ -455,11 +504,17 @@ EOF
 install_caddy_proxy() {
   log "installing and configuring Caddy"
   install -m 0755 -d /etc/apt/keyrings
-  curl -fsSL "https://dl.cloudsmith.io/public/caddy/stable/gpg.key" | gpg --dearmor -o /etc/apt/keyrings/caddy-stable-archive-keyring.gpg
-  chmod a+r /etc/apt/keyrings/caddy-stable-archive-keyring.gpg
-  curl -fsSL "https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt" >/etc/apt/sources.list.d/caddy-stable.list
-  apt-get update
-  apt-get install -y caddy
+  if download_gpg_key "https://dl.cloudsmith.io/public/caddy/stable/gpg.key" /etc/apt/keyrings/caddy-stable-archive-keyring.gpg &&
+    curl -4fsSL --retry 5 --retry-delay 2 --retry-connrefused --retry-all-errors "https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt" >/etc/apt/sources.list.d/caddy-stable.list &&
+    apt-get update &&
+    apt-get install -y caddy; then
+    :
+  else
+    warn "Caddy official apt repository failed; falling back to Ubuntu's caddy package"
+    rm -f /etc/apt/sources.list.d/caddy-stable.list /etc/apt/keyrings/caddy-stable-archive-keyring.gpg
+    apt-get update
+    apt-get install -y caddy
+  fi
 
   cat >/etc/caddy/Caddyfile <<EOF
 {
@@ -508,6 +563,7 @@ main() {
   install_postgres_redis
   configure_postgres
   configure_redis
+  configure_host_firewall
   prepare_source
   prepare_data_dirs
   write_glipz_env
@@ -515,7 +571,7 @@ main() {
   build_image "${GLIPZ_IMAGE_TAG}"
   run_glipz_container "${GLIPZ_IMAGE_TAG}"
   wait_for_health "http://127.0.0.1:${GLIPZ_HOST_PORT}/health" 45 2 || {
-    docker logs --tail 120 "${GLIPZ_CONTAINER_NAME}" >&2 || true
+    print_container_diagnostics "${GLIPZ_CONTAINER_NAME}" "${GLIPZ_HOST_PORT}"
     die "Glipz container did not become healthy"
   }
 
