@@ -9,7 +9,7 @@
 
 ## What is Glipz?
 
-Glipz is a **social platform for independently operated communities** and a **high-performance federation protocol** (glipz-federation/2). 
+Glipz is a **social platform for independently operated communities** and a **high-performance federation protocol** (glipz-federation/3). 
 
 Unlike generic protocols, Glipz is designed for speed, security (Ed25519), and optional gated post media (Unlock). It serves as both a full-featured social network and a reference implementation for the Glipz Federation Protocol.
 
@@ -17,6 +17,7 @@ Unlike generic protocols, Glipz is designed for speed, security (Ed25519), and o
 This repository contains the official Go implementation of the Glipz Federation Protocol. Key features include:
 - **High-Speed Sync:** Event-driven architecture for near-instant data propagation.
 - **Strong Security:** Ed25519 signatures and mandatory nonce-based replay protection.
+- **ID portability:** Stable portable account IDs, account move events, and stable federated object IDs.
 - **Gated post media:** Optional view password or membership-based unlock over federation.
 
 ### Who is Glipz for?
@@ -60,6 +61,7 @@ This repository contains the official Go implementation of the Glipz Federation 
 - **Glipz Protocol**: Lightweight federation between Glipz instances
 - Remote follow support
 - Inbound federation timeline and federated direct messages (instance-to-instance)
+- ID portability support with export/import identity bundles, account move declarations, portable account IDs, and stable federated object IDs
 - Delivery workers for reliable delivery
 - Admin-managed federation delivery monitoring, domain blocks, and known instances
 - Database-backed instance settings, including public server metadata and federation policy summary
@@ -229,6 +231,25 @@ The backend exposes a REST API at `/api/v1/`. Use the in-app **API / OpenAPI** s
 - Optional TOTP MFA
 
 OAuth client redirect URIs must be absolute `https://` URLs in production. `http://` is accepted only for `localhost` or loopback IPs during development. Redirect URIs may not include userinfo, fragments, spaces, or control characters.
+
+### Identity portability
+
+Authenticated users can export a portable identity bundle, import it on another instance, and declare that their account moved to a new acct. The bundle contains private key material, so handle it only in trusted places.
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+  https://your-instance.com/api/v1/me/identity/export
+
+curl -X PUT -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  https://your-new-instance.com/api/v1/me/identity/import \
+  -d @identity-bundle.json
+
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  https://your-old-instance.com/api/v1/me/identity/move \
+  -d '{"moved_to_acct":"alice@new.example"}'
+```
 
 ### Example: Get home timeline
 
