@@ -107,6 +107,23 @@ export const enOverrides: DeepPartial<AppMessageSchema> = {
       volume: "Volume",
       fullscreen: "Fullscreen",
     },
+    identityPortability: {
+      title: "ID portability",
+      description:
+        "Export this account's portable identity and import it on another instance. The bundle includes private key material, so handle it only in trusted places.",
+      exportButton: "Export ID bundle",
+      importButton: "Import ID bundle",
+      bundlePlaceholder: "The exported JSON appears here, or paste JSON from the previous instance",
+      exported: "ID bundle created.",
+      imported: "ID bundle imported.",
+      invalidJson: "The JSON is invalid.",
+      failed: "ID portability operation failed.",
+      moveLabel: "Moved-to account",
+      moveButton: "Declare move",
+      moveHint: "Example: alice{'@'}example.social. This queues an account_moved event for current followers.",
+      missingMovedTo: "Enter the moved-to account.",
+      moveDeclared: "Move declared.",
+    },
     postTimeline: {
       viewPasswordScope: {
         all: "Full post and media",
@@ -1142,6 +1159,7 @@ export const enOverrides: DeepPartial<AppMessageSchema> = {
         posts: "Posts",
         communication: "Communication",
         directMessages: "Direct messages",
+        identityPortability: "ID portability",
         twoFactor: "Two-factor authentication",
         notifications: "Notifications",
         developer: "Developer",

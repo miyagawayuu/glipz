@@ -6,6 +6,7 @@ import { useI18n } from "vue-i18n";
 import DMSettingsPanel from "../components/DMSettingsPanel.vue";
 import FanclubPatreonSettings from "../components/FanclubPatreonSettings.vue";
 import Icon from "../components/Icon.vue";
+import IdentityPortabilitySettings from "../components/IdentityPortabilitySettings.vue";
 import SecuritySettingsPanel from "../components/SecuritySettingsPanel.vue";
 import { securitySettingsKey, useSecuritySettings } from "../composables/useSecuritySettings";
 import type { ThemePreference } from "../lib/theme";
@@ -148,6 +149,13 @@ onActivated(syncThemeFromStorage);
         <div class="mt-3">
           <DMSettingsPanel />
         </div>
+      </section>
+
+      <section>
+        <h2 class="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+          {{ $t("views.settings.sections.identityPortability") }}
+        </h2>
+        <IdentityPortabilitySettings />
       </section>
 
       <SecuritySettingsPanel />

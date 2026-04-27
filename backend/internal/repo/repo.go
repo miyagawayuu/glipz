@@ -197,6 +197,10 @@ type User struct {
 	DisplayName        string
 	Bio                string
 	Badges             []string
+	PortableID         string
+	AccountPublicKey   string
+	MovedToAcct        string
+	AlsoKnownAs        []string
 	SuspendedAt        *time.Time
 	DMInviteAutoAccept bool
 	AvatarObjectKey    *string
@@ -213,6 +217,10 @@ type PublicProfile struct {
 	DisplayName         string
 	Bio                 string
 	Badges              []string
+	PortableID          string
+	AccountPublicKey    string
+	MovedToAcct         string
+	AlsoKnownAs         []string
 	ProfileExternalURLs []string
 	AvatarObjectKey     *string
 	HeaderObjectKey     *string
@@ -372,7 +380,13 @@ func (p *Pool) CreateUser(ctx context.Context, email, passwordHash, handle strin
 		`INSERT INTO users (email, password_hash, handle) VALUES ($1, $2, $3) RETURNING id`,
 		email, passwordHash, handle,
 	).Scan(&id)
-	return id, err
+	if err != nil {
+		return uuid.Nil, err
+	}
+	if _, err := p.EnsureUserPortableIdentity(ctx, id); err != nil {
+		return uuid.Nil, err
+	}
+	return id, nil
 }
 
 func ptrText(t pgtype.Text) *string {
@@ -402,17 +416,19 @@ func (p *Pool) UserByEmail(ctx context.Context, email string) (User, error) {
 	var hdr pgtype.Text
 	var suspendedAt pgtype.Timestamptz
 	var badges []string
+	var alsoKnownAs []string
 	err := p.db.QueryRow(ctx,
 		`SELECT id, email, password_hash, handle, display_name, bio,
 			suspended_at,
 			COALESCE(badges, '{}'::text[]),
 			COALESCE(dm_invite_auto_accept, false),
-			avatar_object_key, header_object_key, totp_secret, totp_enabled
+			avatar_object_key, header_object_key, totp_secret, totp_enabled,
+			COALESCE(portable_id, ''), COALESCE(account_public_key, ''), COALESCE(moved_to_acct, ''), COALESCE(also_known_as, '{}'::text[])
 		FROM users WHERE email = $1`,
 		email,
 	).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Handle, &u.DisplayName, &u.Bio, &suspendedAt, &badges,
 		&u.DMInviteAutoAccept,
-		&av, &hdr, &totp, &totpEn)
+		&av, &hdr, &totp, &totpEn, &u.PortableID, &u.AccountPublicKey, &u.MovedToAcct, &alsoKnownAs)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return User{}, ErrNotFound
 	}
@@ -428,6 +444,7 @@ func (p *Pool) UserByEmail(ctx context.Context, email string) (User, error) {
 	}
 	u.SuspendedAt = ptrTimestamptz(suspendedAt)
 	u.Badges = NormalizeUserBadges(badges)
+	u.AlsoKnownAs = append([]string(nil), alsoKnownAs...)
 	if av.Valid {
 		s := av.String
 		u.AvatarObjectKey = &s
@@ -447,17 +464,19 @@ func (p *Pool) UserByID(ctx context.Context, id uuid.UUID) (User, error) {
 	var hdr pgtype.Text
 	var suspendedAt pgtype.Timestamptz
 	var badges []string
+	var alsoKnownAs []string
 	err := p.db.QueryRow(ctx,
 		`SELECT id, email, password_hash, handle, display_name, bio,
 			suspended_at,
 			COALESCE(badges, '{}'::text[]),
 			COALESCE(dm_invite_auto_accept, false),
-			avatar_object_key, header_object_key, totp_secret, totp_enabled
+			avatar_object_key, header_object_key, totp_secret, totp_enabled,
+			COALESCE(portable_id, ''), COALESCE(account_public_key, ''), COALESCE(moved_to_acct, ''), COALESCE(also_known_as, '{}'::text[])
 		FROM users WHERE id = $1`,
 		id,
 	).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Handle, &u.DisplayName, &u.Bio, &suspendedAt, &badges,
 		&u.DMInviteAutoAccept,
-		&av, &hdr, &totp, &totpEn)
+		&av, &hdr, &totp, &totpEn, &u.PortableID, &u.AccountPublicKey, &u.MovedToAcct, &alsoKnownAs)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return User{}, ErrNotFound
 	}
@@ -473,6 +492,7 @@ func (p *Pool) UserByID(ctx context.Context, id uuid.UUID) (User, error) {
 	}
 	u.SuspendedAt = ptrTimestamptz(suspendedAt)
 	u.Badges = NormalizeUserBadges(badges)
+	u.AlsoKnownAs = append([]string(nil), alsoKnownAs...)
 	if av.Valid {
 		s := av.String
 		u.AvatarObjectKey = &s
@@ -491,11 +511,14 @@ func (p *Pool) PublicProfileByHandle(ctx context.Context, handle string) (Public
 	var hdr pgtype.Text
 	var badges []string
 	var urlRaw []byte
+	var alsoKnownAs []string
 	err := p.db.QueryRow(ctx, `
 		SELECT id, email, handle, display_name, bio, COALESCE(badges, '{}'::text[]), avatar_object_key, header_object_key,
-			COALESCE(profile_external_urls, '[]'::jsonb)::text
+			COALESCE(profile_external_urls, '[]'::jsonb)::text,
+			COALESCE(portable_id, ''), COALESCE(account_public_key, ''), COALESCE(moved_to_acct, ''), COALESCE(also_known_as, '{}'::text[])
 		FROM users WHERE lower(handle) = lower($1)
-	`, handle).Scan(&pfl.ID, &pfl.Email, &pfl.Handle, &pfl.DisplayName, &pfl.Bio, &badges, &av, &hdr, &urlRaw)
+	`, handle).Scan(&pfl.ID, &pfl.Email, &pfl.Handle, &pfl.DisplayName, &pfl.Bio, &badges, &av, &hdr, &urlRaw,
+		&pfl.PortableID, &pfl.AccountPublicKey, &pfl.MovedToAcct, &alsoKnownAs)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return PublicProfile{}, ErrNotFound
 	}
@@ -512,6 +535,7 @@ func (p *Pool) PublicProfileByHandle(ctx context.Context, handle string) (Public
 	}
 	pfl.Badges = NormalizeUserBadges(badges)
 	pfl.ProfileExternalURLs = unmarshalProfileExternalURLsJSON(urlRaw)
+	pfl.AlsoKnownAs = append([]string(nil), alsoKnownAs...)
 	return pfl, nil
 }
 

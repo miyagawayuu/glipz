@@ -103,6 +103,23 @@ export const jaMessages = {
       volume: "音量",
       fullscreen: "全画面",
     },
+    identityPortability: {
+      title: "IDポータビリティ",
+      description:
+        "このアカウントの恒久IDをエクスポートして別インスタンスへ持ち込めます。秘密鍵を含むため、信頼できる場所でだけ扱ってください。",
+      exportButton: "ID bundle をエクスポート",
+      importButton: "ID bundle をインポート",
+      bundlePlaceholder: "エクスポートした JSON をここに表示、または移転元の JSON を貼り付け",
+      exported: "ID bundle を作成しました。",
+      imported: "ID bundle をインポートしました。",
+      invalidJson: "JSON の形式が正しくありません。",
+      failed: "IDポータビリティ操作に失敗しました。",
+      moveLabel: "移転先アカウント",
+      moveButton: "移転を宣言",
+      moveHint: "例: alice{'@'}example.social。現在のフォロワーへ account_moved イベントを配送します。",
+      missingMovedTo: "移転先アカウントを入力してください。",
+      moveDeclared: "移転を宣言しました。",
+    },
     postTimeline: {
       viewPasswordScope: {
         all: "本文とメディア全体",
@@ -1149,6 +1166,7 @@ export const jaMessages = {
         posts: "投稿",
         communication: "コミュニケーション",
         directMessages: "ダイレクトメッセージ",
+        identityPortability: "IDポータビリティ",
         twoFactor: "二段階認証",
         notifications: "通知",
         developer: "開発者",

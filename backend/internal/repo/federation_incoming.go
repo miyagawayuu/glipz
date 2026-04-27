@@ -16,9 +16,12 @@ import (
 type FederatedIncomingPost struct {
 	ID                     uuid.UUID
 	ObjectIRI              string
+	ObjectID               string
 	CreateActivityIRI      string
 	ActorIRI               string
 	ActorAcct              string
+	ActorPortableID        string
+	RemoteAccountID        *uuid.UUID
 	ActorName              string
 	ActorIconURL           string
 	ActorProfileURL        string
@@ -54,9 +57,12 @@ type FederatedIncomingPost struct {
 
 type InsertFederatedIncomingInput struct {
 	ObjectIRI              string
+	ObjectID               string
 	CreateActivityIRI      string
 	ActorIRI               string
 	ActorAcct              string
+	ActorPortableID        string
+	RemoteAccountID        *uuid.UUID
 	ActorName              string
 	ActorIconURL           string
 	ActorProfileURL        string
@@ -106,18 +112,19 @@ func (p *Pool) InsertFederatedIncomingPost(ctx context.Context, in InsertFederat
 	var postID uuid.UUID
 	err = tx.QueryRow(ctx, `
 		INSERT INTO federation_incoming_posts (
-			object_iri, create_activity_iri, actor_iri, actor_acct, actor_name, actor_icon_url, actor_profile_url,
+			object_iri, object_id, create_activity_iri, actor_iri, actor_acct, actor_portable_id, remote_account_id, actor_name, actor_icon_url, actor_profile_url,
 			caption_text, media_type, media_urls, is_nsfw, published_at, recipient_user_id, like_count,
 			reply_to_object_iri, repost_of_object_iri, repost_comment,
 			has_view_password, view_password_scope, view_password_text_ranges, unlock_url,
 			membership_provider, membership_creator_id, membership_tier_id
-		) VALUES ($1, NULLIF(trim($2), ''), $3, $4, $5, NULLIF(trim($6), ''), NULLIF(trim($7), ''),
-			$8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20::jsonb, NULLIF(trim($21), ''),
-			COALESCE(NULLIF(trim($22), ''), ''), COALESCE(NULLIF(trim($23), ''), ''), COALESCE(NULLIF(trim($24), ''), ''))
+		) VALUES ($1, COALESCE(NULLIF(trim($2), ''), $1), NULLIF(trim($3), ''), $4, $5, $6, $7, $8, NULLIF(trim($9), ''), NULLIF(trim($10), ''),
+			$11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23::jsonb, NULLIF(trim($24), ''),
+			COALESCE(NULLIF(trim($25), ''), ''), COALESCE(NULLIF(trim($26), ''), ''), COALESCE(NULLIF(trim($27), ''), ''))
 		ON CONFLICT (object_iri) DO NOTHING
 		RETURNING id
-	`, strings.TrimSpace(in.ObjectIRI), strings.TrimSpace(in.CreateActivityIRI),
+	`, strings.TrimSpace(in.ObjectIRI), strings.TrimSpace(in.ObjectID), strings.TrimSpace(in.CreateActivityIRI),
 		strings.TrimSpace(in.ActorIRI), truncateRunes(strings.TrimSpace(in.ActorAcct), 200),
+		strings.TrimSpace(in.ActorPortableID), in.RemoteAccountID,
 		truncateRunes(strings.TrimSpace(in.ActorName), 200),
 		strings.TrimSpace(in.ActorIconURL), strings.TrimSpace(in.ActorProfileURL),
 		truncateRunes(in.CaptionText, 10000), mt, in.MediaURLs, in.IsNSFW, in.PublishedAt.UTC(), in.RecipientUserID, maxInt64(in.LikeCount, 0),

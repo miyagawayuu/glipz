@@ -59,19 +59,24 @@ type verifiedFederationRequest struct {
 }
 
 type federationPublicProfile struct {
-	Acct        string `json:"acct"`
-	Handle      string `json:"handle"`
-	Domain      string `json:"domain"`
-	DisplayName string `json:"display_name"`
-	Summary     string `json:"summary,omitempty"`
-	AvatarURL   string `json:"avatar_url,omitempty"`
-	HeaderURL   string `json:"header_url,omitempty"`
-	ProfileURL  string `json:"profile_url"`
-	PostsURL    string `json:"posts_url"`
+	ID          string   `json:"id,omitempty"`
+	Acct        string   `json:"acct"`
+	Handle      string   `json:"handle"`
+	Domain      string   `json:"domain"`
+	DisplayName string   `json:"display_name"`
+	Summary     string   `json:"summary,omitempty"`
+	AvatarURL   string   `json:"avatar_url,omitempty"`
+	HeaderURL   string   `json:"header_url,omitempty"`
+	ProfileURL  string   `json:"profile_url"`
+	PostsURL    string   `json:"posts_url"`
+	PublicKey   string   `json:"public_key,omitempty"`
+	AlsoKnownAs []string `json:"also_known_as,omitempty"`
+	MovedTo     string   `json:"moved_to,omitempty"`
 }
 
 type federationPublicPost struct {
 	ID                     string                      `json:"id"`
+	ObjectID               string                      `json:"object_id,omitempty"`
 	URL                    string                      `json:"url"`
 	Caption                string                      `json:"caption"`
 	MediaType              string                      `json:"media_type"`
@@ -97,16 +102,19 @@ type federationFollowRequest struct {
 }
 
 type federationEventAuthor struct {
+	ID          string `json:"id,omitempty"`
 	Acct        string `json:"acct"`
 	Handle      string `json:"handle"`
 	Domain      string `json:"domain"`
 	DisplayName string `json:"display_name"`
 	AvatarURL   string `json:"avatar_url,omitempty"`
 	ProfileURL  string `json:"profile_url,omitempty"`
+	PublicKey   string `json:"public_key,omitempty"`
 }
 
 type federationEventPost struct {
 	ID                     string                      `json:"id"`
+	ObjectID               string                      `json:"object_id,omitempty"`
 	URL                    string                      `json:"url"`
 	Caption                string                      `json:"caption"`
 	MediaType              string                      `json:"media_type"`
@@ -162,6 +170,18 @@ type federationEventEnvelope struct {
 	Note     *federationEventNote     `json:"note,omitempty"`
 	Reaction *federationEventReaction `json:"reaction,omitempty"`
 	DM       *federationEventDM       `json:"dm,omitempty"`
+	Move     *federationAccountMove   `json:"move,omitempty"`
+}
+
+type federationAccountMove struct {
+	PortableID  string   `json:"portable_id"`
+	OldAcct     string   `json:"old_acct"`
+	NewAcct     string   `json:"new_acct"`
+	ProfileURL  string   `json:"profile_url,omitempty"`
+	PostsURL    string   `json:"posts_url,omitempty"`
+	InboxURL    string   `json:"inbox_url,omitempty"`
+	PublicKey   string   `json:"public_key,omitempty"`
+	AlsoKnownAs []string `json:"also_known_as,omitempty"`
 }
 
 type federationEventReaction struct {
@@ -397,7 +417,13 @@ func (s *Server) federationPublicProfileDoc(ctx context.Context, handle string) 
 	if err != nil {
 		return federationPublicProfile{}, err
 	}
+	identity, err := s.db.EnsureUserPortableIdentity(ctx, pfl.ID)
+	if err == nil {
+		pfl.PortableID = identity.PortableID
+		pfl.AccountPublicKey = identity.AccountPublicKey
+	}
 	doc := federationPublicProfile{
+		ID:          strings.TrimSpace(pfl.PortableID),
 		Acct:        s.localFullAcct(pfl.Handle),
 		Handle:      pfl.Handle,
 		Domain:      s.federationDisplayHost(),
@@ -405,6 +431,9 @@ func (s *Server) federationPublicProfileDoc(ctx context.Context, handle string) 
 		Summary:     strings.TrimSpace(pfl.Bio),
 		ProfileURL:  s.localProfileURL(pfl.Handle),
 		PostsURL:    strings.TrimSuffix(s.federationPublicOrigin(), "/") + "/federation/posts/" + url.PathEscape(pfl.Handle),
+		PublicKey:   strings.TrimSpace(pfl.AccountPublicKey),
+		AlsoKnownAs: append([]string(nil), pfl.AlsoKnownAs...),
+		MovedTo:     strings.TrimSpace(pfl.MovedToAcct),
 	}
 	if pfl.AvatarObjectKey != nil && strings.TrimSpace(*pfl.AvatarObjectKey) != "" {
 		doc.AvatarURL = s.glipzProtocolPublicMediaURL(*pfl.AvatarObjectKey)
@@ -517,7 +546,7 @@ func (s *Server) verifyFederationRequest(r *http.Request, body []byte) (verified
 		return verifiedFederationRequest{}, fmt.Errorf("missing federation signature headers")
 	}
 	name, major, ok := parseFederationProtocolVersion(protoHeader)
-	if !ok || !strings.EqualFold(name, federationProtocolName) || major < 1 || major > 2 {
+	if !ok || !strings.EqualFold(name, federationProtocolName) || major < 1 || major > 3 {
 		return verifiedFederationRequest{}, fmt.Errorf("unsupported federation protocol")
 	}
 	if major >= 2 && nonce == "" {
@@ -779,6 +808,7 @@ func (s *Server) handleFederationPostsByHandle(w http.ResponseWriter, r *http.Re
 		post := s.federationEventPostPayload(row)
 		items = append(items, federationPublicPost{
 			ID:                     post.ID,
+			ObjectID:               post.ObjectID,
 			URL:                    post.URL,
 			Caption:                post.Caption,
 			MediaType:              post.MediaType,
@@ -1230,6 +1260,12 @@ func (s *Server) handleFederationFollowInbound(w http.ResponseWriter, r *http.Re
 			writeServerError(w, "UpsertFederationSubscriber", err)
 			return
 		}
+		if remoteAccount, err := s.db.UpsertRemoteAccount(r.Context(), repo.RemoteAccountUpsert{
+			CurrentAcct: req.FollowerAcct,
+			InboxURL:    canonicalInbox,
+		}); err == nil {
+			_ = s.db.AttachRemoteAccountToSubscriber(r.Context(), pfl.ID, strings.TrimSpace(req.FollowerAcct), remoteAccount.ID, req.FollowerAcct)
+		}
 	}
 	_ = s.rememberFederationEventID(r.Context(), verified, eventID)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "state": "accepted"})
@@ -1337,6 +1373,7 @@ func (s *Server) handleFederationEventInbound(w http.ResponseWriter, r *http.Req
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_event"})
 		return
 	}
+	remoteAccount, remoteAccountErr := s.rememberEventAuthorRemoteAccount(r.Context(), verified, ev.Author)
 	if strings.HasPrefix(kind, "dm_") {
 		if ev.DM == nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_event"})
@@ -1349,6 +1386,36 @@ func (s *Server) handleFederationEventInbound(w http.ResponseWriter, r *http.Req
 			default:
 				writeServerError(w, "handleFederationDMEventInbound", err)
 			}
+			return
+		}
+		_ = s.rememberFederationEventID(r.Context(), verified, eventID)
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+		return
+	}
+	if kind == "account_moved" {
+		if ev.Move == nil || strings.TrimSpace(ev.Move.PortableID) == "" || strings.TrimSpace(ev.Move.OldAcct) == "" || strings.TrimSpace(ev.Move.NewAcct) == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_event"})
+			return
+		}
+		if _, err := s.db.UpsertRemoteAccount(r.Context(), repo.RemoteAccountUpsert{
+			PortableID:  ev.Move.PortableID,
+			CurrentAcct: ev.Move.NewAcct,
+			ProfileURL:  ev.Move.ProfileURL,
+			PostsURL:    ev.Move.PostsURL,
+			InboxURL:    ev.Move.InboxURL,
+			PublicKey:   ev.Move.PublicKey,
+			MovedFrom:   ev.Move.OldAcct,
+			AlsoKnownAs: ev.Move.AlsoKnownAs,
+		}); err != nil {
+			writeServerError(w, "UpsertRemoteAccount account_moved", err)
+			return
+		}
+		if err := s.db.RepointRemoteFollowRemoteActor(r.Context(), ev.Move.OldAcct, ev.Move.NewAcct); err != nil {
+			writeServerError(w, "RepointRemoteFollowRemoteActor account_moved", err)
+			return
+		}
+		if err := s.db.RepointGlipzProtocolRemoteFollowerActor(r.Context(), ev.Move.OldAcct, ev.Move.NewAcct); err != nil {
+			writeServerError(w, "RepointGlipzProtocolRemoteFollowerActor account_moved", err)
 			return
 		}
 		_ = s.rememberFederationEventID(r.Context(), verified, eventID)
@@ -1422,9 +1489,11 @@ func (s *Server) handleFederationEventInbound(w http.ResponseWriter, r *http.Req
 		}
 		in := repo.InsertFederatedIncomingInput{
 			ObjectIRI:              objectID,
+			ObjectID:               strings.TrimSpace(ev.Post.ObjectID),
 			CreateActivityIRI:      kind,
 			ActorIRI:               ev.Author.Acct,
 			ActorAcct:              ev.Author.Acct,
+			ActorPortableID:        federationAuthorPortableID(ev.Author),
 			ActorName:              ev.Author.DisplayName,
 			ActorIconURL:           ev.Author.AvatarURL,
 			ActorProfileURL:        ev.Author.ProfileURL,
@@ -1441,6 +1510,9 @@ func (s *Server) handleFederationEventInbound(w http.ResponseWriter, r *http.Req
 			ViewPasswordScope:      ev.Post.ViewPasswordScope,
 			ViewPasswordTextRanges: jsonRangesToRepo(ev.Post.ViewPasswordTextRanges),
 			UnlockURL:              ev.Post.UnlockURL,
+		}
+		if remoteAccountErr == nil && remoteAccount.ID != uuid.Nil {
+			in.RemoteAccountID = &remoteAccount.ID
 		}
 		if ev.Post.HasMembershipLock {
 			in.MembershipProvider = strings.TrimSpace(ev.Post.MembershipProvider)

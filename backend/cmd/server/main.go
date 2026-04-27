@@ -120,6 +120,9 @@ func main() {
 	if err := migrate.RunFederationIncomingMembership(ctx, pool); err != nil {
 		log.Fatalf("migrate federation incoming membership: %v", err)
 	}
+	if err := migrate.RunIDPortability(ctx, pool); err != nil {
+		log.Fatalf("migrate id portability: %v", err)
+	}
 
 	opt, err := redis.ParseURL(cfg.RedisURL)
 	if err != nil {

@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"glipz.io/backend/internal/repo"
 )
 
 var errResolveBadInput = errors.New("bad federation resolve input")
@@ -45,6 +47,7 @@ func ResolveFailureAPIError(err error) string {
 
 type ResolvedRemoteActor struct {
 	ActorID     string
+	PortableID  string
 	Inbox       string
 	FollowURL   string
 	UnfollowURL string
@@ -55,6 +58,9 @@ type ResolvedRemoteActor struct {
 	IconURL     string
 	HeaderURL   string
 	Summary     string
+	PublicKey   string
+	MovedTo     string
+	AlsoKnownAs []string
 }
 
 func (r ResolvedRemoteActor) DeliveryInbox() string {
@@ -202,6 +208,7 @@ func fetchRemoteFederationAccount(ctx context.Context, acct string) (federationA
 // RemoteActorDisplay represents the public profile fields shown for a federated user.
 type RemoteActorDisplay struct {
 	ActorID     string `json:"actor_id"`
+	PortableID  string `json:"portable_id,omitempty"`
 	Acct        string `json:"acct"`
 	Name        string `json:"name"`
 	Summary     string `json:"summary,omitempty"`
@@ -264,6 +271,7 @@ func FetchRemoteActorDisplay(ctx context.Context, raw string) (RemoteActorDispla
 	}
 	return RemoteActorDisplay{
 		ActorID:     resolved.ActorID,
+		PortableID:  resolved.PortableID,
 		Acct:        resolved.Acct,
 		Name:        resolved.Name,
 		Summary:     resolved.Summary,
@@ -300,6 +308,7 @@ func ResolveRemoteActor(ctx context.Context, raw string) (ResolvedRemoteActor, e
 		}
 		return ResolvedRemoteActor{
 			ActorID:     prof.Acct,
+			PortableID:  repo.PortableIDForRemote(prof.Acct, prof.ID),
 			Inbox:       doc.Server.EventsURL,
 			FollowURL:   doc.Server.FollowURL,
 			UnfollowURL: doc.Server.UnfollowURL,
@@ -310,6 +319,9 @@ func ResolveRemoteActor(ctx context.Context, raw string) (ResolvedRemoteActor, e
 			IconURL:     prof.AvatarURL,
 			HeaderURL:   prof.HeaderURL,
 			Summary:     prof.Summary,
+			PublicKey:   prof.PublicKey,
+			MovedTo:     prof.MovedTo,
+			AlsoKnownAs: append([]string(nil), prof.AlsoKnownAs...),
 		}, nil
 	}
 	doc, err := fetchRemoteFederationAccount(ctx, strings.TrimPrefix(strings.TrimPrefix(raw, "acct:"), "@"))
@@ -319,6 +331,7 @@ func ResolveRemoteActor(ctx context.Context, raw string) (ResolvedRemoteActor, e
 	prof := doc.Account
 	return ResolvedRemoteActor{
 		ActorID:     prof.Acct,
+		PortableID:  repo.PortableIDForRemote(prof.Acct, prof.ID),
 		Inbox:       doc.Server.EventsURL,
 		FollowURL:   doc.Server.FollowURL,
 		UnfollowURL: doc.Server.UnfollowURL,
@@ -329,5 +342,8 @@ func ResolveRemoteActor(ctx context.Context, raw string) (ResolvedRemoteActor, e
 		IconURL:     prof.AvatarURL,
 		HeaderURL:   prof.HeaderURL,
 		Summary:     prof.Summary,
+		PublicKey:   prof.PublicKey,
+		MovedTo:     prof.MovedTo,
+		AlsoKnownAs: append([]string(nil), prof.AlsoKnownAs...),
 	}, nil
 }

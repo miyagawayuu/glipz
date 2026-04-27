@@ -148,12 +148,19 @@ func (s *Server) federationAuthorPayload(ctx context.Context, authorID uuid.UUID
 	if err != nil {
 		return federationEventAuthor{}, err
 	}
+	identity, err := s.db.EnsureUserPortableIdentity(ctx, authorID)
+	if err == nil {
+		u.PortableID = identity.PortableID
+		u.AccountPublicKey = identity.AccountPublicKey
+	}
 	out := federationEventAuthor{
+		ID:          strings.TrimSpace(u.PortableID),
 		Acct:        s.localFullAcct(u.Handle),
 		Handle:      u.Handle,
 		Domain:      s.federationDisplayHost(),
 		DisplayName: resolvedDisplayName(u.DisplayName, u.Email),
 		ProfileURL:  s.localProfileURL(u.Handle),
+		PublicKey:   strings.TrimSpace(u.AccountPublicKey),
 	}
 	if u.AvatarObjectKey != nil && strings.TrimSpace(*u.AvatarObjectKey) != "" {
 		out.AvatarURL = s.glipzProtocolPublicMediaURL(*u.AvatarObjectKey)
@@ -185,6 +192,7 @@ func (s *Server) federationEventPostPayload(row repo.FederationPublicPostRow) fe
 	}
 	out := federationEventPost{
 		ID:          row.ID.String(),
+		ObjectID:    "glipz://" + strings.TrimSpace(row.ID.String()),
 		URL:         s.localPostURL(row.ID),
 		Caption:     caption,
 		MediaType:   row.MediaType,

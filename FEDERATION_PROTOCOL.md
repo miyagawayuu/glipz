@@ -4,7 +4,7 @@ English | [日本語](FEDERATION_PROTOCOL.ja.md)
 
 This guide is for developers who want to integrate the Glipz Federation Protocol into a new social network, community application, or server implementation.
 
-Glipz federation is a JSON-over-HTTP server-to-server protocol for public social posts, remote follows, reactions, polls, federated direct messages, and selected gated-media flows. The reference implementation in this repository uses `glipz-federation/2`.
+Glipz federation is a JSON-over-HTTP server-to-server protocol for public social posts, remote follows, reactions, polls, federated direct messages, and selected gated-media flows. The reference implementation in this repository uses `glipz-federation/3`.
 
 For running a Glipz instance, start with [README.md](README.md) and [SETUP.md](SETUP.md). This document focuses on implementing or interoperating with the federation protocol.
 
@@ -49,10 +49,17 @@ Do not treat the protocol as a full ActivityPub replacement. It intentionally ex
 The current protocol version is:
 
 ```text
-glipz-federation/2
+glipz-federation/3
 ```
 
-The reference implementation advertises both `glipz-federation/1` and `glipz-federation/2` in discovery, but new integrations should implement version 2.
+The reference implementation advertises `glipz-federation/1`, `glipz-federation/2`, and `glipz-federation/3` in discovery, but new integrations should implement version 3.
+
+Version 3 adds optional ID portability fields:
+
+- Account and event author documents can include `id`, a stable portable identity such as `glipz:id:<public-key-fingerprint>`.
+- Account documents can include `public_key`, `also_known_as`, and `moved_to`.
+- Post documents and event post payloads can include `object_id`, a stable object identifier separate from the current HTTP URL.
+- Instances can send an `account_moved` event when a user declares a new home account.
 
 Version 2 requires:
 
@@ -61,10 +68,10 @@ Version 2 requires:
 - Replay protection for nonces and event IDs.
 
 Version 1 is retained only for compatibility with older Glipz deployments. New
-servers should prefer version 2, and operators should plan to phase out version
+servers should prefer version 3, and operators should plan to phase out version
 1 peers because nonce-based replay protection is mandatory only in version 2.
 
-Event envelopes use schema version `2` in the `v` field.
+Event envelopes use schema version `3` in the `v` field.
 
 ---
 
@@ -105,14 +112,15 @@ Example:
 {
   "resource": "alice@social.example",
   "server": {
-    "protocol_version": "glipz-federation/2",
+    "protocol_version": "glipz-federation/3",
     "supported_protocol_versions": [
       "glipz-federation/1",
-      "glipz-federation/2"
+      "glipz-federation/2",
+      "glipz-federation/3"
     ],
     "server_software": "glipz",
     "server_version": "0.0.1",
-    "event_schema_version": 2,
+    "event_schema_version": 3,
     "host": "social.example",
     "origin": "https://social.example",
     "key_id": "https://social.example/.well-known/glipz-federation#default",
@@ -124,6 +132,7 @@ Example:
     "known_instances": ["remote.example"]
   },
   "account": {
+    "id": "glipz:id:BASE64URL_ACCOUNT_KEY_FINGERPRINT",
     "acct": "alice@social.example",
     "handle": "alice",
     "domain": "social.example",
@@ -131,7 +140,10 @@ Example:
     "summary": "Profile text",
     "avatar_url": "https://social.example/api/v1/media/object/avatar",
     "profile_url": "https://social.example/@alice",
-    "posts_url": "https://social.example/federation/posts/alice"
+    "posts_url": "https://social.example/federation/posts/alice",
+    "public_key": "BASE64URL_ACCOUNT_PUBLIC_KEY",
+    "also_known_as": ["alice@old.example"],
+    "moved_to": ""
   }
 }
 ```
@@ -187,13 +199,13 @@ See [SETUP.md](SETUP.md) and [DEPLOY.md](DEPLOY.md) for the full environment fil
 
 ## Signed Server-to-Server Requests
 
-All mutating server-to-server requests should be signed with Ed25519. Version 2 requests include these headers:
+All mutating server-to-server requests should be signed with Ed25519. Version 3 requests include these headers:
 
 ```http
 Content-Type: application/json
 X-Glipz-Instance: social.example
 X-Glipz-Key-Id: https://social.example/.well-known/glipz-federation#default
-X-Glipz-Protocol-Version: glipz-federation/2
+X-Glipz-Protocol-Version: glipz-federation/3
 X-Glipz-App-Version: 0.0.1
 X-Glipz-Timestamp: 2026-04-26T00:00:00Z
 X-Glipz-Nonce: 550e8400-e29b-41d4-a716-446655440000
@@ -240,9 +252,10 @@ Federation events use this envelope:
 ```json
 {
   "event_id": "550e8400-e29b-41d4-a716-446655440001",
-  "v": 2,
+  "v": 3,
   "kind": "post_created",
   "author": {
+    "id": "glipz:id:BASE64URL_ACCOUNT_KEY_FINGERPRINT",
     "acct": "alice@social.example",
     "handle": "alice",
     "domain": "social.example",
@@ -252,6 +265,7 @@ Federation events use this envelope:
   },
   "post": {
     "id": "550e8400-e29b-41d4-a716-446655440002",
+    "object_id": "glipz://glipz:id:BASE64URL_ACCOUNT_KEY_FINGERPRINT/posts/550e8400-e29b-41d4-a716-446655440002",
     "url": "https://social.example/posts/550e8400-e29b-41d4-a716-446655440002",
     "caption": "Hello from Glipz federation",
     "media_type": "image",
@@ -265,6 +279,7 @@ Federation events use this envelope:
 
 Supported event kinds include:
 
+- `account_moved`
 - `post_created`
 - `repost_created`
 - `post_updated`
@@ -297,6 +312,46 @@ Post fields can include:
 - `has_membership_lock` and membership provider metadata in event payloads.
 
 If you are building non-Glipz software, store remote object URLs as stable IDs. Glipz can fall back to a `glipz://{acct}/posts/{id}` object ID when a URL is missing, but HTTPS URLs are preferred for interoperability.
+
+For protocol version 3, prefer `object_id` as the stable storage key when it is present and keep `url` as the current dereferenceable URL.
+
+---
+
+## ID Portability
+
+Protocol version 3 separates a portable account identity from the current account address:
+
+- `account.id` and `author.id` identify the same account across instance moves.
+- `acct` remains the current display and delivery address.
+- `public_key` lets receivers remember account-level key material for future move verification.
+- `moved_to` advertises that the account has declared a new home account.
+
+An account move is delivered as a signed event:
+
+```json
+{
+  "event_id": "550e8400-e29b-41d4-a716-446655440030",
+  "v": 3,
+  "kind": "account_moved",
+  "author": {
+    "id": "glipz:id:BASE64URL_ACCOUNT_KEY_FINGERPRINT",
+    "acct": "alice@old.example",
+    "handle": "alice",
+    "domain": "old.example",
+    "display_name": "Alice",
+    "public_key": "BASE64URL_ACCOUNT_PUBLIC_KEY"
+  },
+  "move": {
+    "portable_id": "glipz:id:BASE64URL_ACCOUNT_KEY_FINGERPRINT",
+    "old_acct": "alice@old.example",
+    "new_acct": "alice@new.example",
+    "inbox_url": "https://new.example/federation/events",
+    "public_key": "BASE64URL_ACCOUNT_PUBLIC_KEY"
+  }
+}
+```
+
+Receivers should keep `acct` compatibility for older peers. If `id` is missing, store the actor as `legacy:{acct}` and do not merge it with a later portable account unless a verified move or account-key proof is available.
 
 ---
 

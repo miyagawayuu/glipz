@@ -8,12 +8,13 @@ import (
 const (
 	glipzAppVersion              = "0.0.1"
 	federationProtocolName       = "glipz-federation"
-	federationProtocolVersion    = federationProtocolName + "/2"
-	federationEventSchemaVersion = 2
+	federationProtocolVersion    = federationProtocolName + "/3"
+	federationEventSchemaVersion = 3
 )
 
 var federationSupportedProtocolVersions = []string{
 	federationProtocolName + "/1",
+	federationProtocolName + "/2",
 	federationProtocolVersion,
 }
 

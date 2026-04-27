@@ -7,7 +7,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const federationDeliveryKindsCheck = "kind IN ('create', 'update', 'delete', 'announce', 'post_created', 'post_updated', 'post_deleted', 'repost_created', 'post_liked', 'post_unliked', 'post_reaction_added', 'post_reaction_removed', 'poll_voted', 'poll_tally_updated', 'dm_invite', 'dm_accept', 'dm_reject', 'dm_message')"
+const federationDeliveryKindsCheck = "kind IN ('create', 'update', 'delete', 'announce', 'post_created', 'post_updated', 'post_deleted', 'repost_created', 'post_liked', 'post_unliked', 'post_reaction_added', 'post_reaction_removed', 'poll_voted', 'poll_tally_updated', 'dm_invite', 'dm_accept', 'dm_reject', 'dm_message', 'account_moved')"
 
 // RunGlipzProtocolOutboxDelivery creates the durable outbound Glipz Protocol delivery queue with retries.
 func RunGlipzProtocolOutboxDelivery(ctx context.Context, pool *pgxpool.Pool) error {

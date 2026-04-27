@@ -4,7 +4,7 @@
 
 この資料は、Glipz Federation Protocol を新しいSNS、コミュニティアプリ、またはサーバソフトウェアへ組み込む開発者向けの導入ガイドです。
 
-Glipz federation は、公開投稿、リモートフォロー、リアクション、投票、連合DM、一部のゲート付きメディアのフローを扱う JSON over HTTP のサーバ間プロトコルです。このリポジトリの参照実装は `glipz-federation/2` を使用します。
+Glipz federation は、公開投稿、リモートフォロー、リアクション、投票、連合DM、一部のゲート付きメディアのフローを扱う JSON over HTTP のサーバ間プロトコルです。このリポジトリの参照実装は `glipz-federation/3` を使用します。
 
 Glipz インスタンスを動かす手順は [README.md](README.md) と [SETUP.md](SETUP.md) を先に参照してください。この資料では、プロトコルの実装や相互接続に必要な情報を中心に説明します。
 
@@ -44,10 +44,17 @@ Glipz federation は主に4つの要素で構成されます。
 現在のプロトコルバージョンは次の通りです。
 
 ```text
-glipz-federation/2
+glipz-federation/3
 ```
 
-参照実装は discovery で `glipz-federation/1` と `glipz-federation/2` の両方を広告しますが、新規実装では version 2 を実装してください。
+参照実装は discovery で `glipz-federation/1`、`glipz-federation/2`、`glipz-federation/3` を広告しますが、新規実装では version 3 を実装してください。
+
+Version 3 では ID ポータビリティ用の optional field が追加されます。
+
+- Account と event author は、`glipz:id:<public-key-fingerprint>` のような安定した portable identity を `id` として含められます。
+- Account は `public_key`、`also_known_as`、`moved_to` を含められます。
+- Post document と event post payload は、現在の HTTP URL とは別の安定IDとして `object_id` を含められます。
+- ユーザーが新しいホームアカウントを宣言したとき、インスタンスは `account_moved` event を送信できます。
 
 Version 2 では次が必須です。
 
@@ -55,9 +62,9 @@ Version 2 では次が必須です。
 - 署名付き event と follow/unfollow ペイロードに `event_id` を含める。
 - nonce と event ID による replay protection を行う。
 
-Version 1 は古い Glipz デプロイとの互換目的でのみ残されています。新規サーバは version 2 を優先し、運用者は version 1 ピアを段階的に外す計画を立ててください。nonce による replay protection が必須なのは version 2 です。
+Version 1 は古い Glipz デプロイとの互換目的でのみ残されています。新規サーバは version 3 を優先し、運用者は version 1 ピアを段階的に外す計画を立ててください。nonce による replay protection が必須なのは version 2 以降です。
 
-Event envelope の `v` フィールドには schema version `2` を使います。
+Event envelope の `v` フィールドには schema version `3` を使います。
 
 ---
 
@@ -98,14 +105,15 @@ GET /.well-known/glipz-federation?resource=alice@social.example
 {
   "resource": "alice@social.example",
   "server": {
-    "protocol_version": "glipz-federation/2",
+    "protocol_version": "glipz-federation/3",
     "supported_protocol_versions": [
       "glipz-federation/1",
-      "glipz-federation/2"
+      "glipz-federation/2",
+      "glipz-federation/3"
     ],
     "server_software": "glipz",
     "server_version": "0.0.1",
-    "event_schema_version": 2,
+    "event_schema_version": 3,
     "host": "social.example",
     "origin": "https://social.example",
     "key_id": "https://social.example/.well-known/glipz-federation#default",
@@ -117,6 +125,7 @@ GET /.well-known/glipz-federation?resource=alice@social.example
     "known_instances": ["remote.example"]
   },
   "account": {
+    "id": "glipz:id:BASE64URL_ACCOUNT_KEY_FINGERPRINT",
     "acct": "alice@social.example",
     "handle": "alice",
     "domain": "social.example",
@@ -124,7 +133,10 @@ GET /.well-known/glipz-federation?resource=alice@social.example
     "summary": "Profile text",
     "avatar_url": "https://social.example/api/v1/media/object/avatar",
     "profile_url": "https://social.example/@alice",
-    "posts_url": "https://social.example/federation/posts/alice"
+    "posts_url": "https://social.example/federation/posts/alice",
+    "public_key": "BASE64URL_ACCOUNT_PUBLIC_KEY",
+    "also_known_as": ["alice@old.example"],
+    "moved_to": ""
   }
 }
 ```
@@ -180,13 +192,13 @@ FEDERATION_POLICY_SUMMARY=Short text shown as your instance federation policy
 
 ## 署名付きサーバ間リクエスト
 
-状態を変更するサーバ間リクエストは Ed25519 で署名します。Version 2 のリクエストには次のヘッダを含めます。
+状態を変更するサーバ間リクエストは Ed25519 で署名します。Version 3 のリクエストには次のヘッダを含めます。
 
 ```http
 Content-Type: application/json
 X-Glipz-Instance: social.example
 X-Glipz-Key-Id: https://social.example/.well-known/glipz-federation#default
-X-Glipz-Protocol-Version: glipz-federation/2
+X-Glipz-Protocol-Version: glipz-federation/3
 X-Glipz-App-Version: 0.0.1
 X-Glipz-Timestamp: 2026-04-26T00:00:00Z
 X-Glipz-Nonce: 550e8400-e29b-41d4-a716-446655440000
@@ -216,7 +228,7 @@ BASE64_SHA256_BODY
 受信側は次を行います。
 
 - `X-Glipz-Instance`、`X-Glipz-Key-Id`、`X-Glipz-Protocol-Version`、`X-Glipz-Timestamp`、`X-Glipz-Signature` を必須にする。
-- Protocol version 2 では `X-Glipz-Nonce` を必須にする。
+- Protocol version 2 以降では `X-Glipz-Nonce` を必須にする。
 - 受信側時刻から10分を超えてずれた timestamp を拒否する。
 - `https://{X-Glipz-Instance}/.well-known/glipz-federation` を取得する。
 - Discovery の `key_id` が `X-Glipz-Key-Id` と一致することを検証する。
@@ -233,9 +245,10 @@ Federation event は次の envelope を使用します。
 ```json
 {
   "event_id": "550e8400-e29b-41d4-a716-446655440001",
-  "v": 2,
+  "v": 3,
   "kind": "post_created",
   "author": {
+    "id": "glipz:id:BASE64URL_ACCOUNT_KEY_FINGERPRINT",
     "acct": "alice@social.example",
     "handle": "alice",
     "domain": "social.example",
@@ -245,6 +258,7 @@ Federation event は次の envelope を使用します。
   },
   "post": {
     "id": "550e8400-e29b-41d4-a716-446655440002",
+    "object_id": "glipz://glipz:id:BASE64URL_ACCOUNT_KEY_FINGERPRINT/posts/550e8400-e29b-41d4-a716-446655440002",
     "url": "https://social.example/posts/550e8400-e29b-41d4-a716-446655440002",
     "caption": "Hello from Glipz federation",
     "media_type": "image",
@@ -258,6 +272,7 @@ Federation event は次の envelope を使用します。
 
 対応している event kind には次があります。
 
+- `account_moved`
 - `post_created`
 - `repost_created`
 - `post_updated`
@@ -282,14 +297,52 @@ Federation event は次の envelope を使用します。
 
 投稿フィールドには次のような値を含められます。
 
-- `id`、`url`、`caption`、`media_type`、`media_urls`、`is_nsfw`、`published_at`。
+- `id`、`object_id`、`url`、`caption`、`media_type`、`media_urls`、`is_nsfw`、`published_at`。
 - ミラーされたカウントとしての `like_count`。
 - 投票オプションと集計を表す `poll`。
 - 会話やリポスト関係を表す `reply_to_object_url` と `repost_of_object_url`。
 - パスワード付きメディア用の `has_view_password`、`view_password_scope`、`unlock_url`。
 - Event payload 内の `has_membership_lock` と membership provider metadata。
 
-非 Glipz ソフトウェアを実装する場合は、リモート object URL を安定IDとして保存してください。Glipz は URL がない場合に `glipz://{acct}/posts/{id}` 形式の object ID にフォールバックできますが、相互運用では HTTPS URL が望ましいです。
+非 Glipz ソフトウェアを実装する場合、version 3 では `object_id` があればそれを安定した保存キーとして優先し、`url` は現在の参照可能 URL として保持してください。`object_id` がない相手では、従来通りリモート object URL を stable ID として保存します。Glipz は URL がない場合に `glipz://{acct}/posts/{id}` 形式の object ID にフォールバックできます。
+
+---
+
+## ID ポータビリティ
+
+Protocol version 3 では、portable account identity と現在の account address を分離します。
+
+- `account.id` と `author.id` は、インスタンス移転後も同じアカウントを表します。
+- `acct` は現在の表示・配送アドレスとして残ります。
+- `public_key` は、将来の move verification のために receiver が記憶できます。
+- `moved_to` は、そのアカウントが新しいホームアカウントを宣言したことを示します。
+
+アカウント移転は署名付き event として配送されます。
+
+```json
+{
+  "event_id": "550e8400-e29b-41d4-a716-446655440030",
+  "v": 3,
+  "kind": "account_moved",
+  "author": {
+    "id": "glipz:id:BASE64URL_ACCOUNT_KEY_FINGERPRINT",
+    "acct": "alice@old.example",
+    "handle": "alice",
+    "domain": "old.example",
+    "display_name": "Alice",
+    "public_key": "BASE64URL_ACCOUNT_PUBLIC_KEY"
+  },
+  "move": {
+    "portable_id": "glipz:id:BASE64URL_ACCOUNT_KEY_FINGERPRINT",
+    "old_acct": "alice@old.example",
+    "new_acct": "alice@new.example",
+    "inbox_url": "https://new.example/federation/events",
+    "public_key": "BASE64URL_ACCOUNT_PUBLIC_KEY"
+  }
+}
+```
+
+Receiver は古い peer との互換性のため `acct` を引き続き保存してください。`id` がない場合は `legacy:{acct}` として扱い、検証済み move または account-key proof がない限り、あとから現れた portable account と自動的に統合しないでください。
 
 ---
 

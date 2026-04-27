@@ -206,6 +206,21 @@ func (p *Pool) UpsertGlipzProtocolRemoteFollower(ctx context.Context, localUserI
 	return err
 }
 
+func (p *Pool) AttachRemoteAccountToSubscriber(ctx context.Context, localUserID uuid.UUID, remoteActorID string, remoteAccountID uuid.UUID, currentAcct string) error {
+	remoteActorID = strings.TrimSpace(remoteActorID)
+	currentAcct = NormalizeFederationTargetAcct(currentAcct)
+	if localUserID == uuid.Nil || remoteActorID == "" || remoteAccountID == uuid.Nil {
+		return nil
+	}
+	_, err := p.db.Exec(ctx, `
+		UPDATE glipz_protocol_remote_followers
+		SET remote_account_id = $3,
+			remote_current_acct = $4
+		WHERE local_user_id = $1 AND remote_actor_id = $2
+	`, localUserID, remoteActorID, remoteAccountID, currentAcct)
+	return err
+}
+
 // DeleteGlipzProtocolRemoteFollower removes a remote follower, for example after Undo Follow.
 func (p *Pool) DeleteGlipzProtocolRemoteFollower(ctx context.Context, localUserID uuid.UUID, remoteActorID string) error {
 	_, err := p.db.Exec(ctx, `

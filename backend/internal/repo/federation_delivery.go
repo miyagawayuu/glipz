@@ -69,10 +69,10 @@ func (p *Pool) ListFederationSubscriberInboxes(ctx context.Context, localUserID 
 	return p.ListGlipzProtocolRemoteFollowerInboxes(ctx, localUserID)
 }
 
-func (p *Pool) UpsertRemoteFollowAccepted(ctx context.Context, localUserID uuid.UUID, remoteAccountID, remoteInbox string) error {
-	remoteAccountID = strings.TrimSpace(remoteAccountID)
+func (p *Pool) UpsertRemoteFollowAccepted(ctx context.Context, localUserID uuid.UUID, remoteActorID, remoteInbox string) error {
+	remoteActorID = strings.TrimSpace(remoteActorID)
 	remoteInbox = strings.TrimSpace(remoteInbox)
-	if remoteAccountID == "" || remoteInbox == "" {
+	if remoteActorID == "" || remoteInbox == "" {
 		return nil
 	}
 	_, err := p.db.Exec(ctx, `
@@ -81,7 +81,22 @@ func (p *Pool) UpsertRemoteFollowAccepted(ctx context.Context, localUserID uuid.
 		ON CONFLICT (local_user_id, remote_actor_id) DO UPDATE SET
 			remote_inbox = EXCLUDED.remote_inbox,
 			state = 'accepted'
-	`, localUserID, remoteAccountID, remoteInbox)
+	`, localUserID, remoteActorID, remoteInbox)
+	return err
+}
+
+func (p *Pool) AttachRemoteAccountToRemoteFollow(ctx context.Context, localUserID uuid.UUID, remoteActorID string, remoteAccountID uuid.UUID, currentAcct string) error {
+	remoteActorID = strings.TrimSpace(remoteActorID)
+	currentAcct = NormalizeFederationTargetAcct(currentAcct)
+	if localUserID == uuid.Nil || remoteActorID == "" || remoteAccountID == uuid.Nil {
+		return nil
+	}
+	_, err := p.db.Exec(ctx, `
+		UPDATE federation_remote_follows
+		SET remote_account_id = $3,
+			remote_current_acct = $4
+		WHERE local_user_id = $1 AND remote_actor_id = $2
+	`, localUserID, remoteActorID, remoteAccountID, currentAcct)
 	return err
 }
 

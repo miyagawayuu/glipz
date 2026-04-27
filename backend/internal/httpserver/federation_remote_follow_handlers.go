@@ -108,6 +108,7 @@ func (s *Server) handleRemoteFollowPOST(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, st, map[string]string{"error": msg})
 		return
 	}
+	remoteAccount, remoteAccountErr := s.rememberResolvedRemoteAccount(r.Context(), resolved)
 	existing, err := s.db.GetRemoteFollow(r.Context(), uid, resolved.ActorID)
 	if err != nil && !errors.Is(err, repo.ErrNotFound) {
 		writeServerError(w, "GetRemoteFollow", err)
@@ -143,6 +144,9 @@ func (s *Server) handleRemoteFollowPOST(w http.ResponseWriter, r *http.Request) 
 	if err := s.db.UpsertRemoteFollowAccepted(r.Context(), uid, resolved.ActorID, deliveryURL); err != nil {
 		writeServerError(w, "UpsertRemoteFollowAccepted", err)
 		return
+	}
+	if remoteAccountErr == nil {
+		_ = s.db.AttachRemoteAccountToRemoteFollow(r.Context(), uid, resolved.ActorID, remoteAccount.ID, resolved.Acct)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "state": "accepted", "remote_actor_id": resolved.ActorID})
 }
@@ -206,6 +210,7 @@ func (s *Server) handleRemoteFollowDELETE(w http.ResponseWriter, r *http.Request
 		writeJSON(w, st, map[string]string{"error": msg})
 		return
 	}
+	_, _ = s.rememberResolvedRemoteAccount(r.Context(), resolved)
 	if _, err := s.db.GetRemoteFollow(r.Context(), uid, resolved.ActorID); err != nil {
 		if errors.Is(err, repo.ErrNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_following"})

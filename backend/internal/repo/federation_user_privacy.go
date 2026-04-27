@@ -12,7 +12,15 @@ import (
 
 // NormalizeFederationTargetAcct normalizes acct keys for storage and comparison.
 func NormalizeFederationTargetAcct(acct string) string {
-	acct = strings.TrimSpace(strings.ToLower(acct))
+	acct = strings.TrimSpace(acct)
+	low := strings.ToLower(acct)
+	if strings.HasPrefix(low, PortableIDPrefix) {
+		return PortableIDPrefix + strings.TrimSpace(acct[len(PortableIDPrefix):])
+	}
+	if strings.HasPrefix(low, LegacyPortablePrefix) {
+		return LegacyPortablePrefix + strings.ToLower(strings.TrimSpace(acct[len(LegacyPortablePrefix):]))
+	}
+	acct = low
 	return acct
 }
 
@@ -22,11 +30,17 @@ func FedIncomingActorVisibleSQL(alias, viewerParam string) string {
 	return ` AND NOT EXISTS (
 			SELECT 1 FROM federation_user_blocks b
 			WHERE b.user_id = ` + viewerParam + `
-				AND b.target_acct = lower(trim(both from COALESCE(` + alias + `.actor_acct, ` + alias + `.actor_iri, ''))))
+				AND b.target_acct IN (
+					lower(trim(both from COALESCE(` + alias + `.actor_acct, ` + alias + `.actor_iri, ''))),
+					trim(both from COALESCE(` + alias + `.actor_portable_id, ''))
+				))
 		AND NOT EXISTS (
 			SELECT 1 FROM federation_user_mutes m
 			WHERE m.user_id = ` + viewerParam + `
-				AND m.target_acct = lower(trim(both from COALESCE(` + alias + `.actor_acct, ` + alias + `.actor_iri, ''))))`
+				AND m.target_acct IN (
+					lower(trim(both from COALESCE(` + alias + `.actor_acct, ` + alias + `.actor_iri, ''))),
+					trim(both from COALESCE(` + alias + `.actor_portable_id, ''))
+				))`
 }
 
 type FederationUserPrivacyRow struct {
@@ -68,7 +82,7 @@ func (p *Pool) HasFederationUserMute(ctx context.Context, userID uuid.UUID, targ
 
 func (p *Pool) AddFederationUserBlock(ctx context.Context, userID uuid.UUID, targetAcct string) error {
 	targetAcct = NormalizeFederationTargetAcct(targetAcct)
-	if targetAcct == "" || !strings.Contains(targetAcct, "@") {
+	if targetAcct == "" || (!strings.Contains(targetAcct, "@") && !strings.HasPrefix(targetAcct, PortableIDPrefix) && !strings.HasPrefix(targetAcct, LegacyPortablePrefix)) {
 		return fmt.Errorf("invalid target_acct")
 	}
 	tx, err := p.db.Begin(ctx)
@@ -111,7 +125,7 @@ func (p *Pool) RemoveFederationUserBlock(ctx context.Context, userID uuid.UUID, 
 
 func (p *Pool) AddFederationUserMute(ctx context.Context, userID uuid.UUID, targetAcct string) error {
 	targetAcct = NormalizeFederationTargetAcct(targetAcct)
-	if targetAcct == "" || !strings.Contains(targetAcct, "@") {
+	if targetAcct == "" || (!strings.Contains(targetAcct, "@") && !strings.HasPrefix(targetAcct, PortableIDPrefix) && !strings.HasPrefix(targetAcct, LegacyPortablePrefix)) {
 		return fmt.Errorf("invalid target_acct")
 	}
 	_, err := p.db.Exec(ctx, `
