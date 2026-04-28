@@ -477,6 +477,26 @@ Git SHA, set `GLIPZ_VERSION=vX.Y.Z` in `/etc/glipz/glipz.env` before restarting.
 - S3 bucket contents
 - `.env` file (keep secure)
 
+### Uninstall
+
+The Ubuntu uninstaller stops and removes the Glipz container while keeping
+configuration, media, backups, source checkout, and Docker images by default:
+
+```bash
+sudo bash scripts/uninstall-ubuntu.sh
+```
+
+To remove selected local artifacts, pass explicit flags:
+
+```bash
+sudo bash scripts/uninstall-ubuntu.sh --remove-images --remove-install-dir --remove-env
+```
+
+Use `--remove-data` only when you intentionally want to delete local media and
+legal documents. Use `--purge` to remove images, install files, env file, data,
+and backups in one run; the script asks for confirmation unless `--yes` is
+provided.
+
 ### Release Checklist
 
 - [ ] Bump `web/package.json` and `web/package-lock.json` with `npm --prefix web version <major|minor|patch>`.
