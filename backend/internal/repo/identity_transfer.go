@@ -808,7 +808,7 @@ func (p *Pool) InsertMigratedPost(ctx context.Context, userID, jobID uuid.UUID, 
 	}
 	id, err := p.CreatePost(ctx, userID, payload.Caption, payload.MediaType, objectKeys, replyTo, "", payload.IsNSFW,
 		payload.Visibility, hash, payload.ViewPasswordScope, payload.ViewPasswordTextRanges, payload.VisibleAt,
-		pollIn, payload.MembershipProvider, payload.MembershipCreatorID, payload.MembershipTierID)
+		pollIn, nil, payload.MembershipProvider, payload.MembershipCreatorID, payload.MembershipTierID)
 	if err != nil {
 		_, _ = p.db.Exec(ctx, `
 			INSERT INTO identity_transfer_post_mappings (job_id, user_id, source_post_id, original_object_id, status, last_error)

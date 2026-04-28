@@ -22,6 +22,8 @@ export type TimelineReaction = {
 export type TimelinePost = {
   id: string;
   user_email: string;
+  /** Server-side ownership hint; avoids exposing email just to show owner actions. */
+  is_own_post?: boolean;
   user_handle: string;
   /** Display name resolved by the server, falling back to the email-derived name when unset. */
   user_display_name?: string;
@@ -65,6 +67,8 @@ export type TimelinePost = {
   liked_by_me: boolean;
   reposted_by_me: boolean;
   bookmarked_by_me?: boolean;
+  /** True when this post is pinned to the author's profile. */
+  is_pinned_to_profile?: boolean;
   /** Parent post ID, present only on reply rows returned by thread APIs. */
   reply_to_post_id?: string;
   /** Federated parent URL used when the parent has no local post ID. */

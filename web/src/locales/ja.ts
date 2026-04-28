@@ -556,7 +556,7 @@ export const jaMessages = {
       requestJoin: "参加申請",
       pending: "承認待ち",
       member: "参加中",
-      memberCount: "{count}人のメンバー",
+      memberCountSuffix: "人のメンバー",
       joinRequests: "参加申請",
       approve: "承認",
       reject: "却下",

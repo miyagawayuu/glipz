@@ -30,6 +30,7 @@ import {
   sliceRunes,
 } from "../lib/viewPassword";
 import PullToRefresh from "../components/PullToRefresh.vue";
+import PostComposerForm from "../components/PostComposerForm.vue";
 import { patreonSettingsPath, usePatreonComposer } from "../composables/usePatreonComposer";
 import {
   composerAttachmentLabel,
@@ -110,12 +111,19 @@ function onLightboxKeydown(e: KeyboardEvent) {
   }
 }
 
+function onSidebarPostCreated(e: Event) {
+  const detail = (e as CustomEvent<{ mode?: string }>).detail;
+  if (detail?.mode === "community") return;
+  void load();
+}
+
 const router = useRouter();
 const route = useRoute();
 const { t } = useI18n();
 
 type FeedScope = "all" | "following" | "recommended";
 const feedScope = ref<FeedScope>("all");
+const postComposerRef = ref<{ startReply: (it: TimelinePost | ReplyingTo) => void; focus: () => void } | null>(null);
 
 const items = ref<TimelinePost[]>([]);
 /** Maps root post IDs to flat reply lists used for thread rendering. */
@@ -388,6 +396,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("keydown", onLightboxKeydown);
   window.removeEventListener("scroll", updateFeedFabVisibility);
   window.removeEventListener("resize", updateFeedFabVisibility);
+  window.removeEventListener("glipz:post-created", onSidebarPostCreated);
   document.body.style.overflow = "";
   if (toastTimer) clearTimeout(toastTimer);
 });
@@ -477,17 +486,16 @@ function startReply(it: TimelinePost) {
     });
     return;
   }
-  replyingTo.value = {
+  postComposerRef.value?.startReply({
     id: it.id,
     user_email: it.user_email,
     user_handle: it.user_handle ?? "",
     is_federated: Boolean(it.is_federated),
     remote_object_url: it.remote_object_url,
-  };
+  });
   void nextTick(() => {
     document.querySelector(".composer-anchor")?.scrollIntoView({ behavior: "smooth", block: "center" });
-    const ta = document.querySelector<HTMLTextAreaElement>(".composer-anchor textarea");
-    ta?.focus();
+    postComposerRef.value?.focus();
   });
 }
 
@@ -638,6 +646,7 @@ onActivated(() => {
 onMounted(() => {
   window.addEventListener("scroll", updateFeedFabVisibility, { passive: true });
   window.addEventListener("resize", updateFeedFabVisibility);
+  window.addEventListener("glipz:post-created", onSidebarPostCreated);
   void loadMe();
   void load().then(() => {
     startFeedStream();
@@ -656,13 +665,13 @@ onMounted(() => {
         void router.replace({ path: "/compose", query: route.query });
         return;
       }
-      replyingTo.value = {
+      postComposerRef.value?.startReply({
         id: rid,
         user_email: "",
         user_handle: rh ?? "",
         is_federated: rf === "1",
         remote_object_url: rou || undefined,
-      };
+      });
       void router.replace({ path: "/feed", query: {} });
     }
   });
@@ -1019,7 +1028,15 @@ function addPollOptionField() {
     </div>
   </Teleport>
   <PullToRefresh :on-refresh="refreshFeed">
-    <div class="composer-anchor hidden gap-3 border-b border-neutral-200 px-4 py-3 lg:flex">
+    <PostComposerForm
+      ref="postComposerRef"
+      mode="normal"
+      :viewer-email="myEmail"
+      :viewer-handle="myHandle"
+      :viewer-avatar-url="myAvatarUrl"
+      :patreon-enabled="fanclubPatreonEnabled"
+    />
+    <div v-if="false" class="composer-anchor hidden gap-3 border-b border-neutral-200 px-4 py-3 lg:flex">
       <div
         class="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-lime-500 text-xs font-bold text-white"
         aria-hidden="true"

@@ -4,6 +4,7 @@ import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 import logoImg from "./assets/logo.png";
 import Icon from "./components/Icon.vue";
+import SidebarComposeModal from "./components/SidebarComposeModal.vue";
 import UserBadges from "./components/UserBadges.vue";
 import { ACCESS, clearTokens, getAccessToken } from "./auth";
 import { api, displayInstanceDomain } from "./lib/api";
@@ -55,6 +56,7 @@ provide("appMe", me);
 const avatarImgFailed = ref(false);
 const profileMenuOpen = ref(false);
 const profileMenuRoot = ref<HTMLElement | null>(null);
+const sidebarComposeOpen = ref(false);
 /** Shows the sidebar as a drawer below the lg breakpoint. */
 const mobileNavOpen = ref(false);
 const appHeaderEl = ref<HTMLElement | null>(null);
@@ -185,7 +187,10 @@ const wideMain = computed(() => route.meta.wideMain === true);
 const mobileEdgeToEdge = computed(() => route.meta.mobileEdgeToEdge === true);
 const hideMobileChrome = computed(() => route.meta.hideMobileChrome === true);
 const isAdminShell = computed(() => route.meta.adminShell === true);
-const useViewportScroll = computed(() => authed.value && !isAdminShell.value && !usesGuestSimpleLayout.value && !wideMain.value && !hideRightAside.value);
+const containedMainScroll = computed(() => route.meta.containedMainScroll === true);
+const useViewportScroll = computed(() =>
+  authed.value && !isAdminShell.value && !usesGuestSimpleLayout.value && !wideMain.value && !hideRightAside.value && !containedMainScroll.value
+);
 const appRootClass = computed(() => {
   if (isAdminShell.value) return "min-h-screen";
   const base = useViewportScroll.value ? "min-h-screen" : authed.value ? "h-[100dvh] max-h-[100dvh]" : "min-h-screen";
@@ -248,6 +253,12 @@ const isFeedRoute = computed(() => route.path === "/feed" || route.path === "/fe
 const isSearchRoute = computed(() => route.path === "/search");
 const isNotificationsRoute = computed(() => route.path === "/notifications");
 const isMessagesRoute = computed(() => route.path === "/messages" || route.path.startsWith("/messages/"));
+const sidebarComposeMode = computed<"normal" | "community">(() =>
+  route.path.startsWith("/communities/") && route.path !== "/communities/new" ? "community" : "normal",
+);
+const sidebarComposeCommunityID = computed(() =>
+  sidebarComposeMode.value === "community" ? String(route.params.id || "") : null,
+);
 
 function isFooterNavActive(path: string): boolean {
   if (path === "/feed") return isFeedRoute.value;
@@ -410,6 +421,15 @@ function onAsideNavClick(ev: MouseEvent) {
   if (t?.closest("a")) {
     closeMobileNav();
   }
+}
+
+function openSidebarCompose() {
+  sidebarComposeOpen.value = true;
+  closeMobileNav();
+}
+
+function onSidebarComposeSubmitted() {
+  closeMobileNav();
 }
 
 function toggleProfileMenu() {
@@ -708,6 +728,14 @@ function avatarInitials(email: string): string {
             <span>{{ $t("app.nav.topics") }}</span>
           </RouterLink>
           <RouterLink
+            to="/communities"
+            class="flex items-center gap-3 rounded-full px-3 py-2.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-lime-500 hover:text-white"
+            active-class="!rounded-full !bg-lime-600 !text-white"
+          >
+            <Icon name="note" class="h-5 w-5 shrink-0" />
+            <span>{{ $t("app.nav.communities") }}</span>
+          </RouterLink>
+          <RouterLink
             to="/messages"
             class="flex items-center gap-3 rounded-full px-3 py-2.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-lime-500 hover:text-white"
             :class="route.path === '/messages' || route.path.startsWith('/messages/') ? '!rounded-full !bg-lime-600 !text-white' : ''"
@@ -765,6 +793,17 @@ function avatarInitials(email: string): string {
             <span>{{ $t("app.nav.profile") }}</span>
           </RouterLink>
         </nav>
+
+        <div class="mt-4 shrink-0 px-0.5">
+          <button
+            type="button"
+            class="flex w-full items-center justify-center gap-2 rounded-full bg-lime-600 px-4 py-3 text-sm font-bold text-white shadow-sm shadow-lime-900/10 transition hover:bg-lime-700 focus:outline-none focus:ring-2 focus:ring-lime-500 focus:ring-offset-2"
+            @click="openSidebarCompose"
+          >
+            <Icon name="pencil" class="h-5 w-5 shrink-0" />
+            <span>{{ $t("app.nav.post") }}</span>
+          </button>
+        </div>
 
         <div ref="profileMenuRoot" class="relative mt-4 shrink-0 border-t border-neutral-200 pt-4">
           <button
@@ -856,6 +895,17 @@ function avatarInitials(email: string): string {
       >
         <RouterView />
       </main>
+      <SidebarComposeModal
+        v-if="authed"
+        v-model:open="sidebarComposeOpen"
+        :mode="sidebarComposeMode"
+        :community-id="sidebarComposeCommunityID"
+        :viewer-email="me?.email"
+        :viewer-handle="me?.handle"
+        :viewer-avatar-url="me?.avatar_url"
+        :patreon-enabled="!!me?.fanclub_patreon_enabled"
+        @submitted="onSidebarComposeSubmitted"
+      />
       <aside
         v-if="authed && !usesGuestSimpleLayout && !isAdminShell && !hideRightAside"
         class="hidden min-h-0 w-[350px] shrink-0 flex-col gap-6 overflow-y-auto bg-white px-3 py-6 lg:flex"

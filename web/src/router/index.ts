@@ -74,6 +74,21 @@ export const router = createRouter({
       meta: { requiresAuth: true, mobileEdgeToEdge: true, titleKey: "routes.feed" },
     },
     {
+      path: "/communities",
+      component: () => import("../views/CommunityListView.vue"),
+      meta: { requiresAuth: false, mobileEdgeToEdge: true, titleKey: "routes.communities" },
+    },
+    {
+      path: "/communities/new",
+      component: () => import("../views/CommunityCreateView.vue"),
+      meta: { requiresAuth: true, mobileEdgeToEdge: true, titleKey: "routes.communityCreate" },
+    },
+    {
+      path: "/communities/:id",
+      component: () => import("../views/CommunityDetailView.vue"),
+      meta: { requiresAuth: false, containedMainScroll: true, mobileEdgeToEdge: true, titleKey: "routes.communityDetail" },
+    },
+    {
       path: "/compose",
       component: () => import("../views/PostComposeView.vue"),
       meta: { requiresAuth: true, mobileEdgeToEdge: true, titleKey: "routes.compose" },

@@ -2,11 +2,13 @@ package httpserver
 
 import (
 	"context"
+	"net/http"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 
+	"glipz.io/backend/internal/authjwt"
 	"glipz.io/backend/internal/repo"
 )
 
@@ -66,6 +68,24 @@ func TestOAuthScopeRejectsEmptyAndUnknown(t *testing.T) {
 	}
 	if scope, ok := normalizeOAuthScope("posts:read media:write"); !ok || scope != "posts:read media:write" {
 		t.Fatalf("valid scope rejected or reordered unexpectedly: scope=%q ok=%v", scope, ok)
+	}
+}
+
+func TestOAuthCommunityScopes(t *testing.T) {
+	readClaims := &authjwt.Claims{TokenUse: authjwt.TokenUseOAuth, Scope: "posts:read"}
+	writeClaims := &authjwt.Claims{TokenUse: authjwt.TokenUseOAuth, Scope: "posts:write"}
+
+	communityID := uuid.New().String()
+	req, _ := http.NewRequest(http.MethodGet, "/api/v1/communities/"+communityID+"/posts", nil)
+	if !oauthClaimsAllowRequest(readClaims, req) {
+		t.Fatal("posts:read OAuth scope should allow public community reads")
+	}
+	req, _ = http.NewRequest(http.MethodPost, "/api/v1/communities/"+communityID+"/join-requests", nil)
+	if oauthClaimsAllowRequest(readClaims, req) {
+		t.Fatal("posts:read OAuth scope should not allow community mutations")
+	}
+	if !oauthClaimsAllowRequest(writeClaims, req) {
+		t.Fatal("posts:write OAuth scope should allow community mutations")
 	}
 }
 

@@ -34,6 +34,7 @@ type Profile = {
   profile_urls?: string[];
   avatar_url: string | null;
   header_url: string | null;
+  pinned_post_id?: string | null;
   is_me: boolean;
   follower_count?: number;
   following_count?: number;
@@ -133,6 +134,16 @@ function patchPost(id: string, patch: Partial<TimelinePost>) {
     changed = true;
   }
   if (changed) threadRepliesByRoot.value = tr;
+}
+
+function sortProfilePosts(list: TimelinePost[]): TimelinePost[] {
+  const pinnedId = profile.value?.pinned_post_id ?? "";
+  return [...list]
+    .map((it) => ({ ...it, is_pinned_to_profile: pinnedId ? it.id === pinnedId : Boolean(it.is_pinned_to_profile) }))
+    .sort((a, b) => {
+      if (a.is_pinned_to_profile !== b.is_pinned_to_profile) return a.is_pinned_to_profile ? -1 : 1;
+      return 0;
+    });
 }
 
 async function refreshThreadForRoot(rootId: string) {
@@ -364,7 +375,7 @@ async function loadAll() {
       method: "GET",
       ...authOpt,
     });
-    posts.value = res.items.map((x) => mapFeedItem(x as Parameters<typeof mapFeedItem>[0]));
+    posts.value = sortProfilePosts(res.items.map((x) => mapFeedItem(x as Parameters<typeof mapFeedItem>[0])));
     await loadThreadsForProfile();
   } catch (e: unknown) {
     profile.value = null;
@@ -639,6 +650,27 @@ async function toggleBookmark(it: TimelinePost) {
     patchPost(it.id, { bookmarked_by_me: res.bookmarked });
   } catch {
     showToast(t("views.userProfile.toasts.bookmarkFailed"));
+  } finally {
+    actionBusy.value = null;
+  }
+}
+
+async function toggleProfilePin(it: TimelinePost) {
+  const token = getAccessToken();
+  const p = profile.value;
+  if (!token || !p?.is_me || actionBusy.value === `pin-${it.id}`) return;
+  actionBusy.value = `pin-${it.id}`;
+  try {
+    const nextPinned = !it.is_pinned_to_profile;
+    await api(`/api/v1/posts/${encodeURIComponent(it.id)}/profile-pin`, {
+      method: nextPinned ? "PUT" : "DELETE",
+      token,
+    });
+    profile.value = { ...p, pinned_post_id: nextPinned ? it.id : null };
+    posts.value = sortProfilePosts(posts.value);
+    showToast(nextPinned ? t("views.userProfile.toasts.pinSaved") : t("views.userProfile.toasts.pinRemoved"));
+  } catch {
+    showToast(t("views.userProfile.toasts.pinFailed"));
   } finally {
     actionBusy.value = null;
   }
@@ -1162,9 +1194,11 @@ watch(handleParam, () => void loadAll());
           :viewer-email="myEmail"
           show-federated-reply-action
           show-federated-repost-action
+          show-profile-pin-action
           @reply="onReply"
           @toggle-reaction="toggleReaction"
           @toggle-bookmark="toggleBookmark"
+          @toggle-profile-pin="toggleProfilePin"
           @toggle-repost="onToggleRepost"
           @share="sharePost"
           @open-lightbox="openLightbox"

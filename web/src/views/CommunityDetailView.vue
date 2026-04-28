@@ -90,6 +90,14 @@ const communityTabs = computed<Array<{ key: CommunityTab; label: string }>>(() =
   { key: "details", label: t("views.communityDetail.tabs.details") },
 ]);
 const memberPreviews = computed(() => community.value?.member_previews?.slice(0, 5) ?? []);
+const memberCountLead = computed(() => {
+  const count = community.value?.approved_member_count ?? 0;
+  if (count >= 10000) {
+    const compact = Math.floor(count / 1000) / 10;
+    return `${Number.isInteger(compact) ? compact.toFixed(0) : compact.toFixed(1)}万`;
+  }
+  return String(count);
+});
 
 function safeMemberAvatarURL(raw: unknown): string {
   return safeMediaURL(raw);
@@ -543,7 +551,7 @@ onUnmounted(() => {
               </div>
             </div>
             <p class="text-base font-normal leading-none text-neutral-800 sm:text-lg">
-              {{ $t("views.communityDetail.memberCount", { count: community.approved_member_count }) }}
+              <span class="font-bold text-neutral-900">{{ memberCountLead }}</span>{{ $t("views.communityDetail.memberCountSuffix") }}
             </p>
           </div>
         </div>

@@ -50,5 +50,11 @@ END $$`,
 	if err := RunBookmarks(ctx, pool); err != nil {
 		return err
 	}
+	if err := RunCommunities(ctx, pool); err != nil {
+		return err
+	}
+	if err := RunPinnedPosts(ctx, pool); err != nil {
+		return err
+	}
 	return nil
 }

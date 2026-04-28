@@ -5,6 +5,7 @@ declare module "vue-router" {
     requiresAuth?: boolean;
     hideRightAside?: boolean;
     wideMain?: boolean;
+    containedMainScroll?: boolean;
     mobileEdgeToEdge?: boolean;
     hideMobileChrome?: boolean;
     guestSimpleLayout?: boolean;

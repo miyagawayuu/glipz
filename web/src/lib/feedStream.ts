@@ -69,6 +69,7 @@ function mapReactions(input: unknown): TimelineReaction[] {
 function mapFeedItem(x: {
   id: string;
   user_email: string;
+  is_own_post?: boolean;
   user_handle?: string;
   user_display_name?: string;
   user_badges?: string[];
@@ -98,6 +99,7 @@ function mapFeedItem(x: {
   liked_by_me?: boolean;
   reposted_by_me?: boolean;
   bookmarked_by_me?: boolean;
+  is_pinned_to_profile?: boolean;
   reply_to_post_id?: string;
   reply_to_object_url?: string;
   feed_entry_id?: string;
@@ -121,6 +123,7 @@ function mapFeedItem(x: {
   return {
     id: x.id,
     user_email: x.user_email,
+    is_own_post: Boolean(x.is_own_post),
     user_handle: x.user_handle ?? "",
     user_display_name: x.user_display_name ?? "",
     user_badges: Array.isArray(x.user_badges) ? x.user_badges.map((badge) => String(badge)) : [],
@@ -162,6 +165,7 @@ function mapFeedItem(x: {
     liked_by_me: Boolean(x.liked_by_me),
     reposted_by_me: Boolean(x.reposted_by_me),
     bookmarked_by_me: Boolean(x.bookmarked_by_me),
+    is_pinned_to_profile: Boolean(x.is_pinned_to_profile),
     reply_to_post_id: typeof x.reply_to_post_id === "string" && x.reply_to_post_id ? x.reply_to_post_id : undefined,
     reply_to_object_url: typeof x.reply_to_object_url === "string" && x.reply_to_object_url ? x.reply_to_object_url : undefined,
     feed_entry_id:

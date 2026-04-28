@@ -70,6 +70,8 @@ const props = withDefaults(
     showFederatedReplyAction?: boolean;
     /** Shows the repost action even for federated posts. */
     showFederatedRepostAction?: boolean;
+    /** Shows owner-only actions for pinning a post to the profile page. */
+    showProfilePinAction?: boolean;
   }>(),
   {
     viewerIsAdmin: null,
@@ -81,6 +83,7 @@ const props = withDefaults(
     showRemoteObjectLink: false,
     showFederatedReplyAction: false,
     showFederatedRepostAction: false,
+    showProfilePinAction: false,
   },
 );
 
@@ -152,13 +155,14 @@ const emit = defineEmits<{
   toggleBookmark: [it: TimelinePost];
   toggleRepost: [it: TimelinePost];
   share: [it: TimelinePost];
+  toggleProfilePin: [it: TimelinePost];
   openLightbox: [urls: string[], index: number];
   patchItem: [payload: { id: string; patch: Partial<TimelinePost> }];
   removePost: [id: string];
 }>();
 
 function isOwnPost(it: TimelinePost) {
-  return Boolean(effectiveViewerEmail.value && it.user_email === effectiveViewerEmail.value);
+  return Boolean(it.is_own_post || (effectiveViewerEmail.value && it.user_email === effectiveViewerEmail.value));
 }
 
 function membershipUnlockUIEnabled(it: TimelinePost): boolean {
@@ -284,6 +288,22 @@ function rowActorDisplayName(it: TimelinePost): string {
     return it.repost.user_display_name?.trim() || displayNameFromEmail(it.repost.user_email);
   }
   return timelineDisplayName(it);
+}
+
+function actorInitials(email?: string, handle?: string, displayName?: string): string {
+  const fallback = (email?.trim() || handle?.trim().replace(/^@/, "") || displayName?.trim() || "?");
+  return avatarInitials(fallback);
+}
+
+function rowActorInitials(it: TimelinePost): string {
+  if (hasCommentedRepost(it) && it.repost) {
+    return actorInitials(it.repost.user_email, it.repost.user_handle, it.repost.user_display_name);
+  }
+  return actorInitials(it.user_email, it.user_handle, it.user_display_name);
+}
+
+function originalPostInitials(it: TimelinePost): string {
+  return actorInitials(it.user_email, it.user_handle, it.user_display_name);
 }
 
 function rowActorBadges(it: TimelinePost): string[] {
@@ -462,6 +482,11 @@ function canShowPostMenu(it: TimelinePost): boolean {
     canAdminSuspendAuthor(it) ||
     canFederationPrivacyMenu(it)
   );
+}
+
+function requestToggleProfilePin(it: TimelinePost) {
+  openMenuId.value = null;
+  emit("toggleProfilePin", it);
 }
 
 function moderationErrorMessage(e: unknown, fallback: string): string {
@@ -903,7 +928,7 @@ async function submitUnlock(it: TimelinePost) {
           class="h-full w-full object-cover"
           @error="onAvatarLoadError(feedRowKey(it))"
         />
-        <span v-else>{{ avatarInitials(rowActorEmail(it)) }}</span>
+        <span v-else>{{ rowActorInitials(it) }}</span>
       </RouterLink>
       <div
         v-else
@@ -917,7 +942,7 @@ async function submitUnlock(it: TimelinePost) {
           class="h-full w-full object-cover"
           @error="onAvatarLoadError(feedRowKey(it))"
         />
-        <span v-else>{{ avatarInitials(rowActorEmail(it)) }}</span>
+        <span v-else>{{ rowActorInitials(it) }}</span>
       </div>
       <div class="min-w-0 flex-1">
         <div class="flex items-start justify-between gap-2">
@@ -961,6 +986,12 @@ async function submitUnlock(it: TimelinePost) {
                 class="shrink-0 rounded bg-lime-100 px-1.5 py-0.5 text-[10px] font-semibold text-lime-900"
               >
                 {{ $t("components.postTimeline.repostBadge") }}
+              </span>
+              <span
+                v-if="it.is_pinned_to_profile"
+                class="shrink-0 rounded bg-lime-100 px-1.5 py-0.5 text-[10px] font-semibold text-lime-900"
+              >
+                {{ $t("components.postTimeline.pinnedBadge") }}
               </span>
               <span
                 v-if="!hasCommentedRepost(it) && it.is_federated && it.federated_boost"
@@ -1024,6 +1055,16 @@ async function submitUnlock(it: TimelinePost) {
                 @click.stop="openEdit(it)"
               >
                 {{ $t("components.postTimeline.editPost") }}
+              </button>
+              <button
+                v-if="showProfilePinAction && isOwnPost(it) && !it.reply_to_post_id && !it.is_federated && !it.repost"
+                type="button"
+                role="menuitem"
+                class="block w-full px-4 py-2.5 text-left text-sm text-neutral-800 hover:bg-neutral-50"
+                :disabled="actionBusy === `pin-${it.id}`"
+                @click.stop="requestToggleProfilePin(it)"
+              >
+                {{ it.is_pinned_to_profile ? $t("components.postTimeline.unpinFromProfile") : $t("components.postTimeline.pinToProfile") }}
               </button>
               <button
                 v-if="canReportPost(it)"
@@ -1175,7 +1216,7 @@ async function submitUnlock(it: TimelinePost) {
                 class="h-full w-full object-cover"
                 @error="onAvatarLoadError(`quoted-${feedRowKey(it)}`)"
               />
-              <span v-else>{{ avatarInitials(it.user_email) }}</span>
+              <span v-else>{{ originalPostInitials(it) }}</span>
             </RouterLink>
             <div
               v-else
@@ -1190,7 +1231,7 @@ async function submitUnlock(it: TimelinePost) {
                 class="h-full w-full object-cover"
                 @error="onAvatarLoadError(`quoted-${feedRowKey(it)}`)"
               />
-              <span v-else>{{ avatarInitials(it.user_email) }}</span>
+              <span v-else>{{ originalPostInitials(it) }}</span>
             </div>
             <div class="min-w-0 flex-1">
               <div class="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 leading-tight">

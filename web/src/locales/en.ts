@@ -548,7 +548,7 @@ export const enOverrides: DeepPartial<AppMessageSchema> = {
       requestJoin: "Request to join",
       pending: "Pending approval",
       member: "Member",
-      memberCount: "{count} members",
+      memberCountSuffix: " members",
       joinRequests: "Join requests",
       approve: "Approve",
       reject: "Reject",

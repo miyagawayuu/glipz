@@ -224,6 +224,7 @@ type PublicProfile struct {
 	ProfileExternalURLs []string
 	AvatarObjectKey     *string
 	HeaderObjectKey     *string
+	PinnedPostID        *uuid.UUID
 }
 
 // FollowListUser represents a user row for follower and following lists.
@@ -512,15 +513,17 @@ func (p *Pool) PublicProfileByHandle(ctx context.Context, handle string) (Public
 	var pfl PublicProfile
 	var av pgtype.Text
 	var hdr pgtype.Text
+	var pinned pgtype.UUID
 	var badges []string
 	var urlRaw []byte
 	var alsoKnownAs []string
 	err := p.db.QueryRow(ctx, `
 		SELECT id, email, handle, display_name, bio, COALESCE(badges, '{}'::text[]), avatar_object_key, header_object_key,
+			pinned_post_id,
 			COALESCE(profile_external_urls, '[]'::jsonb)::text,
 			COALESCE(portable_id, ''), COALESCE(account_public_key, ''), COALESCE(moved_to_acct, ''), COALESCE(also_known_as, '{}'::text[])
 		FROM users WHERE lower(handle) = lower($1)
-	`, handle).Scan(&pfl.ID, &pfl.Email, &pfl.Handle, &pfl.DisplayName, &pfl.Bio, &badges, &av, &hdr, &urlRaw,
+	`, handle).Scan(&pfl.ID, &pfl.Email, &pfl.Handle, &pfl.DisplayName, &pfl.Bio, &badges, &av, &hdr, &pinned, &urlRaw,
 		&pfl.PortableID, &pfl.AccountPublicKey, &pfl.MovedToAcct, &alsoKnownAs)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return PublicProfile{}, ErrNotFound
@@ -535,6 +538,10 @@ func (p *Pool) PublicProfileByHandle(ctx context.Context, handle string) (Public
 	if hdr.Valid {
 		s := hdr.String
 		pfl.HeaderObjectKey = &s
+	}
+	if pinned.Valid {
+		id := uuid.UUID(pinned.Bytes)
+		pfl.PinnedPostID = &id
 	}
 	pfl.Badges = NormalizeUserBadges(badges)
 	pfl.ProfileExternalURLs = unmarshalProfileExternalURLsJSON(urlRaw)
@@ -844,7 +851,7 @@ func (p *Pool) PostExists(ctx context.Context, id uuid.UUID) (bool, error) {
 	return ok, nil
 }
 
-func (p *Pool) CreatePost(ctx context.Context, userID uuid.UUID, caption, mediaType string, objectKeys []string, replyTo *uuid.UUID, replyToRemoteObjectIRI string, isNSFW bool, visibility string, viewPasswordHash *string, viewPasswordScope int, viewPasswordTextRanges []ViewPasswordTextRange, visibleAt time.Time, pollIn *PollCreateInput, membershipProvider, membershipCreatorID, membershipTierID string) (uuid.UUID, error) {
+func (p *Pool) CreatePost(ctx context.Context, userID uuid.UUID, caption, mediaType string, objectKeys []string, replyTo *uuid.UUID, replyToRemoteObjectIRI string, isNSFW bool, visibility string, viewPasswordHash *string, viewPasswordScope int, viewPasswordTextRanges []ViewPasswordTextRange, visibleAt time.Time, pollIn *PollCreateInput, communityID *uuid.UUID, membershipProvider, membershipCreatorID, membershipTierID string) (uuid.UUID, error) {
 	if objectKeys == nil {
 		objectKeys = []string{}
 	}
@@ -895,7 +902,7 @@ func (p *Pool) CreatePost(ctx context.Context, userID uuid.UUID, caption, mediaT
 
 	replyToRemoteObjectIRI = strings.TrimSpace(replyToRemoteObjectIRI)
 	visibility = normalizePostVisibility(visibility)
-	feedDone := replyTo != nil || replyToRemoteObjectIRI != ""
+	feedDone := replyTo != nil || replyToRemoteObjectIRI != "" || communityID != nil
 
 	tx, err := p.db.Begin(ctx)
 	if err != nil {
@@ -909,10 +916,10 @@ func (p *Pool) CreatePost(ctx context.Context, userID uuid.UUID, caption, mediaT
 			user_id, caption, media_type, object_keys, reply_to_id, reply_to_remote_object_iri,
 			is_nsfw, visibility, view_password_hash, view_password_scope, view_password_text_ranges, visible_at, feed_broadcast_done, group_id,
 			membership_provider, membership_creator_id, membership_tier_id
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13, NULL, $14, $15, $16)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13, $14, $15, $16, $17)
 		RETURNING id
 	`, userID, caption, mediaType, objectKeys, replyTo, replyToRemoteObjectIRI, isNSFW, visibility, viewPasswordHash, scope, rangesJSON, visibleAt.UTC(), feedDone,
-		membershipProvider, membershipCreatorID, membershipTierID,
+		communityID, membershipProvider, membershipCreatorID, membershipTierID,
 	).Scan(&id)
 	if err != nil {
 		return uuid.Nil, err
@@ -1334,6 +1341,56 @@ func (p *Pool) PostFeedMeta(ctx context.Context, postID uuid.UUID) (authorID uui
 	return authorID, isRoot, nil
 }
 
+// SetPinnedPost pins one of the user's own top-level profile posts.
+func (p *Pool) SetPinnedPost(ctx context.Context, userID, postID uuid.UUID) error {
+	var owner uuid.UUID
+	var reply pgtype.UUID
+	var remoteReply string
+	err := p.db.QueryRow(ctx, `
+		SELECT user_id, reply_to_id, COALESCE(reply_to_remote_object_iri, '')
+		FROM posts
+		WHERE id = $1
+		  AND visible_at <= NOW()
+		  AND group_id IS NULL
+	`, postID).Scan(&owner, &reply, &remoteReply)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if owner != userID {
+		return ErrForbidden
+	}
+	if reply.Valid || strings.TrimSpace(remoteReply) != "" {
+		return ErrForbidden
+	}
+	ct, err := p.db.Exec(ctx, `UPDATE users SET pinned_post_id = $2 WHERE id = $1`, userID, postID)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// ClearPinnedPost removes the user's profile pin when it points at postID.
+func (p *Pool) ClearPinnedPost(ctx context.Context, userID, postID uuid.UUID) error {
+	ct, err := p.db.Exec(ctx, `
+		UPDATE users
+		SET pinned_post_id = NULL
+		WHERE id = $1 AND pinned_post_id = $2
+	`, userID, postID)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (p *Pool) DeletePostByActor(ctx context.Context, actorID, postID uuid.UUID, allowForeign bool) error {
 	var owner uuid.UUID
 	err := p.db.QueryRow(ctx, `SELECT user_id FROM posts WHERE id = $1`, postID).Scan(&owner)
@@ -1491,7 +1548,10 @@ func (p *Pool) ListUserPosts(ctx context.Context, viewerID, authorID uuid.UUID, 
 		  AND p.visible_at <= NOW()
 		  AND p.group_id IS NULL
 		  AND `+postReadableByViewerSQL("p", "$1")+`
-		ORDER BY p.visible_at DESC, p.id DESC
+		ORDER BY
+			CASE WHEN p.id = (SELECT pinned_post_id FROM users WHERE id = $2) THEN 0 ELSE 1 END,
+			p.visible_at DESC,
+			p.id DESC
 		LIMIT $3
 	`, viewerID, authorID, limit)
 	if err != nil {
