@@ -1537,7 +1537,7 @@ type feedReactionJSON struct {
 
 type feedItem struct {
 	ID                     string                      `json:"id"`
-	UserEmail              string                      `json:"user_email"`
+	UserEmail              string                      `json:"user_email,omitempty"`
 	UserHandle             string                      `json:"user_handle"`
 	UserDisplayName        string                      `json:"user_display_name"`
 	UserBadges             []string                    `json:"user_badges,omitempty"`
@@ -1584,7 +1584,7 @@ type feedItem struct {
 
 type feedRepostMetaJSON struct {
 	UserID          string   `json:"user_id"`
-	UserEmail       string   `json:"user_email"`
+	UserEmail       string   `json:"user_email,omitempty"`
 	UserHandle      string   `json:"user_handle"`
 	UserDisplayName string   `json:"user_display_name"`
 	UserBadges      []string `json:"user_badges,omitempty"`
@@ -1724,9 +1724,9 @@ func (s *Server) postRowToFeedItem(ctx context.Context, row repo.PostRow, viewer
 	}
 	return feedItem{
 		ID:                     row.ID.String(),
-		UserEmail:              row.Email,
+		UserEmail:              "",
 		UserHandle:             row.UserHandle,
-		UserDisplayName:        resolvedDisplayName(row.DisplayName, row.Email),
+		UserDisplayName:        resolvedPublicDisplayName(row.DisplayName, row.UserHandle),
 		UserBadges:             userBadgesJSON(badgeMap[row.UserID]),
 		UserAvatarURL:          avatarURL,
 		Caption:                caption,
@@ -1790,9 +1790,9 @@ func (s *Server) repostMetaJSON(rr *repo.RepostFeedEntry, badgeMap map[uuid.UUID
 	}
 	out := &feedRepostMetaJSON{
 		UserID:          rr.ReposterID.String(),
-		UserEmail:       rr.ReposterEmail,
+		UserEmail:       "",
 		UserHandle:      rr.ReposterHandle,
-		UserDisplayName: resolvedDisplayName(rr.ReposterDisplayName, rr.ReposterEmail),
+		UserDisplayName: resolvedPublicDisplayName(rr.ReposterDisplayName, rr.ReposterHandle),
 		UserBadges:      userBadgesJSON(badgeMap[rr.ReposterID]),
 		UserAvatarURL:   av,
 		RepostedAt:      rr.RepostedAt.UTC().Format(time.RFC3339),
@@ -2865,6 +2865,16 @@ func resolvedDisplayName(stored, email string) string {
 		return t
 	}
 	return displayNameFromEmail(email)
+}
+
+func resolvedPublicDisplayName(stored, handle string) string {
+	if t := strings.TrimSpace(stored); t != "" {
+		return t
+	}
+	if h := strings.TrimPrefix(strings.TrimSpace(handle), "@"); h != "" {
+		return h
+	}
+	return "user"
 }
 
 func (s *Server) handlePublicProfileByHandle(w http.ResponseWriter, r *http.Request) {

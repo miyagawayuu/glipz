@@ -36,6 +36,13 @@ func (s *Server) federatedIncomingHiddenFromViewer(ctx context.Context, viewer u
 	return s.db.HasFederationUserMute(ctx, viewer, key)
 }
 
+func federatedIncomingRecipientVisible(row repo.FederatedIncomingPost, viewer uuid.UUID, authenticated bool) bool {
+	if row.RecipientUserID == nil {
+		return true
+	}
+	return authenticated && *row.RecipientUserID == viewer
+}
+
 // rejectIfFederatedIncomingHidden writes not_found and returns true when the viewer has blocked or muted the remote author.
 func (s *Server) rejectIfFederatedIncomingHidden(w http.ResponseWriter, r *http.Request, uid uuid.UUID, row repo.FederatedIncomingPost) bool {
 	hidden, err := s.federatedIncomingHiddenFromViewer(r.Context(), uid, row)
@@ -48,6 +55,14 @@ func (s *Server) rejectIfFederatedIncomingHidden(w http.ResponseWriter, r *http.
 		return true
 	}
 	return false
+}
+
+func (s *Server) rejectIfFederatedIncomingUnavailable(w http.ResponseWriter, r *http.Request, uid uuid.UUID, row repo.FederatedIncomingPost) bool {
+	if !federatedIncomingRecipientVisible(row, uid, uid != uuid.Nil) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+		return true
+	}
+	return s.rejectIfFederatedIncomingHidden(w, r, uid, row)
 }
 
 type federationPrivacyAcctReq struct {

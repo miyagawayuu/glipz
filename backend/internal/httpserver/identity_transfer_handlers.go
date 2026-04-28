@@ -163,7 +163,7 @@ func (s *Server) handleMeIdentityImportSecure(w http.ResponseWriter, r *http.Req
 	}
 	privateKey, err := decryptIdentityPrivateKey(req.Passphrase, *req.Bundle.PrivateKey)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_identity_bundle"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "wrong_passphrase"})
 		return
 	}
 	if err := s.db.SetUserPortableIdentity(r.Context(), uid, repo.PortableIdentity{

@@ -120,9 +120,15 @@ function clearStatus() {
 
 function setError(err: unknown) {
   const msg = err instanceof Error ? err.message : "";
-  error.value = msg === "unauthorized"
-    ? t("components.identityPortability.transferWizard.loginRequired")
-    : msg || t("components.identityPortability.failed");
+  if (msg === "unauthorized") {
+    error.value = t("components.identityPortability.transferWizard.loginRequired");
+  } else if (msg === "wrong_passphrase") {
+    error.value = t("components.identityPortability.transferWizard.wrongPassphrase");
+  } else if (msg === "invalid_identity_bundle") {
+    error.value = t("components.identityPortability.transferWizard.invalidIdentityBundle");
+  } else {
+    error.value = msg || t("components.identityPortability.failed");
+  }
 }
 
 function validatePassphrase() {

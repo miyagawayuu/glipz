@@ -114,7 +114,7 @@ func (s *Server) handleFederatedToggleLike(w http.ResponseWriter, r *http.Reques
 		writeServerError(w, "loadFederatedIncomingForAction", err)
 		return
 	}
-	if s.rejectIfFederatedIncomingHidden(w, r, uid, row) {
+	if s.rejectIfFederatedIncomingUnavailable(w, r, uid, row) {
 		return
 	}
 	inboxURL, err := s.resolveIncomingPostEventsInbox(r.Context(), row)
@@ -176,7 +176,7 @@ func (s *Server) handleFederatedToggleBookmark(w http.ResponseWriter, r *http.Re
 		writeServerError(w, "loadFederatedIncomingForAction", err)
 		return
 	}
-	if s.rejectIfFederatedIncomingHidden(w, r, uid, row) {
+	if s.rejectIfFederatedIncomingUnavailable(w, r, uid, row) {
 		return
 	}
 	bookmarked, err := s.db.ToggleFederatedIncomingBookmark(r.Context(), uid, row.ID)
@@ -216,7 +216,7 @@ func (s *Server) handleFederatedPollVote(w http.ResponseWriter, r *http.Request)
 		writeServerError(w, "loadFederatedIncomingForAction", err)
 		return
 	}
-	if s.rejectIfFederatedIncomingHidden(w, r, uid, row) {
+	if s.rejectIfFederatedIncomingUnavailable(w, r, uid, row) {
 		return
 	}
 	inboxURL, err := s.resolveIncomingPostEventsInbox(r.Context(), row)
@@ -309,7 +309,7 @@ func (s *Server) handleFederatedPostUnlock(w http.ResponseWriter, r *http.Reques
 		writeServerError(w, "loadFederatedIncomingForAction", err)
 		return
 	}
-	if s.rejectIfFederatedIncomingHidden(w, r, uid, row) {
+	if s.rejectIfFederatedIncomingUnavailable(w, r, uid, row) {
 		return
 	}
 	unlockURL := strings.TrimSpace(row.UnlockURL)
@@ -516,7 +516,7 @@ func (s *Server) handleFederatedToggleRepost(w http.ResponseWriter, r *http.Requ
 		writeServerError(w, "loadFederatedIncomingForAction", err)
 		return
 	}
-	if s.rejectIfFederatedIncomingHidden(w, r, uid, row) {
+	if s.rejectIfFederatedIncomingUnavailable(w, r, uid, row) {
 		return
 	}
 	inboxURL, err := s.resolveIncomingPostEventsInbox(r.Context(), row)
@@ -616,7 +616,7 @@ func (s *Server) handleAddFederatedIncomingReaction(w http.ResponseWriter, r *ht
 		writeServerError(w, "loadFederatedIncomingForAction", err)
 		return
 	}
-	if s.rejectIfFederatedIncomingHidden(w, r, uid, row) {
+	if s.rejectIfFederatedIncomingUnavailable(w, r, uid, row) {
 		return
 	}
 	inboxURL, err := s.resolveIncomingPostEventsInbox(r.Context(), row)
@@ -696,7 +696,7 @@ func (s *Server) handleDeleteFederatedIncomingReaction(w http.ResponseWriter, r 
 		writeServerError(w, "loadFederatedIncomingForAction", err)
 		return
 	}
-	if s.rejectIfFederatedIncomingHidden(w, r, uid, row) {
+	if s.rejectIfFederatedIncomingUnavailable(w, r, uid, row) {
 		return
 	}
 	inboxURL, err := s.resolveIncomingPostEventsInbox(r.Context(), row)

@@ -151,6 +151,8 @@ export const enOverrides: DeepPartial<AppMessageSchema> = {
         cancel: "Cancel",
         weakPassphrase: "Use a migration passphrase with at least 12 characters.",
         passphraseMismatch: "Migration passphrases do not match.",
+        wrongPassphrase: "The migration passphrase is wrong or the bundle could not be decrypted.",
+        invalidIdentityBundle: "The ID bundle format is invalid.",
         missingTargetOrigin: "Enter the target instance URL.",
         missingSource: "Enter the source URL, session ID, and migration token.",
         missingPassphrase: "Enter the migration passphrase.",

@@ -13,7 +13,6 @@ const (
 )
 
 var federationSupportedProtocolVersions = []string{
-	federationProtocolName + "/1",
 	federationProtocolName + "/2",
 	federationProtocolVersion,
 }
@@ -44,7 +43,7 @@ func federationDiscoverySupportsCurrentProtocol(server federationServerDiscovery
 		if !ok || !strings.EqualFold(name, federationProtocolName) {
 			continue
 		}
-		if major >= 1 {
+		if major >= 2 {
 			return true
 		}
 	}

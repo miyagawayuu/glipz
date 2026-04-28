@@ -486,7 +486,7 @@ func (s *Server) handlePatreonEntitlementFederated(w http.ResponseWriter, r *htt
 		writeServerError(w, "loadFederatedIncoming patreon fed", err)
 		return
 	}
-	if s.rejectIfFederatedIncomingHidden(w, r, uid, row) {
+	if s.rejectIfFederatedIncomingUnavailable(w, r, uid, row) {
 		return
 	}
 	jws, err := s.mintPatreonEntitlementJWTFederatedIncoming(r.Context(), uid, row)

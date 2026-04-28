@@ -546,10 +546,10 @@ func (s *Server) verifyFederationRequest(r *http.Request, body []byte) (verified
 		return verifiedFederationRequest{}, fmt.Errorf("missing federation signature headers")
 	}
 	name, major, ok := parseFederationProtocolVersion(protoHeader)
-	if !ok || !strings.EqualFold(name, federationProtocolName) || major < 1 || major > 3 {
+	if !ok || !strings.EqualFold(name, federationProtocolName) || major < 2 || major > 3 {
 		return verifiedFederationRequest{}, fmt.Errorf("unsupported federation protocol")
 	}
-	if major >= 2 && nonce == "" {
+	if nonce == "" {
 		return verifiedFederationRequest{}, fmt.Errorf("missing federation nonce")
 	}
 	unixSec, err := time.Parse(time.RFC3339, ts)
@@ -582,14 +582,12 @@ func (s *Server) verifyFederationRequest(r *http.Request, body []byte) (verified
 	if !ed25519.Verify(ed25519.PublicKey(pubRaw), msg, sig) {
 		return verifiedFederationRequest{}, fmt.Errorf("invalid federation signature")
 	}
-	if major >= 2 {
-		ok, err := s.acceptFederationNonce(r.Context(), normalizedKeyID, nonce)
-		if err != nil {
-			return verifiedFederationRequest{}, err
-		}
-		if !ok {
-			return verifiedFederationRequest{}, fmt.Errorf("replayed federation nonce")
-		}
+	nonceOK, err := s.acceptFederationNonce(r.Context(), normalizedKeyID, nonce)
+	if err != nil {
+		return verifiedFederationRequest{}, err
+	}
+	if !nonceOK {
+		return verifiedFederationRequest{}, fmt.Errorf("replayed federation nonce")
 	}
 	return verifiedFederationRequest{
 		InstanceHost:    instanceHost,
@@ -642,10 +640,40 @@ func (s *Server) acceptFederationNonce(ctx context.Context, normalizedKeyID, non
 
 func (s *Server) validateFederationEventID(verified verifiedFederationRequest, eventID string) (string, error) {
 	eventID = strings.TrimSpace(eventID)
-	if verified.ProtocolMajor >= 2 && eventID == "" {
+	if eventID == "" {
 		return "", fmt.Errorf("missing federation event id")
 	}
 	return eventID, nil
+}
+
+func federationAcctHostMatchesInstance(acct, instanceHost string) bool {
+	_, host, err := splitAcct(acct)
+	if err != nil {
+		return false
+	}
+	host = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(host)), "www.")
+	instanceHost = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(instanceHost)), "www.")
+	return host != "" && host == instanceHost
+}
+
+func validateFederationAuthorForInstance(verified verifiedFederationRequest, author federationEventAuthor) error {
+	if !federationAcctHostMatchesInstance(author.Acct, verified.InstanceHost) {
+		return fmt.Errorf("author host mismatch")
+	}
+	return nil
+}
+
+func validateFederationMoveForInstance(verified verifiedFederationRequest, move *federationAccountMove) error {
+	if move == nil {
+		return fmt.Errorf("missing move")
+	}
+	if !federationAcctHostMatchesInstance(move.OldAcct, verified.InstanceHost) {
+		return fmt.Errorf("move old acct host mismatch")
+	}
+	if !federationAcctHostMatchesInstance(move.NewAcct, verified.InstanceHost) {
+		return fmt.Errorf("move new acct host mismatch")
+	}
+	return nil
 }
 
 func (s *Server) federationEventAlreadyProcessed(ctx context.Context, verified verifiedFederationRequest, eventID string) (bool, error) {
@@ -1373,6 +1401,10 @@ func (s *Server) handleFederationEventInbound(w http.ResponseWriter, r *http.Req
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_event"})
 		return
 	}
+	if err := validateFederationAuthorForInstance(verified, ev.Author); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_author"})
+		return
+	}
 	remoteAccount, remoteAccountErr := s.rememberEventAuthorRemoteAccount(r.Context(), verified, ev.Author)
 	if strings.HasPrefix(kind, "dm_") {
 		if ev.DM == nil {
@@ -1395,6 +1427,10 @@ func (s *Server) handleFederationEventInbound(w http.ResponseWriter, r *http.Req
 	if kind == "account_moved" {
 		if ev.Move == nil || strings.TrimSpace(ev.Move.PortableID) == "" || strings.TrimSpace(ev.Move.OldAcct) == "" || strings.TrimSpace(ev.Move.NewAcct) == "" {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_event"})
+			return
+		}
+		if err := validateFederationMoveForInstance(verified, ev.Move); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_move"})
 			return
 		}
 		if _, err := s.db.UpsertRemoteAccount(r.Context(), repo.RemoteAccountUpsert{

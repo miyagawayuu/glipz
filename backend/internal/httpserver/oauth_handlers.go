@@ -21,7 +21,6 @@ import (
 
 const oauthCodeTTL = 10 * time.Minute
 const oauthAccessTokenTTL = 1 * time.Hour
-const oauthDefaultScope = "posts:read posts:write media:write"
 const oauthClientCredentialsScope = "client_credentials"
 
 type oauthClientCreateReq struct {
@@ -146,12 +145,13 @@ type oauthAuthorizeReq struct {
 	Scope       string `json:"scope"`
 }
 
-func normalizeOAuthScope(raw string) string {
+func normalizeOAuthScope(raw string) (string, bool) {
 	parts := strings.Fields(strings.ToLower(strings.TrimSpace(raw)))
 	if len(parts) == 0 {
-		return oauthDefaultScope
+		return "", false
 	}
 	allowed := map[string]bool{}
+	rejected := false
 	for _, part := range parts {
 		switch part {
 		case "posts":
@@ -160,10 +160,12 @@ func normalizeOAuthScope(raw string) string {
 			allowed["media:write"] = true
 		case "posts:read", "posts:write", "media:write":
 			allowed[part] = true
+		default:
+			rejected = true
 		}
 	}
-	if len(allowed) == 0 {
-		return oauthDefaultScope
+	if rejected || len(allowed) == 0 {
+		return "", false
 	}
 	out := make([]string, 0, len(allowed))
 	for _, scope := range []string{"posts:read", "posts:write", "media:write"} {
@@ -171,7 +173,7 @@ func normalizeOAuthScope(raw string) string {
 			out = append(out, scope)
 		}
 	}
-	return strings.Join(out, " ")
+	return strings.Join(out, " "), true
 }
 
 func (s *Server) handleOAuthAuthorizeConsent(w http.ResponseWriter, r *http.Request) {
@@ -209,7 +211,11 @@ func (s *Server) handleOAuthAuthorizeConsent(w http.ResponseWriter, r *http.Requ
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_redirect_uri"})
 		return
 	}
-	scope := normalizeOAuthScope(req.Scope)
+	scope, ok := normalizeOAuthScope(req.Scope)
+	if !ok {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_scope"})
+		return
+	}
 	codePlain, err := randomHex(24)
 	if err != nil {
 		writeServerError(w, "oauth code", err)
@@ -305,7 +311,12 @@ func (s *Server) oauthTokenAuthorizationCode(w http.ResponseWriter, r *http.Requ
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_grant"})
 		return
 	}
-	tok, err := authjwt.SignOAuthAccess(s.secret, userID, cid, normalizeOAuthScope(scope), oauthAccessTokenTTL)
+	normalizedScope, ok := normalizeOAuthScope(scope)
+	if !ok {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_grant"})
+		return
+	}
+	tok, err := authjwt.SignOAuthAccess(s.secret, userID, cid, normalizedScope, oauthAccessTokenTTL)
 	if err != nil {
 		writeServerError(w, "oauth code SignAccess", err)
 		return

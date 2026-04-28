@@ -483,7 +483,6 @@ func (s *Server) federatedIncomingToFeedItem(row repo.FederatedIncomingPost) fee
 	if acct == "" {
 		acct = "remote"
 	}
-	synthEmail := "fed+" + row.ID.String()[:8] + "@federated.invalid"
 	disp := strings.TrimSpace(row.ActorName)
 	if disp == "" {
 		disp = acct
@@ -528,7 +527,7 @@ func (s *Server) federatedIncomingToFeedItem(row repo.FederatedIncomingPost) fee
 	if fedBoost {
 		repost = &feedRepostMetaJSON{
 			UserID:          row.ID.String(),
-			UserEmail:       synthEmail,
+			UserEmail:       "",
 			UserHandle:      acct,
 			UserDisplayName: disp,
 			UserAvatarURL:   avatarURL,
@@ -540,7 +539,7 @@ func (s *Server) federatedIncomingToFeedItem(row repo.FederatedIncomingPost) fee
 	}
 	return feedItem{
 		ID:                     "federated:" + row.ID.String(),
-		UserEmail:              synthEmail,
+		UserEmail:              "",
 		UserHandle:             acct,
 		UserDisplayName:        disp,
 		UserAvatarURL:          avatarURL,

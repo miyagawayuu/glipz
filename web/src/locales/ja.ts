@@ -147,6 +147,8 @@ export const jaMessages = {
         cancel: "キャンセル",
         weakPassphrase: "移転パスフレーズは12文字以上にしてください。",
         passphraseMismatch: "移転パスフレーズが一致しません。",
+        wrongPassphrase: "移転パスフレーズが違うか、bundle を復号できませんでした。",
+        invalidIdentityBundle: "ID bundle の形式が正しくありません。",
         missingTargetOrigin: "移転先インスタンスURLを入力してください。",
         missingSource: "移転元URL、セッションID、移転トークンを入力してください。",
         missingPassphrase: "移転パスフレーズを入力してください。",

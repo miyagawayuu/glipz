@@ -228,7 +228,7 @@ func (s *Server) handlePublicRemoteActorPosts(w http.ResponseWriter, r *http.Req
 	for _, row := range payload.Items {
 		items = append(items, feedItem{
 			ID:              "federated:" + row.ID,
-			UserEmail:       "fed+" + resolved.Acct,
+			UserEmail:       "",
 			UserHandle:      resolved.Acct,
 			UserDisplayName: resolved.Name,
 			UserAvatarURL:   s.federationRemoteMediaURL(resolved.IconURL),
@@ -276,15 +276,13 @@ func (s *Server) handlePublicFederatedIncomingPost(w http.ResponseWriter, r *htt
 	pollViewer := uuid.Nil
 	if uid, ok := userIDFrom(r.Context()); ok {
 		pollViewer = uid
-		hidden, errH := s.federatedIncomingHiddenFromViewer(r.Context(), uid, row)
-		if errH != nil {
-			writeServerError(w, "federatedIncomingHiddenFromViewer", errH)
-			return
-		}
-		if hidden {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
-			return
-		}
+	}
+	if !federatedIncomingRecipientVisible(row, pollViewer, pollViewer != uuid.Nil) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+		return
+	}
+	if pollViewer != uuid.Nil && s.rejectIfFederatedIncomingHidden(w, r, pollViewer, row) {
+		return
 	}
 	rows := []repo.FederatedIncomingPost{row}
 	if err := s.db.AttachPollsToFederatedIncoming(r.Context(), pollViewer, rows); err != nil {
@@ -320,17 +318,7 @@ func (s *Server) handleFederatedIncomingFeedItemGET(w http.ResponseWriter, r *ht
 		writeServerError(w, "GetFederatedIncomingByID", err)
 		return
 	}
-	if row.RecipientUserID != nil && *row.RecipientUserID != uid {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
-		return
-	}
-	hidden, errH := s.federatedIncomingHiddenFromViewer(r.Context(), uid, row)
-	if errH != nil {
-		writeServerError(w, "federatedIncomingHiddenFromViewer", errH)
-		return
-	}
-	if hidden {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+	if s.rejectIfFederatedIncomingUnavailable(w, r, uid, row) {
 		return
 	}
 	rows := []repo.FederatedIncomingPost{row}
@@ -405,18 +393,18 @@ func (s *Server) handlePublicFederatedIncomingThread(w http.ResponseWriter, r *h
 		writeServerError(w, "GetFederatedIncomingByID", err)
 		return
 	}
+	threadViewer := uuid.Nil
 	if uid, ok := userIDFrom(r.Context()); ok {
-		hidden, errH := s.federatedIncomingHiddenFromViewer(r.Context(), uid, row)
-		if errH != nil {
-			writeServerError(w, "federatedIncomingHiddenFromViewer", errH)
-			return
-		}
-		if hidden {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
-			return
-		}
+		threadViewer = uid
 	}
-	items, err := s.federatedIncomingThreadItems(r.Context(), uuid.Nil, row)
+	if !federatedIncomingRecipientVisible(row, threadViewer, threadViewer != uuid.Nil) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+		return
+	}
+	if threadViewer != uuid.Nil && s.rejectIfFederatedIncomingHidden(w, r, threadViewer, row) {
+		return
+	}
+	items, err := s.federatedIncomingThreadItems(r.Context(), threadViewer, row)
 	if err != nil {
 		writeServerError(w, "federatedIncomingThreadItems", err)
 		return
@@ -449,17 +437,7 @@ func (s *Server) handleFederatedIncomingThreadGET(w http.ResponseWriter, r *http
 		writeServerError(w, "GetFederatedIncomingByID", err)
 		return
 	}
-	if row.RecipientUserID != nil && *row.RecipientUserID != uid {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
-		return
-	}
-	hidden, errH := s.federatedIncomingHiddenFromViewer(r.Context(), uid, row)
-	if errH != nil {
-		writeServerError(w, "federatedIncomingHiddenFromViewer", errH)
-		return
-	}
-	if hidden {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+	if s.rejectIfFederatedIncomingUnavailable(w, r, uid, row) {
 		return
 	}
 	items, err := s.federatedIncomingThreadItems(r.Context(), uid, row)
