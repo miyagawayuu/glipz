@@ -26,6 +26,7 @@ type Store interface {
 	PresignPut(ctx context.Context, objectKey, contentType string, ttl time.Duration) (string, error)
 	HeadObject(ctx context.Context, objectKey string) (ObjectMeta, error)
 	GetObject(ctx context.Context, objectKey, byteRange string) (*ObjectReader, error)
+	DeleteObject(ctx context.Context, objectKey string) error
 	PublicURL(objectKey string) string
 }
 
@@ -162,6 +163,18 @@ func (c *Client) GetObject(ctx context.Context, objectKey, byteRange string) (*O
 		},
 		Body: out.Body,
 	}, nil
+}
+
+func (c *Client) DeleteObject(ctx context.Context, objectKey string) error {
+	objectKey = strings.TrimSpace(objectKey)
+	if objectKey == "" {
+		return nil
+	}
+	_, err := c.internal.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: &c.bucket,
+		Key:    &objectKey,
+	})
+	return err
 }
 
 func (c *Client) PublicURL(objectKey string) string {

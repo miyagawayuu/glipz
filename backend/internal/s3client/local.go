@@ -181,6 +181,27 @@ func (c *LocalClient) GetObject(ctx context.Context, objectKey, byteRange string
 	}
 }
 
+func (c *LocalClient) DeleteObject(ctx context.Context, objectKey string) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+	target, err := c.objectPath(objectKey)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(target); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if meta, err := c.metaPath(objectKey); err == nil {
+		if err := os.Remove(meta); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	return nil
+}
+
 func (c *LocalClient) PublicURL(objectKey string) string {
 	key := strings.TrimLeft(strings.TrimSpace(objectKey), "/")
 	if c.publicBaseURL != "" && key != "" {

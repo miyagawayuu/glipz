@@ -1254,6 +1254,23 @@ export const enOverrides: DeepPartial<AppMessageSchema> = {
           "When on, “DM invite” requests received while you have not set up DM keys are accepted without in-app or push notifications. After you set up DM keys, threads open with those people automatically.",
         autoInviteAria: "Auto-accept DM invites",
       },
+      accountDeletion: {
+        section: "Danger zone",
+        title: "Permanently delete account",
+        description:
+          "Delete your account, posts, follows, notifications, tokens, and related data. This cannot be undone. Enter your current password and the confirmation text to continue.",
+        password: "Current password",
+        confirmLabel: "Type DELETE to confirm",
+        deleteButton: "Permanently delete account",
+        deletingButton: "Deleting...",
+        progressStarting: "Starting deletion",
+        progressDeleting: "Deleting account data",
+        progressCompleted: "Deletion completed",
+        completed: "Account deleted. Moving to the top page in 3 seconds.",
+        invalidPassword: "The password is incorrect.",
+        confirmationRequired: "Enter DELETE as the confirmation text.",
+        failed: "Failed to delete account.",
+      },
       security: {
         summarySignedIn: "Signed in: {email}",
         summaryTwoFactor: "2FA:",

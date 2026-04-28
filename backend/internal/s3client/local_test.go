@@ -31,16 +31,25 @@ func TestLocalClientPutHeadGetRange(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer obj.Body.Close()
 	b, err := io.ReadAll(obj.Body)
+	closeErr := obj.Body.Close()
 	if err != nil {
 		t.Fatal(err)
+	}
+	if closeErr != nil {
+		t.Fatal(closeErr)
 	}
 	if string(b) != "world" {
 		t.Fatalf("range body = %q", b)
 	}
 	if obj.ContentRange != "bytes 6-10/11" || obj.ContentLength != 5 {
 		t.Fatalf("range meta = %+v", obj.ObjectMeta)
+	}
+	if err := c.DeleteObject(ctx, "uploads/u/file.txt"); err != nil {
+		t.Fatalf("DeleteObject: %v", err)
+	}
+	if _, err := c.HeadObject(ctx, "uploads/u/file.txt"); !IsNotFound(err) {
+		t.Fatalf("HeadObject after delete err = %v, want not found", err)
 	}
 }
 

@@ -218,6 +218,7 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c s3client.
 			r.Post("/fanclub/patreon/entitlement-federated", s.handlePatreonEntitlementFederated)
 			r.Get("/fanclub/patreon/campaigns", s.handlePatreonCampaigns)
 			r.Get("/me", s.handleMe)
+			r.Delete("/me/account", s.handleMeAccountDelete)
 			r.Get("/me/identity/export", s.handleMeIdentityExport)
 			r.Post("/me/identity/export-secure", s.handleMeIdentityExportSecure)
 			r.Put("/me/identity/import", s.handleMeIdentityImport)
@@ -841,6 +842,72 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	}
 	out["is_site_admin"] = s.isSiteAdmin(uid)
 	writeJSON(w, http.StatusOK, out)
+}
+
+type accountDeleteReq struct {
+	Password string `json:"password"`
+	Confirm  string `json:"confirm"`
+}
+
+func (s *Server) handleMeAccountDelete(w http.ResponseWriter, r *http.Request) {
+	uid, ok := userIDFrom(r.Context())
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	limitRequestBody(w, r, smallJSONRequestBodyMaxBytes)
+	var req accountDeleteReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_json"})
+		return
+	}
+	if strings.TrimSpace(req.Confirm) != "DELETE" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "confirmation_required"})
+		return
+	}
+	u, err := s.db.UserByID(r.Context(), uid)
+	if errors.Is(err, repo.ErrNotFound) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+		return
+	}
+	if err != nil {
+		writeServerError(w, "account delete UserByID", err)
+		return
+	}
+	if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(req.Password)) != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_password"})
+		return
+	}
+	deleted, err := s.db.DeleteUserAccount(r.Context(), uid)
+	if errors.Is(err, repo.ErrNotFound) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+		return
+	}
+	if err != nil {
+		writeServerError(w, "DeleteUserAccount", err)
+		return
+	}
+	s.deleteAccountObjects(r.Context(), uid, deleted.ObjectKeys)
+	s.clearAuthCookies(w, r)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":     true,
+		"status": "completed",
+	})
+}
+
+func (s *Server) deleteAccountObjects(ctx context.Context, uid uuid.UUID, keys []string) {
+	if s.s3 == nil {
+		return
+	}
+	for _, key := range keys {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		if err := s.s3.DeleteObject(ctx, key); err != nil {
+			log.Printf("account delete object cleanup user=%s key=%q: %v", uid, key, err)
+		}
+	}
 }
 
 type mfaSetupReq struct {

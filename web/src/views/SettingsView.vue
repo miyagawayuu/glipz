@@ -4,6 +4,7 @@ import { computed, inject, onActivated, onMounted, provide, ref } from "vue";
 import { RouterLink } from "vue-router";
 import { useI18n } from "vue-i18n";
 import DMSettingsPanel from "../components/DMSettingsPanel.vue";
+import AccountDeletionSettings from "../components/AccountDeletionSettings.vue";
 import FanclubPatreonSettings from "../components/FanclubPatreonSettings.vue";
 import Icon from "../components/Icon.vue";
 import IdentityPortabilitySettings from "../components/IdentityPortabilitySettings.vue";
@@ -159,6 +160,8 @@ onActivated(syncThemeFromStorage);
       </section>
 
       <SecuritySettingsPanel />
+
+      <AccountDeletionSettings />
 
       <section>
         <h2 class="text-xs font-semibold uppercase tracking-wide text-neutral-500">

@@ -1261,6 +1261,23 @@ export const jaMessages = {
           "オンにすると、あなたがまだDM鍵を設定していないときに届く「DMに招待」について、アプリ内通知やプッシュ通知を送らず、承認済みとして扱います。あなたがDM鍵を設定した時点で、招待者とのスレッドが開きます。",
         autoInviteAria: "DM招待の自動承認",
       },
+      accountDeletion: {
+        section: "危険な操作",
+        title: "アカウントを完全削除",
+        description:
+          "アカウント、投稿、フォロー、通知、トークンなどの関連データを削除します。この操作は元に戻せません。削除を実行するには現在のパスワードと確認文字列を入力してください。",
+        password: "現在のパスワード",
+        confirmLabel: "確認のため DELETE と入力",
+        deleteButton: "アカウントを完全削除",
+        deletingButton: "削除しています...",
+        progressStarting: "削除を開始しています",
+        progressDeleting: "アカウントデータを削除しています",
+        progressCompleted: "削除が完了しました",
+        completed: "アカウントを削除しました。3秒後にトップへ移動します。",
+        invalidPassword: "パスワードが正しくありません。",
+        confirmationRequired: "確認文字列 DELETE を入力してください。",
+        failed: "アカウント削除に失敗しました。",
+      },
       security: {
         summarySignedIn: "ログイン中: {email}",
         summaryTwoFactor: "2FA:",
