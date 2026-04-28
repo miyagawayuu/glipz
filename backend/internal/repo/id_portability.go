@@ -23,6 +23,8 @@ const (
 	LegacyPortablePrefix = "legacy:"
 )
 
+var ErrInvalidPortableIdentity = errors.New("invalid portable identity")
+
 type PortableIdentity struct {
 	PortableID                 string
 	AccountPublicKey           string
@@ -96,6 +98,47 @@ func newPortableIdentity() (PortableIdentity, error) {
 	}, nil
 }
 
+func invalidPortableIdentity(reason string) error {
+	if strings.TrimSpace(reason) == "" {
+		return ErrInvalidPortableIdentity
+	}
+	return fmt.Errorf("%w: %s", ErrInvalidPortableIdentity, reason)
+}
+
+func ValidatePortableIdentity(identity PortableIdentity) (PortableIdentity, error) {
+	identity.PortableID = NormalizePortableID(identity.PortableID)
+	identity.AccountPublicKey = strings.TrimSpace(identity.AccountPublicKey)
+	identity.AccountPrivateKeyEncrypted = strings.TrimSpace(identity.AccountPrivateKeyEncrypted)
+	if identity.AccountPublicKey == "" || identity.AccountPrivateKeyEncrypted == "" {
+		return PortableIdentity{}, invalidPortableIdentity("missing key material")
+	}
+	pub, err := base64.RawURLEncoding.DecodeString(identity.AccountPublicKey)
+	if err != nil {
+		return PortableIdentity{}, invalidPortableIdentity("invalid account public key encoding")
+	}
+	if len(pub) != ed25519.PublicKeySize {
+		return PortableIdentity{}, invalidPortableIdentity("invalid account public key size")
+	}
+	expectedID := portableIDForPublicKey(ed25519.PublicKey(pub))
+	if identity.PortableID == "" || isLocalPlaceholderPortableID(identity.PortableID) {
+		identity.PortableID = expectedID
+	}
+	if identity.PortableID != expectedID {
+		return PortableIdentity{}, invalidPortableIdentity("portable id does not match account public key")
+	}
+	priv, err := base64.RawURLEncoding.DecodeString(identity.AccountPrivateKeyEncrypted)
+	if err != nil {
+		return PortableIdentity{}, invalidPortableIdentity("invalid account private key encoding")
+	}
+	if len(priv) != ed25519.PrivateKeySize {
+		return PortableIdentity{}, invalidPortableIdentity("invalid account private key size")
+	}
+	if !bytes.Equal(ed25519.PrivateKey(priv).Public().(ed25519.PublicKey), ed25519.PublicKey(pub)) {
+		return PortableIdentity{}, invalidPortableIdentity("private key does not match account public key")
+	}
+	return identity, nil
+}
+
 func (p *Pool) EnsureUserPortableIdentity(ctx context.Context, userID uuid.UUID) (PortableIdentity, error) {
 	var out PortableIdentity
 	err := p.db.QueryRow(ctx, `
@@ -148,26 +191,12 @@ func (p *Pool) EnsureUserPortableIdentity(ctx context.Context, userID uuid.UUID)
 }
 
 func (p *Pool) SetUserPortableIdentity(ctx context.Context, userID uuid.UUID, identity PortableIdentity) error {
-	identity.PortableID = NormalizePortableID(identity.PortableID)
-	identity.AccountPublicKey = strings.TrimSpace(identity.AccountPublicKey)
-	identity.AccountPrivateKeyEncrypted = strings.TrimSpace(identity.AccountPrivateKeyEncrypted)
-	if userID == uuid.Nil || identity.AccountPublicKey == "" || identity.AccountPrivateKeyEncrypted == "" {
-		return fmt.Errorf("invalid portable identity")
+	if userID == uuid.Nil {
+		return invalidPortableIdentity("missing user id")
 	}
-	pub, err := base64.RawURLEncoding.DecodeString(identity.AccountPublicKey)
-	if err != nil || len(pub) != ed25519.PublicKeySize {
-		return fmt.Errorf("invalid portable identity")
-	}
-	expectedID := portableIDForPublicKey(ed25519.PublicKey(pub))
-	if identity.PortableID == "" || isLocalPlaceholderPortableID(identity.PortableID) {
-		identity.PortableID = expectedID
-	}
-	if identity.PortableID != expectedID {
-		return fmt.Errorf("invalid portable identity")
-	}
-	priv, err := base64.RawURLEncoding.DecodeString(identity.AccountPrivateKeyEncrypted)
-	if err != nil || len(priv) != ed25519.PrivateKeySize || !bytes.Equal(ed25519.PrivateKey(priv).Public().(ed25519.PublicKey), ed25519.PublicKey(pub)) {
-		return fmt.Errorf("invalid portable identity")
+	identity, err := ValidatePortableIdentity(identity)
+	if err != nil {
+		return err
 	}
 	_, err = p.db.Exec(ctx, `
 		UPDATE users

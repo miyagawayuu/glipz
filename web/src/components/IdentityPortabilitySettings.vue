@@ -9,6 +9,7 @@ import {
   exportSecureIdentityBundle,
   getIdentityImportJob,
   importSecureIdentityBundle,
+  isValidSecureIdentityBundle,
   retryIdentityImportJob,
   type IdentityBundle,
   type IdentityTransferImportJob,
@@ -173,15 +174,23 @@ async function onCreateTransferSession() {
 
 async function onImportSecureBundle() {
   clearStatus();
-  let parsed: IdentityBundle;
+  let parsed: unknown;
   try {
-    parsed = JSON.parse(secureBundleText.value) as IdentityBundle;
+    parsed = JSON.parse(secureBundleText.value);
   } catch {
     error.value = t("components.identityPortability.invalidJson");
     return;
   }
+  if (!isValidSecureIdentityBundle(parsed)) {
+    error.value = t("components.identityPortability.transferWizard.invalidIdentityBundle");
+    return;
+  }
   if (!passphrase.value.trim()) {
     error.value = t("components.identityPortability.transferWizard.missingPassphrase");
+    return;
+  }
+  if (passphraseConfirm.value.length > 0 && passphrase.value !== passphraseConfirm.value) {
+    error.value = t("components.identityPortability.transferWizard.passphraseMismatch");
     return;
   }
   busy.value = true;

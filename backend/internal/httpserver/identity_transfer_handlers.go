@@ -171,6 +171,7 @@ func (s *Server) handleMeIdentityImportSecure(w http.ResponseWriter, r *http.Req
 		AccountPublicKey:           req.Bundle.AccountPublicKey,
 		AccountPrivateKeyEncrypted: privateKey,
 	}); err != nil {
+		log.Printf("invalid secure identity bundle import: %v", err)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_identity_bundle"})
 		return
 	}

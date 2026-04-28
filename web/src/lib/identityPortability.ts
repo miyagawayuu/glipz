@@ -67,6 +67,28 @@ export type IdentityTransferCategoryStats = {
   failed: number;
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasTextField(record: Record<string, unknown>, key: string): boolean {
+  return typeof record[key] === "string" && record[key].trim().length > 0;
+}
+
+export function isValidSecureIdentityBundle(value: unknown): value is IdentityBundle {
+  if (!isRecord(value)) return false;
+  if (value.v !== 2) return false;
+  if (!hasTextField(value, "portable_id")) return false;
+  if (!hasTextField(value, "account_public_key")) return false;
+  if (!hasTextField(value, "handle")) return false;
+  if (!hasTextField(value, "exported_at")) return false;
+  if (!isRecord(value.private_key)) return false;
+  return hasTextField(value.private_key, "kdf")
+    && hasTextField(value.private_key, "salt")
+    && hasTextField(value.private_key, "nonce")
+    && hasTextField(value.private_key, "ciphertext");
+}
+
 export async function exportSecureIdentityBundle(passphrase: string, targetOrigin: string): Promise<IdentityBundle> {
   return api<IdentityBundle>("/api/v1/me/identity/export-secure", {
     method: "POST",

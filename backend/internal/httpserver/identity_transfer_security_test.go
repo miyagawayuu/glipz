@@ -1,6 +1,14 @@
 package httpserver
 
-import "testing"
+import (
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"testing"
+
+	"glipz.io/backend/internal/repo"
+)
 
 func TestIdentityBundleV2EncryptDecrypt(t *testing.T) {
 	enc, err := encryptIdentityPrivateKey("correct horse battery staple", "PRIVATE_KEY_BYTES")
@@ -16,6 +24,33 @@ func TestIdentityBundleV2EncryptDecrypt(t *testing.T) {
 	}
 	if _, err := decryptIdentityPrivateKey("wrong horse battery staple", enc); err == nil {
 		t.Fatal("decryptIdentityPrivateKey with wrong passphrase succeeded")
+	}
+}
+
+func TestIdentityBundleV2EncryptDecryptsToValidPortableIdentity(t *testing.T) {
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	enc := base64.RawURLEncoding
+	sum := sha256.Sum256(pub)
+	identity := repo.PortableIdentity{
+		PortableID:                 repo.PortableIDPrefix + enc.EncodeToString(sum[:]),
+		AccountPublicKey:           enc.EncodeToString(pub),
+		AccountPrivateKeyEncrypted: enc.EncodeToString(priv),
+	}
+
+	bundleKey, err := encryptIdentityPrivateKey("correct horse battery staple", identity.AccountPrivateKeyEncrypted)
+	if err != nil {
+		t.Fatalf("encryptIdentityPrivateKey: %v", err)
+	}
+	decryptedPrivateKey, err := decryptIdentityPrivateKey("correct horse battery staple", bundleKey)
+	if err != nil {
+		t.Fatalf("decryptIdentityPrivateKey: %v", err)
+	}
+	identity.AccountPrivateKeyEncrypted = decryptedPrivateKey
+	if _, err := repo.ValidatePortableIdentity(identity); err != nil {
+		t.Fatalf("ValidatePortableIdentity: %v", err)
 	}
 }
 

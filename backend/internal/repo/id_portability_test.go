@@ -55,3 +55,29 @@ func TestSetUserPortableIdentityNormalizesLocalPlaceholderID(t *testing.T) {
 		t.Fatal("local placeholder was not detected")
 	}
 }
+
+func TestValidatePortableIdentityRejectsMismatchedPortableID(t *testing.T) {
+	identity, err := newPortableIdentity()
+	if err != nil {
+		t.Fatalf("newPortableIdentity: %v", err)
+	}
+	identity.PortableID = PortableIDPrefix + "wrong"
+	if _, err := ValidatePortableIdentity(identity); err == nil {
+		t.Fatal("mismatched portable id was accepted")
+	}
+}
+
+func TestValidatePortableIdentityRejectsMismatchedPrivateKey(t *testing.T) {
+	identity, err := newPortableIdentity()
+	if err != nil {
+		t.Fatalf("newPortableIdentity: %v", err)
+	}
+	other, err := newPortableIdentity()
+	if err != nil {
+		t.Fatalf("newPortableIdentity other: %v", err)
+	}
+	identity.AccountPrivateKeyEncrypted = other.AccountPrivateKeyEncrypted
+	if _, err := ValidatePortableIdentity(identity); err == nil {
+		t.Fatal("mismatched private key was accepted")
+	}
+}
