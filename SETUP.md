@@ -155,7 +155,8 @@ This starts:
 On first startup, the backend:
 - Connects to PostgreSQL and Redis
 - Runs database migrations, including ID portability transfer tables and
-  bookmark/follow portability support for existing databases
+  bookmark/follow portability support, community tables / `posts.group_id`, and
+  profile pinned-post support for existing databases
 - Initializes the configured media store (`local` folder or S3-compatible storage)
 - Starts the HTTP server
 
@@ -192,6 +193,7 @@ Vite proxies these routes to the backend (override backend host with `VITE_PROXY
 | Backend health | http://localhost:8080/health | `ok` |
 | Frontend | http://localhost:5173 | App loads |
 | Mailpit | http://localhost:8025 | Web UI |
+| Communities | http://localhost:5173/communities | Community directory loads |
 
 ---
 
@@ -297,6 +299,17 @@ See [.env.example](.env.example) for all options.
 - Backend is running on port 8080
 - `docker compose up` completed without errors
 - No custom `VITE_PROXY_TARGET` overriding the default
+
+### Docker build sees missing Go methods or old files
+
+- Re-run `docker compose build backend` after confirming `go test ./internal/...`
+  passes locally.
+- If using Jujutsu (`jj`), make sure the `main` bookmark points at the commit
+  containing all related files, not an older partial commit. `jj status` should
+  be clean before building an image.
+- Build context should include the repository files. If Docker reports a tiny
+  context and compile errors for missing methods, check `.dockerignore` and the
+  current `jj` / Git checkout.
 
 ### Media upload fails
 

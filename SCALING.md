@@ -47,6 +47,8 @@ Run these against production-like data before and after changing indexes. Use `E
 ```sql
 -- Replace with a real viewer id.
 \set viewer_id '00000000-0000-0000-0000-000000000000'
+-- Replace with a real community id when profiling community pages.
+\set community_id '00000000-0000-0000-0000-000000000000'
 
 EXPLAIN (ANALYZE, BUFFERS)
 WITH candidate AS (
@@ -94,6 +96,28 @@ WHERE deleted_at IS NULL
   AND COALESCE(btrim(reply_to_object_iri), '') = ''
 ORDER BY published_at DESC, id DESC
 LIMIT 50;
+
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT p.id
+FROM posts p
+WHERE p.group_id = :'community_id'::uuid
+  AND p.reply_to_id IS NULL
+  AND COALESCE(btrim(p.reply_to_remote_object_iri), '') = ''
+  AND p.visible_at <= NOW()
+ORDER BY p.visible_at DESC, p.id DESC
+LIMIT 50;
+
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT p.id, p.media_type, p.object_keys[1]
+FROM posts p
+WHERE p.group_id = :'community_id'::uuid
+  AND p.reply_to_id IS NULL
+  AND COALESCE(btrim(p.reply_to_remote_object_iri), '') = ''
+  AND p.visible_at <= NOW()
+  AND p.media_type IN ('image', 'video', 'audio')
+  AND cardinality(p.object_keys) > 0
+ORDER BY p.visible_at DESC, p.id DESC
+LIMIT 90;
 ```
 
 ## Media Delivery

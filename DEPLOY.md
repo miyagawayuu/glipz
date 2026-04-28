@@ -196,6 +196,11 @@ Redis outages will reject the protected flows instead of allowing them through.
 
 The production image is built from the **repository root** with `backend/Dockerfile` (see [docker-compose.yml](docker-compose.yml)): it runs `npm ci` / `npm run build` in `web/` on **Node 22**, then compiles the Go server with **Go 1.26.2**, and sets `STATIC_WEB_ROOT=/app/web/dist` by default.
 
+Startup migrations are idempotent and include current post/object-key updates,
+ID portability, bookmarks/follows, community tables and `posts.group_id`, plus
+profile pinned-post support. Back up PostgreSQL before deploying a new image, and
+allow the backend to complete migrations before opening the instance to traffic.
+
 When using CDN or direct object-storage media URLs, also set the frontend build-time allowlists in `web/.env.production`: `VITE_ALLOWED_MEDIA_BASE_URLS` for rendered media and `VITE_ALLOWED_DM_ATTACHMENT_BASE_URLS` for encrypted DM attachments. Use exact HTTPS path prefixes such as `https://cdn.example.com/media/`; root origins are rejected by the frontend safety checks. Configure the CDN/storage endpoint to reject or download active content types (`image/svg+xml`, `text/html`, XML, and JavaScript types) with `Content-Disposition: attachment` and `X-Content-Type-Options: nosniff`.
 
 Provider callback URLs use the API public origin, not necessarily the frontend origin. For example, Patreon callbacks should be based on `GLIPZ_PROTOCOL_PUBLIC_ORIGIN`.
@@ -234,6 +239,18 @@ This builds:
 - The Go backend binary
 - The Vue frontend
 - Serves frontend from `/app/web/dist`
+
+If you use Jujutsu (`jj`) locally, verify the bookmark you are building from
+contains the complete change set before building a release image:
+
+```bash
+jj status
+jj log -r 'main | main@origin | @ | @-' --no-graph
+```
+
+The Docker build context is the working tree. A partial bookmark or checkout can
+produce an image that has frontend/router changes without the matching backend
+repo or migration code.
 
 `glipz:vX.Y.Z` should identify the release artifact. Use `glipz:latest` only as
 a mutable pointer for local convenience, not as the audit trail. For nightly or

@@ -20,6 +20,21 @@ version. Federation protocol compatibility is versioned separately with
 
 - Initial schema: `infra/postgres/init.sql`.
 - Existing one-time migration: `infra/postgres/migrate_posts_object_keys.sql`.
+- Startup migrations now also cover ID portability transfer tables, bookmarks /
+  follow portability support, community tables with `posts.group_id`, and profile
+  pinned-post support for existing databases.
+
+### Added
+
+- Community directory, creation flow, owner-managed join requests, community
+  timelines, and separate community posting via `community_id`.
+- Community detail tabs for recommended posts, latest posts, media grid, and
+  owner-editable details/rules.
+- Community headers with editable icon/header images, member avatar previews, and
+  compact member counts.
+- Profile pinned posts and profile-style media tile support for communities.
+- Reusable post composer form and sidebar compose modal for normal and community
+  posting flows.
 
 ### Release Notes
 

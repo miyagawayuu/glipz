@@ -46,6 +46,17 @@ Key features include:
 | **Reactions** | Emoji reactions on local and federated posts |
 | **Bookmarks** | Save posts for later |
 | **Visibility** | Public, logged-in-only, followers-only, and private posts |
+| **Profile pins** | Pin one top-level profile post so it stays at the top of the profile timeline |
+
+### Communities
+
+- Public community directory with search by name, description, or UUID.
+- Community pages include recommended, latest, media-grid, and details tabs.
+- Community owners can edit the name, short description, longer details/rules, icon, and header image.
+- Join requests are owner-approved; approved members can post to the community from the compose flow.
+- Community timelines stay separate from the main/profile timelines via `posts.group_id`; community posts are not shown as normal profile posts.
+- Community media uses the same square tile grid as profile media, including locked-media placeholders.
+- The community header shows up to five overlapping approved-member avatars and a compact member count.
 
 ### Direct Messages
 
@@ -325,6 +336,34 @@ curl -X POST -H "Authorization: Bearer $TARGET_TOKEN" \
 curl -H "Authorization: Bearer $TOKEN" \
   https://your-instance.com/api/v1/posts/feed
 ```
+
+### Example: Communities
+
+Community reads are public. Mutations require authentication.
+
+```bash
+# List communities.
+curl https://your-instance.com/api/v1/communities
+
+# Read a community timeline.
+curl https://your-instance.com/api/v1/communities/$COMMUNITY_ID/posts
+
+# Read profile-style media tiles for a community.
+curl https://your-instance.com/api/v1/communities/$COMMUNITY_ID/post-media-tiles
+
+# Create a community. The creator becomes the owner.
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  https://your-instance.com/api/v1/communities \
+  -d '{"name":"Artists","description":"Short intro","details":"Rules and links"}'
+
+# Request to join.
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  https://your-instance.com/api/v1/communities/$COMMUNITY_ID/join-requests
+```
+
+Community posts use the normal post-create API with `community_id` in the JSON
+body. The backend requires approved membership before accepting that field.
 
 ### Example: Post unlock (password / membership entitlement)
 
