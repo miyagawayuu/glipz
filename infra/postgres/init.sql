@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS users (
     bio TEXT NOT NULL DEFAULT '',
     avatar_object_key TEXT,
     header_object_key TEXT,
+    pinned_post_id UUID,
     portable_id TEXT,
     account_public_key TEXT NOT NULL DEFAULT '',
     account_private_key_encrypted TEXT NOT NULL DEFAULT '',
@@ -39,6 +40,33 @@ CREATE TABLE IF NOT EXISTS pending_user_registrations (
 CREATE INDEX IF NOT EXISTS idx_pending_user_registrations_expires_at
     ON pending_user_registrations (expires_at);
 
+CREATE TABLE IF NOT EXISTS communities (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    details TEXT NOT NULL DEFAULT '',
+    icon_object_key TEXT,
+    header_object_key TEXT,
+    creator_user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT communities_name_non_empty CHECK (btrim(name) <> '')
+);
+CREATE INDEX IF NOT EXISTS idx_communities_created_at ON communities (created_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS community_members (
+    community_id UUID NOT NULL REFERENCES communities (id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('owner', 'member')),
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (community_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_community_members_user ON community_members (user_id, status);
+CREATE INDEX IF NOT EXISTS idx_community_members_pending ON community_members (community_id, created_at DESC)
+    WHERE status = 'pending';
+
 CREATE TABLE IF NOT EXISTS posts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
@@ -58,7 +86,7 @@ CREATE TABLE IF NOT EXISTS posts (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     visible_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     feed_broadcast_done BOOLEAN NOT NULL DEFAULT TRUE,
-    group_id UUID,
+    group_id UUID REFERENCES communities (id) ON DELETE SET NULL,
     CONSTRAINT posts_media_object_keys CHECK (
         (media_type = 'none' AND cardinality(object_keys) = 0)
         OR (media_type = 'image' AND cardinality(object_keys) BETWEEN 1 AND 4)
@@ -82,6 +110,16 @@ CREATE INDEX IF NOT EXISTS idx_posts_user_feed_visible_top
     WHERE reply_to_id IS NULL
       AND COALESCE(btrim(reply_to_remote_object_iri), '') = ''
       AND group_id IS NULL;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'users_pinned_post_id_fkey'
+    ) THEN
+        ALTER TABLE users
+            ADD CONSTRAINT users_pinned_post_id_fkey
+            FOREIGN KEY (pinned_post_id) REFERENCES posts (id) ON DELETE SET NULL;
+    END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS hashtags (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

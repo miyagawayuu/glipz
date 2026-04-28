@@ -175,6 +175,10 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c s3client.
 			r.Get("/users/by-handle/{handle}/posts", s.handleUserPostsByHandle)
 			r.Get("/users/by-handle/{handle}/replies", s.handleUserRepliesByHandle)
 			r.Get("/users/by-handle/{handle}/post-media-tiles", s.handleUserPostMediaTilesByHandle)
+			r.Get("/communities", s.handleListCommunities)
+			r.Get("/communities/{communityID}", s.handleCommunityByID)
+			r.Get("/communities/{communityID}/posts", s.handleCommunityPosts)
+			r.Get("/communities/{communityID}/post-media-tiles", s.handleCommunityPostMediaTiles)
 			r.Get("/posts/{postID}/feed-item", s.handlePostFeedItemGET)
 			r.Get("/posts/{postID}/thread", s.handlePostThreadGET)
 		})
@@ -269,6 +273,13 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c s3client.
 			r.Get("/me/scheduled-posts", s.handleListScheduledPosts)
 			r.Get("/posts/feed", s.handleFeed)
 			r.Get("/posts/bookmarks", s.handleBookmarks)
+			r.Post("/communities", s.handleCreateCommunity)
+			r.Patch("/communities/{communityID}", s.handlePatchCommunity)
+			r.Delete("/communities/{communityID}", s.handleDeleteCommunity)
+			r.Post("/communities/{communityID}/join-requests", s.handleRequestCommunityJoin)
+			r.Get("/communities/{communityID}/join-requests", s.handleListCommunityJoinRequests)
+			r.Post("/communities/{communityID}/members/{userID}/approve", s.handleApproveCommunityJoinRequest)
+			r.Post("/communities/{communityID}/members/{userID}/reject", s.handleRejectCommunityJoinRequest)
 			r.Get("/search", s.handleSearch)
 			r.Post("/federation/remote-follow", s.handleRemoteFollowPOST)
 			r.Get("/federation/remote-follow", s.handleRemoteFollowGET)
@@ -298,6 +309,8 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c s3client.
 			r.Post("/posts/{postID}/poll/vote", s.handlePollVote)
 			r.Post("/posts/{postID}/like", s.handleToggleLike)
 			r.Post("/posts/{postID}/bookmark", s.handleToggleBookmark)
+			r.Put("/posts/{postID}/profile-pin", s.handlePinPostToProfile)
+			r.Delete("/posts/{postID}/profile-pin", s.handleUnpinPostFromProfile)
 			r.Post("/posts/{postID}/report", s.handleCreatePostReport)
 			r.Post("/federation/posts/{incomingID}/poll/vote", s.handleFederatedPollVote)
 			r.Post("/federation/posts/{incomingID}/like", s.handleFederatedToggleLike)
@@ -359,10 +372,12 @@ func oauthClaimsAllowRequest(claims *authjwt.Claims, r *http.Request) bool {
 		case path == "/api/v1/me",
 			path == "/api/v1/posts/feed",
 			path == "/api/v1/posts/bookmarks",
-			path == "/api/v1/search":
+			path == "/api/v1/search",
+			path == "/api/v1/communities":
 			return true
 		case strings.HasPrefix(path, "/api/v1/posts/"),
 			strings.HasPrefix(path, "/api/v1/users/by-handle/"),
+			strings.HasPrefix(path, "/api/v1/communities/"),
 			strings.HasPrefix(path, "/api/v1/public/federation/incoming"):
 			return true
 		}
@@ -374,16 +389,20 @@ func oauthClaimsAllowRequest(claims *authjwt.Claims, r *http.Request) bool {
 		}
 	}
 	if scope["posts:write"] {
+		if strings.HasPrefix(path, "/api/v1/communities") {
+			return method == http.MethodPost || method == http.MethodPatch || method == http.MethodDelete
+		}
 		if path == "/api/v1/posts" {
 			return method == http.MethodPost
 		}
-		if method != http.MethodPost && method != http.MethodDelete {
+		if method != http.MethodPost && method != http.MethodPut && method != http.MethodDelete {
 			return false
 		}
 		switch {
 		case strings.HasSuffix(path, "/unlock"),
 			strings.HasSuffix(path, "/like"),
 			strings.HasSuffix(path, "/bookmark"),
+			strings.HasSuffix(path, "/profile-pin"),
 			strings.HasSuffix(path, "/repost"),
 			strings.HasSuffix(path, "/report"),
 			strings.Contains(path, "/poll/vote"),
@@ -1172,6 +1191,468 @@ type createPostMembership struct {
 	TierID    string `json:"tier_id"`
 }
 
+type createCommunityReq struct {
+	Name            string `json:"name"`
+	Description     string `json:"description"`
+	Details         string `json:"details"`
+	IconObjectKey   string `json:"icon_object_key"`
+	HeaderObjectKey string `json:"header_object_key"`
+}
+
+type patchCommunityReq struct {
+	Name            string  `json:"name"`
+	Description     string  `json:"description"`
+	Details         *string `json:"details"`
+	IconObjectKey   *string `json:"icon_object_key"`
+	HeaderObjectKey *string `json:"header_object_key"`
+}
+
+func (s *Server) communityWithManageFlag(c repo.Community, viewer uuid.UUID) repo.Community {
+	c.CanManage = c.ViewerRole == repo.CommunityRoleOwner && c.ViewerStatus == repo.CommunityMemberApproved
+	if viewer != uuid.Nil && s.isSiteAdmin(viewer) {
+		c.CanManage = true
+	}
+	return c
+}
+
+func (s *Server) communityJSON(c repo.Community) map[string]any {
+	out := map[string]any{
+		"id":                    c.ID.String(),
+		"name":                  c.Name,
+		"description":           c.Description,
+		"details":               c.Details,
+		"creator_user_id":       c.CreatorUserID.String(),
+		"created_at":            c.CreatedAt.Format(time.RFC3339Nano),
+		"updated_at":            c.UpdatedAt.Format(time.RFC3339Nano),
+		"approved_member_count": c.ApprovedMemberCount,
+		"can_manage":            c.CanManage,
+	}
+	if c.ViewerStatus != "" {
+		out["viewer_status"] = c.ViewerStatus
+	}
+	if c.ViewerRole != "" {
+		out["viewer_role"] = c.ViewerRole
+	}
+	if c.PendingRequestCount > 0 {
+		out["pending_request_count"] = c.PendingRequestCount
+	}
+	if c.IconObjectKey != nil && strings.TrimSpace(*c.IconObjectKey) != "" {
+		out["icon_url"] = s.glipzProtocolPublicMediaURL(*c.IconObjectKey)
+	} else {
+		out["icon_url"] = nil
+	}
+	if c.HeaderObjectKey != nil && strings.TrimSpace(*c.HeaderObjectKey) != "" {
+		out["header_url"] = s.glipzProtocolPublicMediaURL(*c.HeaderObjectKey)
+	} else {
+		out["header_url"] = nil
+	}
+	return out
+}
+
+func (s *Server) communityJSONWithMemberPreviews(ctx context.Context, c repo.Community) (map[string]any, error) {
+	out := s.communityJSON(c)
+	rows, err := s.db.ListCommunityMemberPreviews(ctx, c.ID, 5)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]map[string]any, 0, len(rows))
+	for _, row := range rows {
+		item := map[string]any{
+			"user_id":      row.UserID.String(),
+			"handle":       row.Handle,
+			"display_name": row.DisplayName,
+		}
+		if row.AvatarKey != nil && strings.TrimSpace(*row.AvatarKey) != "" {
+			item["avatar_url"] = s.glipzProtocolPublicMediaURL(*row.AvatarKey)
+		} else {
+			item["avatar_url"] = nil
+		}
+		items = append(items, item)
+	}
+	out["member_previews"] = items
+	return out, nil
+}
+
+func (s *Server) handleListCommunities(w http.ResponseWriter, r *http.Request) {
+	viewer, _ := userIDFrom(r.Context())
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	communities, err := s.db.ListCommunities(r.Context(), viewer, query, 50)
+	if err != nil {
+		writeServerError(w, "ListCommunities", err)
+		return
+	}
+	items := make([]map[string]any, 0, len(communities))
+	for _, c := range communities {
+		c = s.communityWithManageFlag(c, viewer)
+		items = append(items, s.communityJSON(c))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (s *Server) handleCreateCommunity(w http.ResponseWriter, r *http.Request) {
+	uid, ok := userIDFrom(r.Context())
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	var req createCommunityReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_json"})
+		return
+	}
+	name := strings.TrimSpace(req.Name)
+	description := strings.TrimSpace(req.Description)
+	details := strings.TrimSpace(req.Details)
+	if name == "" || utf8.RuneCountInString(name) > 80 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_name"})
+		return
+	}
+	if utf8.RuneCountInString(description) > 500 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_description"})
+		return
+	}
+	if utf8.RuneCountInString(details) > 5000 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_details"})
+		return
+	}
+	iconKey, ok := s.optionalUserUploadObjectKey(w, uid, req.IconObjectKey, "invalid_icon_object_key")
+	if !ok {
+		return
+	}
+	headerKey, ok := s.optionalUserUploadObjectKey(w, uid, req.HeaderObjectKey, "invalid_header_object_key")
+	if !ok {
+		return
+	}
+	c, err := s.db.CreateCommunity(r.Context(), uid, name, description, details, iconKey, headerKey)
+	if err != nil {
+		writeServerError(w, "CreateCommunity", err)
+		return
+	}
+	c = s.communityWithManageFlag(c, uid)
+	body, err := s.communityJSONWithMemberPreviews(r.Context(), c)
+	if err != nil {
+		writeServerError(w, "ListCommunityMemberPreviews", err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"community": body})
+}
+
+func (s *Server) optionalUserUploadObjectKey(w http.ResponseWriter, uid uuid.UUID, raw, errorCode string) (*string, bool) {
+	key := strings.TrimSpace(raw)
+	if key == "" {
+		return nil, true
+	}
+	if !strings.HasPrefix(key, "uploads/"+uid.String()+"/") {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": errorCode})
+		return nil, false
+	}
+	return &key, true
+}
+
+func communityIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
+	id, err := uuid.Parse(strings.TrimSpace(chi.URLParam(r, "communityID")))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_community_id"})
+		return uuid.Nil, false
+	}
+	return id, true
+}
+
+func (s *Server) handleCommunityByID(w http.ResponseWriter, r *http.Request) {
+	viewer, _ := userIDFrom(r.Context())
+	communityID, ok := communityIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	c, err := s.db.CommunityByID(r.Context(), viewer, communityID)
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+			return
+		}
+		writeServerError(w, "CommunityByID", err)
+		return
+	}
+	c = s.communityWithManageFlag(c, viewer)
+	body, err := s.communityJSONWithMemberPreviews(r.Context(), c)
+	if err != nil {
+		writeServerError(w, "ListCommunityMemberPreviews", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"community": body})
+}
+
+func (s *Server) handleCommunityPosts(w http.ResponseWriter, r *http.Request) {
+	viewer, _ := userIDFrom(r.Context())
+	communityID, ok := communityIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	c, err := s.db.CommunityByID(r.Context(), viewer, communityID)
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+			return
+		}
+		writeServerError(w, "CommunityByID", err)
+		return
+	}
+	c = s.communityWithManageFlag(c, viewer)
+	rows, err := s.db.ListCommunityPosts(r.Context(), viewer, c.ID, 50)
+	if err != nil {
+		writeServerError(w, "ListCommunityPosts", err)
+		return
+	}
+	items, err := s.encodeFeedRows(r.Context(), rows, viewer)
+	if err != nil {
+		writeServerError(w, "encodeFeedRows", err)
+		return
+	}
+	body, err := s.communityJSONWithMemberPreviews(r.Context(), c)
+	if err != nil {
+		writeServerError(w, "ListCommunityMemberPreviews", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"community": body, "items": items})
+}
+
+func (s *Server) handleCommunityPostMediaTiles(w http.ResponseWriter, r *http.Request) {
+	viewer, _ := userIDFrom(r.Context())
+	communityID, ok := communityIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	if _, err := s.db.CommunityByID(r.Context(), viewer, communityID); err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+			return
+		}
+		writeServerError(w, "CommunityByID media tiles", err)
+		return
+	}
+	rows, err := s.db.ListCommunityPostMediaTiles(r.Context(), viewer, communityID, 90)
+	if err != nil {
+		writeServerError(w, "ListCommunityPostMediaTiles", err)
+		return
+	}
+	tiles := make([]map[string]any, 0, len(rows))
+	for _, row := range rows {
+		url := s.postMediaPreviewURL(r.Context(), viewer, row.AuthorUserID, row.PostID, row.HasViewPassword, row.ViewPasswordScope, row.FirstObjectKey)
+		locked := url == "" && row.HasViewPassword && row.AuthorUserID != viewer && scopeProtectsMedia(repo.EffectiveViewPasswordScope(row.HasViewPassword, row.ViewPasswordScope))
+		tiles = append(tiles, map[string]any{
+			"post_id":     row.PostID.String(),
+			"media_type":  row.MediaType,
+			"preview_url": url,
+			"locked":      locked,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"tiles": tiles})
+}
+
+func (s *Server) handleRequestCommunityJoin(w http.ResponseWriter, r *http.Request) {
+	uid, ok := userIDFrom(r.Context())
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	communityID, ok := communityIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	c, err := s.db.RequestCommunityJoin(r.Context(), uid, communityID)
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+			return
+		}
+		writeServerError(w, "RequestCommunityJoin", err)
+		return
+	}
+	c = s.communityWithManageFlag(c, uid)
+	body, err := s.communityJSONWithMemberPreviews(r.Context(), c)
+	if err != nil {
+		writeServerError(w, "ListCommunityMemberPreviews", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"community": body})
+}
+
+func (s *Server) handlePatchCommunity(w http.ResponseWriter, r *http.Request) {
+	uid, ok := userIDFrom(r.Context())
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	communityID, ok := communityIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	var req patchCommunityReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_json"})
+		return
+	}
+	name := strings.TrimSpace(req.Name)
+	description := strings.TrimSpace(req.Description)
+	var details *string
+	if req.Details != nil {
+		v := strings.TrimSpace(*req.Details)
+		if utf8.RuneCountInString(v) > 5000 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_details"})
+			return
+		}
+		details = &v
+	}
+	if name == "" || utf8.RuneCountInString(name) > 80 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_name"})
+		return
+	}
+	if utf8.RuneCountInString(description) > 500 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_description"})
+		return
+	}
+	var iconKey *string
+	if req.IconObjectKey != nil {
+		key, ok := s.optionalUserUploadObjectKey(w, uid, *req.IconObjectKey, "invalid_icon_object_key")
+		if !ok {
+			return
+		}
+		iconKey = key
+	}
+	var headerKey *string
+	if req.HeaderObjectKey != nil {
+		key, ok := s.optionalUserUploadObjectKey(w, uid, *req.HeaderObjectKey, "invalid_header_object_key")
+		if !ok {
+			return
+		}
+		headerKey = key
+	}
+	c, err := s.db.UpdateCommunity(r.Context(), uid, communityID, s.isSiteAdmin(uid), name, description, details, iconKey, headerKey)
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+			return
+		}
+		if errors.Is(err, repo.ErrForbidden) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+			return
+		}
+		writeServerError(w, "UpdateCommunity", err)
+		return
+	}
+	c = s.communityWithManageFlag(c, uid)
+	body, err := s.communityJSONWithMemberPreviews(r.Context(), c)
+	if err != nil {
+		writeServerError(w, "ListCommunityMemberPreviews", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"community": body})
+}
+
+func (s *Server) handleDeleteCommunity(w http.ResponseWriter, r *http.Request) {
+	uid, ok := userIDFrom(r.Context())
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	communityID, ok := communityIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	if err := s.db.DeleteCommunity(r.Context(), uid, communityID, s.isSiteAdmin(uid)); err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+			return
+		}
+		if errors.Is(err, repo.ErrForbidden) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+			return
+		}
+		writeServerError(w, "DeleteCommunity", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (s *Server) handleListCommunityJoinRequests(w http.ResponseWriter, r *http.Request) {
+	uid, ok := userIDFrom(r.Context())
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	communityID, ok := communityIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	rows, err := s.db.ListCommunityJoinRequests(r.Context(), uid, communityID, 50)
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+			return
+		}
+		if errors.Is(err, repo.ErrForbidden) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+			return
+		}
+		writeServerError(w, "ListCommunityJoinRequests", err)
+		return
+	}
+	items := make([]map[string]any, 0, len(rows))
+	for _, row := range rows {
+		item := map[string]any{
+			"user_id":      row.UserID.String(),
+			"handle":       row.Handle,
+			"display_name": row.DisplayName,
+			"created_at":   row.CreatedAt.Format(time.RFC3339Nano),
+		}
+		if row.AvatarKey != nil && strings.TrimSpace(*row.AvatarKey) != "" {
+			item["avatar_url"] = s.glipzProtocolPublicMediaURL(*row.AvatarKey)
+		} else {
+			item["avatar_url"] = nil
+		}
+		items = append(items, item)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (s *Server) handleApproveCommunityJoinRequest(w http.ResponseWriter, r *http.Request) {
+	s.handleReviewCommunityJoinRequest(w, r, true)
+}
+
+func (s *Server) handleRejectCommunityJoinRequest(w http.ResponseWriter, r *http.Request) {
+	s.handleReviewCommunityJoinRequest(w, r, false)
+}
+
+func (s *Server) handleReviewCommunityJoinRequest(w http.ResponseWriter, r *http.Request, approve bool) {
+	uid, ok := userIDFrom(r.Context())
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	targetID, err := uuid.Parse(strings.TrimSpace(chi.URLParam(r, "userID")))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_user_id"})
+		return
+	}
+	communityID, ok := communityIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	if err := s.db.ReviewCommunityJoinRequest(r.Context(), uid, communityID, targetID, approve); err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+			return
+		}
+		if errors.Is(err, repo.ErrForbidden) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+			return
+		}
+		writeServerError(w, "ReviewCommunityJoinRequest", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
 type createPostReq struct {
 	Caption                string                      `json:"caption"`
 	MediaType              string                      `json:"media_type"`
@@ -1188,6 +1669,7 @@ type createPostReq struct {
 	VisibleAt              string                      `json:"visible_at"`
 	Poll                   *createPostPollReq          `json:"poll"`
 	Membership             *createPostMembership       `json:"membership,omitempty"`
+	CommunityID            string                      `json:"community_id,omitempty"`
 }
 
 type patchPostMembership struct {
@@ -1451,7 +1933,33 @@ func (s *Server) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	id, err := s.db.CreatePost(r.Context(), uid, req.Caption, mt, keys, replyTo, replyToRemoteObjectIRI, req.IsNSFW, visibility, viewHash, viewScope, viewRanges, visibleAt, pollIn, mProv, mCre, mTier)
+	var communityID *uuid.UUID
+	if communityIDRaw := strings.TrimSpace(req.CommunityID); communityIDRaw != "" {
+		if federatedReplyTarget != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "community_federated_reply_unsupported"})
+			return
+		}
+		cid, err := uuid.Parse(communityIDRaw)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_community_id"})
+			return
+		}
+		if err := s.db.EnsureCommunityApprovedMember(r.Context(), cid, uid); err != nil {
+			if errors.Is(err, repo.ErrNotFound) {
+				writeJSON(w, http.StatusNotFound, map[string]string{"error": "community_not_found"})
+				return
+			}
+			if errors.Is(err, repo.ErrForbidden) {
+				writeJSON(w, http.StatusForbidden, map[string]string{"error": "community_membership_required"})
+				return
+			}
+			writeServerError(w, "EnsureCommunityApprovedMember", err)
+			return
+		}
+		communityID = &cid
+	}
+
+	id, err := s.db.CreatePost(r.Context(), uid, req.Caption, mt, keys, replyTo, replyToRemoteObjectIRI, req.IsNSFW, visibility, viewHash, viewScope, viewRanges, visibleAt, pollIn, communityID, mProv, mCre, mTier)
 	if err != nil {
 		if errors.Is(err, repo.ErrNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "reply_target_not_found"})
@@ -1605,6 +2113,7 @@ type feedReactionJSON struct {
 type feedItem struct {
 	ID                     string                      `json:"id"`
 	UserEmail              string                      `json:"user_email,omitempty"`
+	IsOwnPost              bool                        `json:"is_own_post,omitempty"`
 	UserHandle             string                      `json:"user_handle"`
 	UserDisplayName        string                      `json:"user_display_name"`
 	UserBadges             []string                    `json:"user_badges,omitempty"`
@@ -1634,6 +2143,7 @@ type feedItem struct {
 	LikedByMe              bool                        `json:"liked_by_me"`
 	RepostedByMe           bool                        `json:"reposted_by_me"`
 	BookmarkedByMe         bool                        `json:"bookmarked_by_me"`
+	IsPinnedToProfile      bool                        `json:"is_pinned_to_profile,omitempty"`
 	// ReplyToPostID is populated only for reply rows returned by the thread API.
 	ReplyToPostID string `json:"reply_to_post_id,omitempty"`
 	// ReplyToObjectURL is used when the parent reply target does not have a local post ID.
@@ -1792,6 +2302,7 @@ func (s *Server) postRowToFeedItem(ctx context.Context, row repo.PostRow, viewer
 	return feedItem{
 		ID:                     row.ID.String(),
 		UserEmail:              "",
+		IsOwnPost:              viewer != uuid.Nil && row.UserID == viewer,
 		UserHandle:             row.UserHandle,
 		UserDisplayName:        resolvedPublicDisplayName(row.DisplayName, row.UserHandle),
 		UserBadges:             userBadgesJSON(badgeMap[row.UserID]),
@@ -2845,6 +3356,54 @@ func (s *Server) handleToggleBookmark(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"bookmarked": bookmarked})
 }
 
+func (s *Server) handlePinPostToProfile(w http.ResponseWriter, r *http.Request) {
+	uid, ok := userIDFrom(r.Context())
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	pid, err := uuid.Parse(strings.TrimSpace(chi.URLParam(r, "postID")))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_post_id"})
+		return
+	}
+	if err := s.db.SetPinnedPost(r.Context(), uid, pid); err != nil {
+		if errors.Is(err, repo.ErrForbidden) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+			return
+		}
+		if errors.Is(err, repo.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+			return
+		}
+		writeServerError(w, "SetPinnedPost", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"pinned": true, "post_id": pid.String()})
+}
+
+func (s *Server) handleUnpinPostFromProfile(w http.ResponseWriter, r *http.Request) {
+	uid, ok := userIDFrom(r.Context())
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	pid, err := uuid.Parse(strings.TrimSpace(chi.URLParam(r, "postID")))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_post_id"})
+		return
+	}
+	if err := s.db.ClearPinnedPost(r.Context(), uid, pid); err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+			return
+		}
+		writeServerError(w, "ClearPinnedPost", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"pinned": false, "post_id": pid.String()})
+}
+
 const maxRepostCommentRunes = 2000
 
 func (s *Server) handleToggleRepost(w http.ResponseWriter, r *http.Request) {
@@ -2995,6 +3554,7 @@ func (s *Server) handlePublicProfileByHandle(w http.ResponseWriter, r *http.Requ
 		"badges":          userBadgesJSON(s.visibleUserBadges(pfl.ID, pfl.Badges)),
 		"bio":             pfl.Bio,
 		"profile_urls":    pfl.ProfileExternalURLs,
+		"pinned_post_id":  nil,
 		"is_me":           isMe,
 		"follower_count":  followers + remoteFollowers,
 		"following_count": following + remoteFollowing,
@@ -3012,6 +3572,9 @@ func (s *Server) handlePublicProfileByHandle(w http.ResponseWriter, r *http.Requ
 	if isMe {
 		out["email"] = pfl.Email
 		out["display_name_raw"] = strings.TrimSpace(pfl.DisplayName)
+		if pfl.PinnedPostID != nil {
+			out["pinned_post_id"] = pfl.PinnedPostID.String()
+		}
 		if pfl.AvatarObjectKey != nil {
 			out["avatar_object_key"] = *pfl.AvatarObjectKey
 		} else {
@@ -3304,6 +3867,12 @@ func (s *Server) handleUserPostsByHandle(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		writeServerError(w, "encodeFeedRows", err)
 		return
+	}
+	if pfl.PinnedPostID != nil {
+		pinnedID := pfl.PinnedPostID.String()
+		for i := range items {
+			items[i].IsPinnedToProfile = items[i].ID == pinnedID
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
