@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "vite",
     "openapi:generate": "node scripts/build-openapi.mjs",
+    "version:sync": "node ../scripts/sync-version.mjs",
     "build": "vite build",
     "test": "vitest run",
     "preview": "vite preview",

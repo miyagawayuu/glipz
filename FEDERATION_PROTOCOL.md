@@ -81,7 +81,7 @@ The current protocol version is:
 glipz-federation/3
 ```
 
-The reference implementation advertises `glipz-federation/1`, `glipz-federation/2`, and `glipz-federation/3` in discovery, but new integrations should implement version 3.
+The reference implementation advertises `glipz-federation/2` and `glipz-federation/3` in discovery, but new integrations should implement version 3.
 
 Version 3 adds optional ID portability fields:
 
@@ -96,9 +96,9 @@ Version 2 requires:
 - `event_id` on signed event and follow/unfollow payloads.
 - Replay protection for nonces and event IDs.
 
-Version 1 is retained only for compatibility with older Glipz deployments. New
-servers should prefer version 3, and operators should plan to phase out version
-1 peers because nonce-based replay protection is mandatory only in version 2 and later.
+Version 1 is not advertised by current discovery responses. Operators should
+plan to phase out version 1 peers because nonce-based replay protection is
+mandatory only in version 2 and later.
 
 Event envelopes use schema version `3` in the `v` field.
 
@@ -143,7 +143,6 @@ Example:
   "server": {
     "protocol_version": "glipz-federation/3",
     "supported_protocol_versions": [
-      "glipz-federation/1",
       "glipz-federation/2",
       "glipz-federation/3"
     ],

@@ -309,7 +309,7 @@ func (s *Server) federationServerDiscovery(ctx context.Context) federationServer
 		ProtocolVersion:           federationProtocolVersion,
 		SupportedProtocolVersions: append([]string(nil), federationSupportedProtocolVersions...),
 		ServerSoftware:            "glipz",
-		ServerVersion:             glipzAppVersion,
+		ServerVersion:             s.appVersion(),
 		EventSchemaVersion:        federationEventSchemaVersion,
 		Host:                      s.federationDisplayHost(),
 		Origin:                    base,
@@ -711,7 +711,7 @@ func (s *Server) signedFederationPOSTJSON(ctx context.Context, endpoint string, 
 	req.Header.Set("X-Glipz-Instance", s.federationDisplayHost())
 	req.Header.Set("X-Glipz-Key-Id", s.federationServerKeyID())
 	req.Header.Set("X-Glipz-Protocol-Version", federationProtocolVersion)
-	req.Header.Set("X-Glipz-App-Version", glipzAppVersion)
+	req.Header.Set("X-Glipz-App-Version", s.appVersion())
 	req.Header.Set("X-Glipz-Timestamp", ts)
 	req.Header.Set("X-Glipz-Nonce", nonce)
 	req.Header.Set("X-Glipz-Signature", base64.StdEncoding.EncodeToString(sig))

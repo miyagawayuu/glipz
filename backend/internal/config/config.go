@@ -39,7 +39,7 @@ type Config struct {
 	StaticWebRoot string
 	// Optional directory containing operator-editable Markdown legal documents.
 	LegalDocsDir string
-	// Software version label exposed in NodeInfo and similar outputs. Defaults to "dev".
+	// Optional software version override exposed in federation metadata.
 	GlipzVersion string
 	// Optional short federation policy summary exposed in nodeinfo.metadata.
 	FederationPolicySummary string
@@ -180,9 +180,6 @@ func Load() (Config, error) {
 		c.GlipzProtocolMediaPublicBase = legacyProtocolMediaPublicBase
 	}
 	c.GlipzVersion = strings.TrimSpace(os.Getenv("GLIPZ_VERSION"))
-	if c.GlipzVersion == "" {
-		c.GlipzVersion = "dev"
-	}
 	c.FederationPolicySummary = strings.TrimSpace(os.Getenv("FEDERATION_POLICY_SUMMARY"))
 	c.RegistrationVerifyTTL = 30 * time.Minute
 	if ttlRaw := strings.TrimSpace(os.Getenv("REGISTRATION_VERIFY_TTL")); ttlRaw != "" {

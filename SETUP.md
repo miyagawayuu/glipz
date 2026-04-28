@@ -72,6 +72,10 @@ FRONTEND_ORIGIN=http://localhost:5173
 GLIPZ_VERSION=dev
 ```
 
+`GLIPZ_VERSION` is optional. When it is omitted, federation metadata exposes the
+app version synced from `web/package.json`; set it only when you want a runtime
+override such as `dev`, a release tag, or a short Git SHA.
+
 ### Admin users (optional)
 
 Comma-separated user UUIDs for built-in admin and moderation UIs:

@@ -214,14 +214,31 @@ Mailgun's default API base works for the US region. Set `MAILGUN_API_BASE` when 
 
 ## Step 3: Build the Image
 
+Glipz uses `web/package.json` as the source of truth for the application
+version. Before cutting a release, sync that version into the frontend display
+constants and backend federation metadata:
+
 ```bash
-docker build -f backend/Dockerfile -t glipz:latest .
+npm --prefix web run version:sync
+```
+
+For release builds, tag the image with an immutable SemVer tag and optionally
+keep `latest` as a convenience alias:
+
+```bash
+APP_VERSION="$(node -p 'require("./web/package.json").version')"
+docker build -f backend/Dockerfile -t "glipz:v${APP_VERSION}" -t glipz:latest .
 ```
 
 This builds:
 - The Go backend binary
 - The Vue frontend
 - Serves frontend from `/app/web/dist`
+
+`glipz:vX.Y.Z` should identify the release artifact. Use `glipz:latest` only as
+a mutable pointer for local convenience, not as the audit trail. For nightly or
+operator-local builds, keep an additional immutable tag such as
+`glipz:git-<short-sha>` or `glipz:YYYYMMDDTHHMMSSZ`.
 
 For production releases, pin and verify base image digests in CI instead of
 relying only on mutable tags. For example:
@@ -263,7 +280,7 @@ docker run -d \
   -v /var/lib/glipz/media:/app/data/media \
   -v /var/lib/glipz/legal-docs:/app/data/legal-docs:ro \
   -p 127.0.0.1:8080:8080 \
-  glipz:latest
+  glipz:vX.Y.Z
 ```
 
 > **Important**: Only expose port 8080 to localhost. Access through your reverse proxy.
@@ -404,6 +421,7 @@ Run these checks after deployment:
 | API | `curl -H "Authorization: Bearer $TOKEN" https://your-domain.com/api/v1/users/me` | User data |
 | Federation discovery | `curl https://your-domain.com/.well-known/glipz-federation` | `protocol_version`, `public_key`, and endpoint URLs |
 | Federation inbox path | `curl -i https://your-domain.com/federation/events` | Non-GET response from Glipz backend, not a proxy 404 |
+| App version | `curl -s https://your-domain.com/.well-known/glipz-federation` | `server_version` matches the deployed release or `GLIPZ_VERSION` override |
 
 ---
 
@@ -442,15 +460,30 @@ docker logs -f glipz
 ### Updates
 
 ```bash
-docker pull glipz:latest
-docker restart glipz
+docker pull glipz:vX.Y.Z
+docker rm -f glipz
+# Re-run the Step 4 docker run command with glipz:vX.Y.Z.
 ```
+
+The Ubuntu updater builds an immutable timestamped local image such as
+`glipz:YYYYMMDDTHHMMSSZ`, retags it to the configured `GLIPZ_IMAGE_TAG`
+(`glipz:latest` by default), and keeps `GLIPZ_PREVIOUS_IMAGE_TAG` for rollback.
+If you want federation metadata to expose a release tag instead of the installer
+Git SHA, set `GLIPZ_VERSION=vX.Y.Z` in `/etc/glipz/glipz.env` before restarting.
 
 ### Backup
 
 - PostgreSQL database
 - S3 bucket contents
 - `.env` file (keep secure)
+
+### Release Checklist
+
+- [ ] Bump `web/package.json` and `web/package-lock.json` with `npm --prefix web version <major|minor|patch>`.
+- [ ] Run `npm --prefix web run version:sync`.
+- [ ] Update `CHANGELOG.md`, including whether DB migrations are required.
+- [ ] Review `FEDERATION_PROTOCOL.md` / `FEDERATION_PROTOCOL.ja.md` when `protocol_version`, `supported_protocol_versions`, or `event_schema_version` changes.
+- [ ] Build and publish immutable tags such as `glipz:vX.Y.Z`; keep `latest` only as a movable alias.
 
 ---
 

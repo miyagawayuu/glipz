@@ -76,7 +76,7 @@ Glipz federation は主に4つの要素で構成されます。
 glipz-federation/3
 ```
 
-参照実装は discovery で `glipz-federation/1`、`glipz-federation/2`、`glipz-federation/3` を広告しますが、新規実装では version 3 を実装してください。
+参照実装は discovery で `glipz-federation/2` と `glipz-federation/3` を広告しますが、新規実装では version 3 を実装してください。
 
 Version 3 では ID ポータビリティ用の optional field が追加されます。
 
@@ -91,7 +91,7 @@ Version 2 では次が必須です。
 - 署名付き event と follow/unfollow ペイロードに `event_id` を含める。
 - nonce と event ID による replay protection を行う。
 
-Version 1 は古い Glipz デプロイとの互換目的でのみ残されています。新規サーバは version 3 を優先し、運用者は version 1 ピアを段階的に外す計画を立ててください。nonce による replay protection が必須なのは version 2 以降です。
+Version 1 は現在の discovery 応答では広告されません。運用者は version 1 ピアを段階的に外す計画を立ててください。nonce による replay protection が必須なのは version 2 以降です。
 
 Event envelope の `v` フィールドには schema version `3` を使います。
 
@@ -136,7 +136,6 @@ GET /.well-known/glipz-federation?resource=alice@social.example
   "server": {
     "protocol_version": "glipz-federation/3",
     "supported_protocol_versions": [
-      "glipz-federation/1",
       "glipz-federation/2",
       "glipz-federation/3"
     ],

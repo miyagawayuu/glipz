@@ -17,6 +17,15 @@ var federationSupportedProtocolVersions = []string{
 	federationProtocolVersion,
 }
 
+func (s *Server) appVersion() string {
+	if s != nil {
+		if version := strings.TrimSpace(s.cfg.GlipzVersion); version != "" {
+			return version
+		}
+	}
+	return glipzAppVersion
+}
+
 func normalizeFederationEventVersion(v int) int {
 	if v <= 0 {
 		return 1
