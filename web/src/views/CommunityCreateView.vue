@@ -8,6 +8,7 @@ import { createCommunity } from "../lib/communities";
 const router = useRouter();
 const name = ref("");
 const description = ref("");
+const tagsText = ref("");
 const iconFile = ref<File | null>(null);
 const headerFile = ref<File | null>(null);
 const busy = ref(false);
@@ -21,6 +22,18 @@ function selectIcon(e: Event) {
 function selectHeader(e: Event) {
   const input = e.target as HTMLInputElement;
   headerFile.value = input.files?.[0] ?? null;
+}
+
+function parseTags(raw: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const part of raw.split(/[,\s、]+/)) {
+    const tag = part.trim().replace(/^#+/, "").toLowerCase();
+    if (!tag || seen.has(tag)) continue;
+    seen.add(tag);
+    out.push(tag);
+  }
+  return out;
 }
 
 async function submit() {
@@ -41,6 +54,7 @@ async function submit() {
     const community = await createCommunity({
       name: name.value,
       description: description.value,
+      tags: parseTags(tagsText.value),
       icon_object_key: icon?.object_key,
       header_object_key: header?.object_key,
     });
@@ -88,6 +102,19 @@ async function submit() {
         rows="5"
         class="w-full resize-none rounded-xl border border-neutral-200 bg-white px-3 py-2 text-neutral-900 outline-none ring-lime-500 focus:ring-2"
       />
+    </div>
+    <div>
+      <label class="mb-1 block text-sm font-medium text-neutral-700" for="community-tags">
+        {{ $t("views.communityCreate.tags") }}
+      </label>
+      <input
+        id="community-tags"
+        v-model="tagsText"
+        maxlength="200"
+        class="w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-neutral-900 outline-none ring-lime-500 focus:ring-2"
+        :placeholder="$t('views.communityCreate.tagsPlaceholder')"
+      />
+      <p class="mt-1 text-xs text-neutral-500">{{ $t("views.communityCreate.tagsHint") }}</p>
     </div>
     <div class="grid gap-4 sm:grid-cols-2">
       <div>

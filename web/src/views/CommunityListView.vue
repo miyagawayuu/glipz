@@ -9,6 +9,8 @@ const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
 const communities = ref<Community[]>([]);
+const communityTags = ref<string[]>([]);
+const tagScroller = ref<HTMLElement | null>(null);
 const busy = ref(false);
 const err = ref("");
 const signedIn = ref(false);
@@ -28,7 +30,9 @@ async function load() {
   err.value = "";
   signedIn.value = Boolean(getAccessToken());
   try {
-    communities.value = await listCommunities(activeQuery.value);
+    const res = await listCommunities(activeQuery.value);
+    communities.value = res.items;
+    communityTags.value = res.tags;
   } catch (e: unknown) {
     err.value = e instanceof Error ? e.message : "load_failed";
   } finally {
@@ -56,6 +60,18 @@ function replaceSearchQuery(q: string) {
     delete query.q;
   }
   void router.replace({ path: route.path, query });
+}
+
+function searchByTag(tag: string) {
+  searchQuery.value = tag;
+  replaceSearchQuery(tag);
+}
+
+function scrollTags(direction: "left" | "right") {
+  const el = tagScroller.value;
+  if (!el) return;
+  const amount = Math.max(160, Math.floor(el.clientWidth * 0.75));
+  el.scrollBy({ left: direction === "left" ? -amount : amount, behavior: "smooth" });
 }
 
 function submitSearch() {
@@ -97,7 +113,6 @@ onUnmounted(() => {
     <div class="flex items-center justify-between gap-3 border-b border-neutral-200 px-4 py-3">
       <div class="min-w-0">
         <h1 class="truncate text-xl font-bold text-neutral-900">{{ $t("views.communities.title") }}</h1>
-        <p class="truncate text-xs text-neutral-500">{{ $t("views.communities.description") }}</p>
       </div>
       <RouterLink
         v-if="signedIn"
@@ -140,6 +155,43 @@ onUnmounted(() => {
         {{ $t("views.communities.searchSubmit") }}
       </button>
     </form>
+    <div v-if="communityTags.length" class="mt-3 flex items-center gap-2">
+      <button
+        type="button"
+        class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50"
+        :aria-label="$t('views.communities.tagsScrollLeft')"
+        @click="scrollTags('left')"
+      >
+        ‹
+      </button>
+      <div
+        ref="tagScroller"
+        class="flex min-w-0 flex-1 gap-2 overflow-x-auto scroll-smooth py-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        <button
+          v-for="tag in communityTags"
+          :key="tag"
+          type="button"
+          class="shrink-0 rounded-full border px-3 py-1 text-xs font-semibold transition-colors"
+          :class="
+            activeQuery.toLowerCase() === tag.toLowerCase()
+              ? 'border-lime-500 bg-lime-50 text-lime-800'
+              : 'border-neutral-200 bg-white text-neutral-700 hover:border-lime-300 hover:text-lime-800'
+          "
+          @click="searchByTag(tag)"
+        >
+          #{{ tag }}
+        </button>
+      </div>
+      <button
+        type="button"
+        class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50"
+        :aria-label="$t('views.communities.tagsScrollRight')"
+        @click="scrollTags('right')"
+      >
+        ›
+      </button>
+    </div>
   </div>
 
   <div v-if="err" class="m-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -165,6 +217,15 @@ onUnmounted(() => {
           <div class="min-w-0">
           <h2 class="truncate text-lg font-semibold text-neutral-900">{{ community.name }}</h2>
           <p v-if="community.description" class="mt-2 line-clamp-2 text-sm text-neutral-700">{{ community.description }}</p>
+          <div v-if="community.tags?.length" class="mt-2 flex flex-wrap gap-1.5">
+            <span
+              v-for="tag in community.tags"
+              :key="tag"
+              class="rounded-full bg-lime-50 px-2 py-0.5 text-[11px] font-medium text-lime-800"
+            >
+              #{{ tag }}
+            </span>
+          </div>
           </div>
         </div>
         <div class="shrink-0 text-right text-xs text-neutral-500">

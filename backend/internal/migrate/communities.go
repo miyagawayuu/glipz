@@ -35,6 +35,7 @@ func RunCommunities(ctx context.Context, pool *pgxpool.Pool) error {
 			CONSTRAINT communities_name_non_empty CHECK (btrim(name) <> '')
 		)`,
 		`ALTER TABLE communities ADD COLUMN IF NOT EXISTS details TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE communities ADD COLUMN IF NOT EXISTS tags TEXT[] NOT NULL DEFAULT '{}'::text[]`,
 		`ALTER TABLE communities ADD COLUMN IF NOT EXISTS icon_object_key TEXT`,
 		`ALTER TABLE communities ADD COLUMN IF NOT EXISTS header_object_key TEXT`,
 		`ALTER TABLE communities DROP CONSTRAINT IF EXISTS communities_slug_non_empty`,

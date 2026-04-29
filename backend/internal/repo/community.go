@@ -24,6 +24,7 @@ type Community struct {
 	Name                string
 	Description         string
 	Details             string
+	Tags                []string
 	IconObjectKey       *string
 	HeaderObjectKey     *string
 	CreatorUserID       uuid.UUID
@@ -51,7 +52,7 @@ type CommunityMemberPreview struct {
 	AvatarKey   *string
 }
 
-func (p *Pool) CreateCommunity(ctx context.Context, creatorID uuid.UUID, name, description, details string, iconObjectKey, headerObjectKey *string) (Community, error) {
+func (p *Pool) CreateCommunity(ctx context.Context, creatorID uuid.UUID, name, description, details string, tags []string, iconObjectKey, headerObjectKey *string) (Community, error) {
 	name = strings.TrimSpace(name)
 	description = strings.TrimSpace(description)
 	details = strings.TrimSpace(details)
@@ -62,11 +63,11 @@ func (p *Pool) CreateCommunity(ctx context.Context, creatorID uuid.UUID, name, d
 	defer func() { _ = tx.Rollback(ctx) }()
 	var row Community
 	err = tx.QueryRow(ctx, `
-		INSERT INTO communities (name, description, details, icon_object_key, header_object_key, creator_user_id)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING id, name, description, details, icon_object_key, header_object_key, creator_user_id, created_at, updated_at
-	`, name, description, details, iconObjectKey, headerObjectKey, creatorID).Scan(
-		&row.ID, &row.Name, &row.Description, &row.Details, &row.IconObjectKey, &row.HeaderObjectKey, &row.CreatorUserID, &row.CreatedAt, &row.UpdatedAt,
+		INSERT INTO communities (name, description, details, tags, icon_object_key, header_object_key, creator_user_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING id, name, description, details, tags, icon_object_key, header_object_key, creator_user_id, created_at, updated_at
+	`, name, description, details, tags, iconObjectKey, headerObjectKey, creatorID).Scan(
+		&row.ID, &row.Name, &row.Description, &row.Details, &row.Tags, &row.IconObjectKey, &row.HeaderObjectKey, &row.CreatorUserID, &row.CreatedAt, &row.UpdatedAt,
 	)
 	if err != nil {
 		return Community{}, err
@@ -92,7 +93,7 @@ func (p *Pool) ListCommunities(ctx context.Context, viewerID uuid.UUID, query st
 	}
 	query = strings.TrimSpace(query)
 	rows, err := p.db.Query(ctx, `
-		SELECT c.id, c.name, c.description, c.details, c.icon_object_key, c.header_object_key, c.creator_user_id, c.created_at, c.updated_at,
+		SELECT c.id, c.name, c.description, c.details, COALESCE(c.tags, '{}'::text[]), c.icon_object_key, c.header_object_key, c.creator_user_id, c.created_at, c.updated_at,
 			COALESCE(mem.member_count, 0)::bigint,
 			COALESCE(cm.role, ''),
 			COALESCE(cm.status, ''),
@@ -109,6 +110,7 @@ func (p *Pool) ListCommunities(ctx context.Context, viewerID uuid.UUID, query st
 		   OR c.name ILIKE '%' || $3 || '%'
 		   OR c.description ILIKE '%' || $3 || '%'
 		   OR c.id::text ILIKE '%' || $3 || '%'
+		   OR EXISTS (SELECT 1 FROM unnest(COALESCE(c.tags, '{}'::text[])) AS tags(tag) WHERE tag ILIKE '%' || $3 || '%')
 		ORDER BY c.created_at DESC, c.id DESC
 		LIMIT $2
 	`, viewerID, limit, query)
@@ -119,10 +121,40 @@ func (p *Pool) ListCommunities(ctx context.Context, viewerID uuid.UUID, query st
 	return scanCommunities(rows)
 }
 
+func (p *Pool) ListCommunityTags(ctx context.Context, limit int) ([]string, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 100
+	}
+	rows, err := p.db.Query(ctx, `
+		SELECT tag
+		FROM (
+			SELECT lower(btrim(tag)) AS tag, COUNT(*)::bigint AS n
+			FROM communities c, unnest(COALESCE(c.tags, '{}'::text[])) AS tags(tag)
+			WHERE btrim(tag) <> ''
+			GROUP BY lower(btrim(tag))
+		) t
+		ORDER BY n DESC, tag ASC
+		LIMIT $1
+	`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var tag string
+		if err := rows.Scan(&tag); err != nil {
+			return nil, err
+		}
+		out = append(out, tag)
+	}
+	return out, rows.Err()
+}
+
 func (p *Pool) CommunityByID(ctx context.Context, viewerID, communityID uuid.UUID) (Community, error) {
 	var row Community
 	err := p.db.QueryRow(ctx, `
-		SELECT c.id, c.name, c.description, c.details, c.icon_object_key, c.header_object_key, c.creator_user_id, c.created_at, c.updated_at,
+		SELECT c.id, c.name, c.description, c.details, COALESCE(c.tags, '{}'::text[]), c.icon_object_key, c.header_object_key, c.creator_user_id, c.created_at, c.updated_at,
 			COALESCE(mem.member_count, 0)::bigint,
 			COALESCE(cm.role, ''),
 			COALESCE(cm.status, ''),
@@ -146,7 +178,7 @@ func (p *Pool) CommunityByID(ctx context.Context, viewerID, communityID uuid.UUI
 		) req ON req.community_id = c.id
 		WHERE c.id = $2
 	`, viewerID, communityID).Scan(
-		&row.ID, &row.Name, &row.Description, &row.Details, &row.IconObjectKey, &row.HeaderObjectKey, &row.CreatorUserID, &row.CreatedAt, &row.UpdatedAt,
+		&row.ID, &row.Name, &row.Description, &row.Details, &row.Tags, &row.IconObjectKey, &row.HeaderObjectKey, &row.CreatorUserID, &row.CreatedAt, &row.UpdatedAt,
 		&row.ApprovedMemberCount, &row.ViewerRole, &row.ViewerStatus, &row.PendingRequestCount,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -163,7 +195,7 @@ func scanCommunities(rows pgx.Rows) ([]Community, error) {
 	for rows.Next() {
 		var row Community
 		if err := rows.Scan(
-			&row.ID, &row.Name, &row.Description, &row.Details, &row.IconObjectKey, &row.HeaderObjectKey, &row.CreatorUserID, &row.CreatedAt, &row.UpdatedAt,
+			&row.ID, &row.Name, &row.Description, &row.Details, &row.Tags, &row.IconObjectKey, &row.HeaderObjectKey, &row.CreatorUserID, &row.CreatedAt, &row.UpdatedAt,
 			&row.ApprovedMemberCount, &row.ViewerRole, &row.ViewerStatus, &row.PendingRequestCount,
 		); err != nil {
 			return nil, err
@@ -248,7 +280,7 @@ func (p *Pool) communityOwnerApproved(ctx context.Context, communityID, userID u
 	return ok, nil
 }
 
-func (p *Pool) UpdateCommunity(ctx context.Context, actorID, communityID uuid.UUID, allowAdmin bool, name, description string, details *string, iconObjectKey, headerObjectKey *string) (Community, error) {
+func (p *Pool) UpdateCommunity(ctx context.Context, actorID, communityID uuid.UUID, allowAdmin bool, name, description string, details *string, tags []string, iconObjectKey, headerObjectKey *string) (Community, error) {
 	if !allowAdmin {
 		ok, err := p.communityOwnerApproved(ctx, communityID, actorID)
 		if err != nil {
@@ -263,18 +295,19 @@ func (p *Pool) UpdateCommunity(ctx context.Context, actorID, communityID uuid.UU
 		SET name = $3,
 			description = $4,
 			details = COALESCE($5::text, details),
-			icon_object_key = COALESCE($6::text, icon_object_key),
-			header_object_key = COALESCE($7::text, header_object_key),
+			tags = $6,
+			icon_object_key = COALESCE($7::text, icon_object_key),
+			header_object_key = COALESCE($8::text, header_object_key),
 			updated_at = NOW()
 		WHERE id = $1
 		  AND ($2::boolean OR EXISTS (
 			SELECT 1 FROM community_members cm
 			WHERE cm.community_id = communities.id
-			  AND cm.user_id = $8
+			  AND cm.user_id = $9
 			  AND cm.role = 'owner'
 			  AND cm.status = 'approved'
 		  ))
-	`, communityID, allowAdmin, strings.TrimSpace(name), strings.TrimSpace(description), details, iconObjectKey, headerObjectKey, actorID)
+	`, communityID, allowAdmin, strings.TrimSpace(name), strings.TrimSpace(description), details, tags, iconObjectKey, headerObjectKey, actorID)
 	if err != nil {
 		return Community{}, err
 	}

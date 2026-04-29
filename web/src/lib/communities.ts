@@ -10,6 +10,7 @@ export type Community = {
   name: string;
   description: string;
   details: string;
+  tags: string[];
   member_previews?: CommunityMemberPreview[];
   icon_url?: string | null;
   header_url?: string | null;
@@ -45,19 +46,20 @@ export type CommunityMediaTile = {
   locked: boolean;
 };
 
-export async function listCommunities(q = ""): Promise<Community[]> {
+export async function listCommunities(q = ""): Promise<{ items: Community[]; tags: string[] }> {
   const params = new URLSearchParams();
   const query = q.trim();
   if (query) params.set("q", query);
   const path = `/api/v1/communities${params.toString() ? `?${params.toString()}` : ""}`;
-  const res = await api<{ items: Community[] }>(path, { method: "GET" });
-  return res.items ?? [];
+  const res = await api<{ items: Community[]; tags?: string[] }>(path, { method: "GET" });
+  return { items: res.items ?? [], tags: res.tags ?? [] };
 }
 
 export async function createCommunity(input: {
   name: string;
   description: string;
   details?: string;
+  tags?: string[];
   icon_object_key?: string;
   header_object_key?: string;
 }): Promise<Community> {
@@ -115,7 +117,7 @@ export async function reviewCommunityJoinRequest(id: string, userId: string, app
 
 export async function updateCommunity(
   id: string,
-  input: { name: string; description: string; details?: string; icon_object_key?: string; header_object_key?: string },
+  input: { name: string; description: string; details?: string; tags?: string[]; icon_object_key?: string; header_object_key?: string },
 ): Promise<Community> {
   const res = await api<{ community: Community }>(`/api/v1/communities/${encodeURIComponent(id)}`, {
     method: "PATCH",

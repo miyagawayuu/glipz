@@ -53,6 +53,7 @@ const editingCommunity = ref(false);
 const editCommunityName = ref("");
 const editCommunityDescription = ref("");
 const editCommunityDetails = ref("");
+const editCommunityTagsText = ref("");
 const imageEditBusy = ref<"icon" | "header" | null>(null);
 let toastTimer: ReturnType<typeof setTimeout> | null = null;
 type LightboxState = { urls: string[]; index: number };
@@ -267,7 +268,20 @@ function openCommunityEdit() {
   editCommunityName.value = community.value.name;
   editCommunityDescription.value = community.value.description;
   editCommunityDetails.value = community.value.details;
+  editCommunityTagsText.value = (community.value.tags ?? []).join(", ");
   editingCommunity.value = true;
+}
+
+function parseCommunityTags(raw: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const part of raw.split(/[,\s、]+/)) {
+    const tag = part.trim().replace(/^#+/, "").toLowerCase();
+    if (!tag || seen.has(tag)) continue;
+    seen.add(tag);
+    out.push(tag);
+  }
+  return out;
 }
 
 async function submitCommunityEdit() {
@@ -275,10 +289,11 @@ async function submitCommunityEdit() {
   if (!token || !community.value) return;
   actionBusy.value = "community-edit";
   try {
-    const input: { name: string; description: string; details: string; icon_object_key?: string; header_object_key?: string } = {
+    const input: { name: string; description: string; details: string; tags: string[]; icon_object_key?: string; header_object_key?: string } = {
       name: editCommunityName.value,
       description: editCommunityDescription.value,
       details: editCommunityDetails.value,
+      tags: parseCommunityTags(editCommunityTagsText.value),
     };
     community.value = await updateCommunity(community.value.id, input);
     editingCommunity.value = false;
@@ -296,10 +311,11 @@ async function updateCommunityImage(kind: "icon" | "header", file: File) {
   imageEditBusy.value = kind;
   try {
     const up = await uploadMediaFile(token, file);
-    const input: { name: string; description: string; details: string; icon_object_key?: string; header_object_key?: string } = {
+    const input: { name: string; description: string; details: string; tags: string[]; icon_object_key?: string; header_object_key?: string } = {
       name: community.value.name,
       description: community.value.description,
       details: community.value.details,
+      tags: community.value.tags ?? [],
     };
     if (kind === "icon") input.icon_object_key = up.object_key;
     else input.header_object_key = up.object_key;
@@ -534,6 +550,15 @@ onUnmounted(() => {
           </RouterLink>
           <h1 class="mt-2 truncate text-2xl font-bold text-neutral-900">{{ community.name }}</h1>
           <p v-if="community.description" class="mt-3 whitespace-pre-wrap text-sm text-neutral-700">{{ community.description }}</p>
+          <div v-if="community.tags?.length" class="mt-3 flex flex-wrap gap-1.5">
+            <span
+              v-for="tag in community.tags"
+              :key="tag"
+              class="rounded-full bg-lime-50 px-2 py-0.5 text-xs font-medium text-lime-800"
+            >
+              #{{ tag }}
+            </span>
+          </div>
           <div class="mt-4 flex items-center justify-between gap-3">
             <div class="flex min-w-0 items-center gap-2.5">
               <div v-if="memberPreviews.length" class="flex shrink-0 -space-x-1.5">
@@ -790,6 +815,19 @@ onUnmounted(() => {
               class="w-full resize-none rounded-xl border border-neutral-200 bg-white px-3 py-2 text-neutral-900 outline-none ring-lime-500 focus:ring-2"
               :placeholder="$t('views.communityCreate.body')"
             />
+            <div>
+              <label class="mb-1 block text-sm font-medium text-neutral-700" for="community-edit-tags">
+                {{ $t("views.communityCreate.tags") }}
+              </label>
+              <input
+                id="community-edit-tags"
+                v-model="editCommunityTagsText"
+                maxlength="200"
+                class="w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-neutral-900 outline-none ring-lime-500 focus:ring-2"
+                :placeholder="$t('views.communityCreate.tagsPlaceholder')"
+              />
+              <p class="mt-1 text-xs text-neutral-500">{{ $t("views.communityCreate.tagsHint") }}</p>
+            </div>
             <div>
               <label class="mb-1 block text-sm font-medium text-neutral-700" for="community-details-markdown">
                 {{ $t("views.communityDetail.detailsMarkdownLabel") }}

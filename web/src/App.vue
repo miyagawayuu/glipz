@@ -36,6 +36,7 @@ import { getOperatorAnnouncements } from "./data/operatorAnnouncements";
 import { fetchPublicInstanceSettings, type OperatorAnnouncement } from "./lib/instanceSettings";
 import { legalDocumentLink, type LegalDocumentKey, type LegalDocumentURLSettings } from "./lib/legalDocumentLinks";
 import { safeHttpURL } from "./lib/redirect";
+import { APP_VERSION } from "./lib/appInfo";
 
 const route = useRoute();
 const router = useRouter();
@@ -212,7 +213,7 @@ function onSystemThemeChange() {
 
 const usesGuestSimpleLayout = computed(() => {
   if (route.meta.guestSimpleLayout === true) return true;
-  if (route.path === "/login" || route.path === "/register") return true;
+  if (route.path === "/login" || route.path === "/register" || route.path === "/mfa") return true;
   if (route.path === "/about") return true;
   if (authed.value) return false;
   return (
@@ -848,15 +849,17 @@ function avatarInitials(email: string): string {
         <div class="mt-4 shrink-0 px-0.5">
           <button
             type="button"
-            class="flex w-full items-center justify-center gap-2 rounded-full bg-lime-600 px-4 py-3 text-sm font-bold text-white shadow-sm shadow-lime-900/10 transition hover:bg-lime-700 focus:outline-none focus:ring-2 focus:ring-lime-500 focus:ring-offset-2"
+            class="flex w-full items-center justify-center gap-2.5 rounded-full bg-lime-600 px-5 py-3.5 text-base font-bold text-white shadow-sm shadow-lime-900/10 transition hover:bg-lime-700 focus:outline-none focus:ring-2 focus:ring-lime-500 focus:ring-offset-2"
             @click="openSidebarCompose"
           >
-            <Icon name="pencil" class="h-5 w-5 shrink-0" />
             <span>{{ $t("app.nav.post") }}</span>
           </button>
+          <p class="mt-3 text-center text-[11px] font-medium uppercase tracking-wide text-neutral-400">
+            APP VERSION {{ APP_VERSION }}
+          </p>
         </div>
 
-        <div ref="profileMenuRoot" class="relative mt-4 shrink-0 border-t border-neutral-200 pt-4">
+        <div ref="profileMenuRoot" class="relative mt-5 shrink-0 border-t border-neutral-200 pt-4">
           <button
             id="profile-menu-button"
             type="button"

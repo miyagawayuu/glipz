@@ -1192,19 +1192,46 @@ type createPostMembership struct {
 }
 
 type createCommunityReq struct {
-	Name            string `json:"name"`
-	Description     string `json:"description"`
-	Details         string `json:"details"`
-	IconObjectKey   string `json:"icon_object_key"`
-	HeaderObjectKey string `json:"header_object_key"`
+	Name            string   `json:"name"`
+	Description     string   `json:"description"`
+	Details         string   `json:"details"`
+	Tags            []string `json:"tags"`
+	IconObjectKey   string   `json:"icon_object_key"`
+	HeaderObjectKey string   `json:"header_object_key"`
 }
 
 type patchCommunityReq struct {
-	Name            string  `json:"name"`
-	Description     string  `json:"description"`
-	Details         *string `json:"details"`
-	IconObjectKey   *string `json:"icon_object_key"`
-	HeaderObjectKey *string `json:"header_object_key"`
+	Name            string   `json:"name"`
+	Description     string   `json:"description"`
+	Details         *string  `json:"details"`
+	Tags            []string `json:"tags"`
+	IconObjectKey   *string  `json:"icon_object_key"`
+	HeaderObjectKey *string  `json:"header_object_key"`
+}
+
+func normalizeCommunityTags(raw []string) ([]string, bool) {
+	const maxTags = 8
+	out := make([]string, 0, len(raw))
+	seen := map[string]bool{}
+	for _, item := range raw {
+		tag := strings.TrimSpace(strings.TrimPrefix(item, "#"))
+		tag = strings.ToLower(tag)
+		if tag == "" {
+			continue
+		}
+		if utf8.RuneCountInString(tag) > 24 {
+			return nil, false
+		}
+		if seen[tag] {
+			continue
+		}
+		seen[tag] = true
+		out = append(out, tag)
+		if len(out) > maxTags {
+			return nil, false
+		}
+	}
+	return out, true
 }
 
 func (s *Server) communityWithManageFlag(c repo.Community, viewer uuid.UUID) repo.Community {
@@ -1221,6 +1248,7 @@ func (s *Server) communityJSON(c repo.Community) map[string]any {
 		"name":                  c.Name,
 		"description":           c.Description,
 		"details":               c.Details,
+		"tags":                  c.Tags,
 		"creator_user_id":       c.CreatorUserID.String(),
 		"created_at":            c.CreatedAt.Format(time.RFC3339Nano),
 		"updated_at":            c.UpdatedAt.Format(time.RFC3339Nano),
@@ -1281,12 +1309,17 @@ func (s *Server) handleListCommunities(w http.ResponseWriter, r *http.Request) {
 		writeServerError(w, "ListCommunities", err)
 		return
 	}
+	tags, err := s.db.ListCommunityTags(r.Context(), 100)
+	if err != nil {
+		writeServerError(w, "ListCommunityTags", err)
+		return
+	}
 	items := make([]map[string]any, 0, len(communities))
 	for _, c := range communities {
 		c = s.communityWithManageFlag(c, viewer)
 		items = append(items, s.communityJSON(c))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+	writeJSON(w, http.StatusOK, map[string]any{"items": items, "tags": tags})
 }
 
 func (s *Server) handleCreateCommunity(w http.ResponseWriter, r *http.Request) {
@@ -1315,6 +1348,11 @@ func (s *Server) handleCreateCommunity(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_details"})
 		return
 	}
+	tags, ok := normalizeCommunityTags(req.Tags)
+	if !ok {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_tags"})
+		return
+	}
 	iconKey, ok := s.optionalUserUploadObjectKey(w, uid, req.IconObjectKey, "invalid_icon_object_key")
 	if !ok {
 		return
@@ -1323,7 +1361,7 @@ func (s *Server) handleCreateCommunity(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	c, err := s.db.CreateCommunity(r.Context(), uid, name, description, details, iconKey, headerKey)
+	c, err := s.db.CreateCommunity(r.Context(), uid, name, description, details, tags, iconKey, headerKey)
 	if err != nil {
 		writeServerError(w, "CreateCommunity", err)
 		return
@@ -1511,6 +1549,11 @@ func (s *Server) handlePatchCommunity(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_description"})
 		return
 	}
+	tags, ok := normalizeCommunityTags(req.Tags)
+	if !ok {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_tags"})
+		return
+	}
 	var iconKey *string
 	if req.IconObjectKey != nil {
 		key, ok := s.optionalUserUploadObjectKey(w, uid, *req.IconObjectKey, "invalid_icon_object_key")
@@ -1527,7 +1570,7 @@ func (s *Server) handlePatchCommunity(w http.ResponseWriter, r *http.Request) {
 		}
 		headerKey = key
 	}
-	c, err := s.db.UpdateCommunity(r.Context(), uid, communityID, s.isSiteAdmin(uid), name, description, details, iconKey, headerKey)
+	c, err := s.db.UpdateCommunity(r.Context(), uid, communityID, s.isSiteAdmin(uid), name, description, details, tags, iconKey, headerKey)
 	if err != nil {
 		if errors.Is(err, repo.ErrNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})

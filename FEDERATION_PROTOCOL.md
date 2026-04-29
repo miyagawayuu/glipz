@@ -147,7 +147,7 @@ Example:
       "glipz-federation/3"
     ],
     "server_software": "glipz",
-    "server_version": "0.0.1",
+    "server_version": "0.0.2",
     "event_schema_version": 3,
     "host": "social.example",
     "origin": "https://social.example",
@@ -289,7 +289,7 @@ Content-Type: application/json
 X-Glipz-Instance: social.example
 X-Glipz-Key-Id: https://social.example/.well-known/glipz-federation#default
 X-Glipz-Protocol-Version: glipz-federation/3
-X-Glipz-App-Version: 0.0.1
+X-Glipz-App-Version: 0.0.2
 X-Glipz-Timestamp: 2026-04-26T00:00:00Z
 X-Glipz-Nonce: 550e8400-e29b-41d4-a716-446655440000
 X-Glipz-Signature: BASE64_ED25519_SIGNATURE

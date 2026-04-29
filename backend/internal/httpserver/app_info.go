@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	glipzAppVersion              = "0.0.1"
+	glipzAppVersion              = "0.0.2"
 	federationProtocolName       = "glipz-federation"
 	federationProtocolVersion    = federationProtocolName + "/3"
 	federationEventSchemaVersion = 3
