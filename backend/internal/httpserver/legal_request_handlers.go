@@ -54,6 +54,7 @@ type createLegalHoldReq struct {
 }
 
 type createDMReportReq struct {
+	Category                   string `json:"category"`
 	Reason                     string `json:"reason"`
 	IncludePlaintext           bool   `json:"include_plaintext"`
 	ReporterSubmittedPlaintext string `json:"reporter_submitted_plaintext"`
@@ -137,6 +138,7 @@ func dmReportToJSON(row repo.DMReport) map[string]any {
 		"message_sender_handle":        row.MessageSenderHandle,
 		"message_sender_display_name":  row.MessageSenderDisplayName,
 		"reason":                       row.Reason,
+		"category":                     row.Category,
 		"include_plaintext":            row.IncludePlaintext,
 		"reporter_submitted_plaintext": row.ReporterSubmittedPlaintext,
 		"attachments_note":             row.AttachmentsNote,
@@ -354,7 +356,8 @@ func (s *Server) handleAdminExportLegalRequest(w http.ResponseWriter, r *http.Re
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_request_id"})
 		return
 	}
-	pkg, err := s.db.BuildLegalDisclosurePackage(r.Context(), requestID)
+	adminID, _ := userIDFrom(r.Context())
+	pkg, err := s.db.BuildLegalDisclosurePackage(r.Context(), requestID, &adminID)
 	if errors.Is(err, repo.ErrNotFound) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
 		return
@@ -417,7 +420,7 @@ func (s *Server) handleCreateDMReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	row, err := s.db.CreateDMReport(r.Context(), repo.CreateDMReportInput{
-		ReporterUserID: uid, ThreadID: threadID, MessageID: messageID, Reason: reason,
+		ReporterUserID: uid, ThreadID: threadID, MessageID: messageID, Category: req.Category, Reason: reason,
 		IncludePlaintext: req.IncludePlaintext, ReporterSubmittedPlaintext: plaintext, AttachmentsNote: note,
 	})
 	if errors.Is(err, repo.ErrNotFound) {

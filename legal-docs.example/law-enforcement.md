@@ -14,6 +14,16 @@ Direct messages and DM attachments are designed to be client-side encrypted. The
 
 The operator may preserve relevant records when a valid preservation request is received. Preservation is separate from disclosure and should be time-limited.
 
+### Operator Review Workflow
+
+Operators should require a written request that identifies the requesting agency, jurisdiction, legal authority, target account or resource, requested date range, and requested data types. Do not disclose records based only on phone calls, informal chat messages, or unverifiable email.
+
+Before exporting records, operators should review scope and necessity, create a preservation hold when appropriate, record whether user notice is permitted or prohibited, and export only the data types covered by the request. Disclosure packages include a manifest with section counts and SHA-256 hashes to help detect later modification.
+
+### Access Metadata
+
+Access metadata may include timestamps, IP addresses, user agents, and security-relevant account events retained by the server. Treat this metadata as personal data and disclose it only when it is within the verified request scope.
+
 ### Emergency Requests
 
 Emergency requests involving imminent risk of death or serious physical harm should include the requesting agency, legal authority, affected users, requested records, and contact information for verification.

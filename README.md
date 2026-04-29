@@ -113,13 +113,15 @@ Key features include:
 - Dedicated `/admin` control panel with its own fixed side menu and admin-only access
 - Dashboard with instance statistics, open reports, and federation queue status
 - User search, suspension/unsuspension, and user badge assignment from the user management page
-- Local, federated post, and DM report review
+- Local, federated post, and DM report review with legal/safety categories for
+  priority triage
 - Federation delivery monitoring, domain blocking, and known-instance management
-- Law enforcement request tracking, legal preservation holds, disclosure package
-  export, and sensitive admin audit logging
+- Law enforcement request tracking, legal preservation holds, manifest-hashed
+  disclosure package export, and sensitive admin audit logging
 - Site custom emoji management
 - Runtime instance settings stored in PostgreSQL (`site_settings`), including:
   - registrations enabled/disabled
+  - minimum account creation age
   - server name and server description
   - administrator name and email address
   - Terms of Service, Privacy Policy, and NSFW Guidelines external URLs

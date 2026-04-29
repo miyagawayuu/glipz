@@ -19,6 +19,9 @@ func RunSiteSettings(ctx context.Context, pool *pgxpool.Pool) error {
 			VALUES ('registrations_enabled', 'true'::jsonb)
 			ON CONFLICT (key) DO NOTHING`,
 		`INSERT INTO site_settings (key, value)
+			VALUES ('minimum_registration_age', '13'::jsonb)
+			ON CONFLICT (key) DO NOTHING`,
+		`INSERT INTO site_settings (key, value)
 			VALUES ('server_name', '""'::jsonb)
 			ON CONFLICT (key) DO NOTHING`,
 		`INSERT INTO site_settings (key, value)

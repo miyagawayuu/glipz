@@ -16,7 +16,8 @@ import (
 )
 
 type createReportReq struct {
-	Reason string `json:"reason"`
+	Category string `json:"category"`
+	Reason   string `json:"reason"`
 }
 
 type updateReportStatusReq struct {
@@ -86,7 +87,7 @@ func (s *Server) handleCreatePostReport(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": code})
 		return
 	}
-	if err := s.db.InsertPostReport(r.Context(), uid, postID, reason); err != nil {
+	if err := s.db.InsertPostReport(r.Context(), uid, postID, req.Category, reason); err != nil {
 		writeServerError(w, "report InsertPostReport", err)
 		return
 	}
@@ -130,7 +131,7 @@ func (s *Server) handleCreateFederatedIncomingPostReport(w http.ResponseWriter, 
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": code})
 		return
 	}
-	if err := s.db.InsertFederatedIncomingPostReport(r.Context(), uid, row.ID, reason); err != nil {
+	if err := s.db.InsertFederatedIncomingPostReport(r.Context(), uid, row.ID, req.Category, reason); err != nil {
 		writeServerError(w, "report InsertFederatedIncomingPostReport", err)
 		return
 	}
@@ -187,6 +188,7 @@ func (s *Server) handleAdminPostReports(w http.ResponseWriter, r *http.Request) 
 		CreatedAt             string `json:"created_at"`
 		PostID                string `json:"post_id"`
 		PostCaption           string `json:"post_caption"`
+		Category              string `json:"category"`
 		Reason                string `json:"reason"`
 		Status                string `json:"status"`
 		ResolvedAt            string `json:"resolved_at,omitempty"`
@@ -208,6 +210,7 @@ func (s *Server) handleAdminPostReports(w http.ResponseWriter, r *http.Request) 
 			CreatedAt:             row.CreatedAt.UTC().Format(time.RFC3339),
 			PostID:                row.PostID.String(),
 			PostCaption:           row.PostCaption,
+			Category:              row.Category,
 			Reason:                row.Reason,
 			Status:                row.Status,
 			ResolvedAt:            resolvedAt,
@@ -234,6 +237,7 @@ func (s *Server) handleAdminFederatedPostReports(w http.ResponseWriter, r *http.
 		IncomingPostID      string `json:"incoming_post_id"`
 		ObjectIRI           string `json:"object_iri"`
 		CaptionText         string `json:"caption_text"`
+		Category            string `json:"category"`
 		Reason              string `json:"reason"`
 		Status              string `json:"status"`
 		ResolvedAt          string `json:"resolved_at,omitempty"`
@@ -255,6 +259,7 @@ func (s *Server) handleAdminFederatedPostReports(w http.ResponseWriter, r *http.
 			IncomingPostID:      row.IncomingPostID.String(),
 			ObjectIRI:           row.ObjectIRI,
 			CaptionText:         row.CaptionText,
+			Category:            row.Category,
 			Reason:              row.Reason,
 			Status:              row.Status,
 			ResolvedAt:          resolvedAt,

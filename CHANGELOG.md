@@ -25,12 +25,19 @@ version. Federation protocol compatibility is versioned separately with
   while preserving client-side encryption for protected message content.
 - Tamper-resistant admin audit events record sensitive legal-compliance actions
   with hash chaining.
+- Report workflows now classify local, federated, and DM reports with categories
+  including legal and safety priority flags.
+- Instance administrators can configure the minimum account creation age from
+  instance settings.
 
 ### Changed
 
 - Admin report, federation, custom emoji, and legal request pages now follow the
   dashboard layout for page width, headings, cards, forms, and primary actions.
 - Account deletion now respects active legal preservation holds.
+- Legal disclosure exports now honor requested data types and include a manifest
+  with section counts, SHA-256 hashes, and audit-event hash references.
+- Post deletion now respects active legal preservation holds.
 
 ### Fixed
 
@@ -45,6 +52,8 @@ version. Federation protocol compatibility is versioned separately with
   timeline customization.
 - Startup migrations add law enforcement requests, legal preservation holds,
   admin audit events, and DM report storage.
+- Startup migrations add report categories, access-event storage for legal
+  exports, and `minimum_registration_age` site setting.
 
 ## [0.0.2] - Unreleased
 

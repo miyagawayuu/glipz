@@ -23,3 +23,7 @@ Locale-specific variants take precedence when the viewer uses that locale:
 With the default Docker Compose setup, place the files under `data/legal-docs/`
 on the host and restart the backend. The frontend keeps using the built-in
 policy text when a file is missing.
+
+When changing legal request or privacy behavior, update these sample documents
+alongside `CHANGELOG.md` so operators can copy current wording into their
+instance-specific policy files.

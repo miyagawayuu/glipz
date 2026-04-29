@@ -9,6 +9,7 @@ export type OperatorAnnouncement = {
 
 export type PublicInstanceSettings = {
   registrations_enabled: boolean;
+  minimum_registration_age: number;
   server_name: string;
   server_description: string;
   admin_name: string;

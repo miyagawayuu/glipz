@@ -513,7 +513,7 @@ export const zhOverrides: DeepPartial<AppMessageSchema> = {
         birthDateRequired: "Enter your birth date",
         birthDateInvalid: "Birth date is invalid",
         birthDateFuture: "Future dates are not allowed",
-        underAge: "You must be at least 13 years old to sign up",
+        underAge: "You must be at least {minAge} years old to sign up",
         emailTaken: "This email address is already registered.",
         invalidEmailOrPassword: "The email address or password is invalid.",
         passwordMismatch: "The confirmation password does not match.",

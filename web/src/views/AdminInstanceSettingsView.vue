@@ -7,6 +7,7 @@ import type { OperatorAnnouncement } from "../lib/instanceSettings";
 
 type SiteSettings = {
   registrations_enabled: boolean;
+  minimum_registration_age: number;
   server_name: string;
   server_description: string;
   admin_name: string;
@@ -29,6 +30,7 @@ const err = ref("");
 const notice = ref("");
 const settings = ref<SiteSettings>({
   registrations_enabled: true,
+  minimum_registration_age: 13,
   server_name: "",
   server_description: "",
   admin_name: "",
@@ -44,6 +46,11 @@ function stringValue(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
+function numberValue(value: unknown, fallback: number): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 function normalizeAnnouncement(row: Partial<OperatorAnnouncement> | null | undefined, index: number): OperatorAnnouncement {
   const id = stringValue(row?.id).trim() || `notice-${index + 1}`;
   return {
@@ -57,6 +64,7 @@ function normalizeAnnouncement(row: Partial<OperatorAnnouncement> | null | undef
 function normalizeSettings(raw: SiteSettingsResponse | null | undefined): SiteSettings {
   return {
     registrations_enabled: !!raw?.registrations_enabled,
+    minimum_registration_age: Math.min(120, Math.max(0, Math.trunc(numberValue(raw?.minimum_registration_age, 13)))),
     server_name: stringValue(raw?.server_name),
     server_description: stringValue(raw?.server_description),
     admin_name: stringValue(raw?.admin_name),
@@ -95,6 +103,7 @@ async function saveSettings() {
   try {
     const payload: SiteSettings = {
       registrations_enabled: settings.value.registrations_enabled,
+      minimum_registration_age: Math.min(120, Math.max(0, Math.trunc(settings.value.minimum_registration_age))),
       server_name: settings.value.server_name.trim(),
       server_description: settings.value.server_description.trim(),
       admin_name: settings.value.admin_name.trim(),
@@ -115,11 +124,13 @@ async function saveSettings() {
     settings.value = normalizeSettings(res.settings);
     notice.value = t("views.adminInstanceSettings.saved");
   } catch (e: unknown) {
-    err.value = e instanceof Error && e.message === "invalid_url"
-      ? t("views.adminInstanceSettings.errors.invalidURL")
-      : e instanceof Error
-        ? e.message
-        : t("views.adminInstanceSettings.errors.saveFailed");
+    if (e instanceof Error && e.message === "invalid_url") {
+      err.value = t("views.adminInstanceSettings.errors.invalidURL");
+    } else if (e instanceof Error && e.message === "invalid_minimum_registration_age") {
+      err.value = t("views.adminInstanceSettings.errors.invalidMinimumRegistrationAge");
+    } else {
+      err.value = e instanceof Error ? e.message : t("views.adminInstanceSettings.errors.saveFailed");
+    }
   } finally {
     saving.value = false;
   }
@@ -203,6 +214,18 @@ onMounted(() => {
             type="email"
             class="w-full rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-900 outline-none ring-lime-500/30 transition focus:border-lime-400 focus:ring-2 focus:ring-lime-400/40"
             :placeholder="$t('views.adminInstanceSettings.adminEmailPlaceholder')"
+          />
+        </label>
+        <label class="mt-4 block rounded-2xl bg-neutral-50 p-4 text-sm">
+          <span class="mb-1 block font-semibold text-neutral-900">{{ $t("views.adminInstanceSettings.minimumRegistrationAge") }}</span>
+          <span class="mb-3 block text-sm text-neutral-600">{{ $t("views.adminInstanceSettings.minimumRegistrationAgeHint") }}</span>
+          <input
+            v-model.number="settings.minimum_registration_age"
+            type="number"
+            min="0"
+            max="120"
+            step="1"
+            class="w-full max-w-xs rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-900 outline-none ring-lime-500/30 transition focus:border-lime-400 focus:ring-2 focus:ring-lime-400/40"
           />
         </label>
       </section>

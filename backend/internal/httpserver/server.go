@@ -589,7 +589,8 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_birth_date"})
 		return
 	}
-	if birthDate.AddDate(13, 0, 0).After(now) {
+	minAge := repo.NormalizeMinimumRegistrationAge(siteSettings.MinimumRegistrationAge)
+	if minAge > 0 && birthDate.AddDate(minAge, 0, 0).After(now) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "under_age"})
 		return
 	}
@@ -718,6 +719,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.clearLoginFailures(r.Context(), r, req.Email)
+	if err := s.db.RecordUserAccessEvent(r.Context(), u.ID, "login_success", s.clientIPForAuthRateLimit(r), r.UserAgent()); err != nil {
+		fmt.Printf("record login access event: %v\n", err)
+	}
 	if u.TOTPEnabled {
 		if u.TOTPSecret == nil || *u.TOTPSecret == "" {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "mfa_misconfigured"})
@@ -917,7 +921,7 @@ func (s *Server) handleMeAccountDelete(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
 		return
 	}
-	if errors.Is(err, repo.ErrForbidden) {
+	if errors.Is(err, repo.ErrLegalPreservationHoldActive) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "legal_preservation_hold_active"})
 		return
 	}
@@ -3306,6 +3310,10 @@ func (s *Server) handleDeletePost(w http.ResponseWriter, r *http.Request) {
 	shouldDeliverFederation := fedErr == nil
 	err = s.db.DeletePostByActor(r.Context(), uid, postID, s.isSiteAdmin(uid))
 	if err != nil {
+		if errors.Is(err, repo.ErrLegalPreservationHoldActive) {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "legal_preservation_hold_active"})
+			return
+		}
 		if errors.Is(err, repo.ErrForbidden) {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
 			return

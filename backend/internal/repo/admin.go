@@ -144,6 +144,7 @@ type OperatorAnnouncement struct {
 
 type SiteSettings struct {
 	RegistrationsEnabled    bool                   `json:"registrations_enabled"`
+	MinimumRegistrationAge  int                    `json:"minimum_registration_age"`
 	ServerName              string                 `json:"server_name"`
 	ServerDescription       string                 `json:"server_description"`
 	AdminName               string                 `json:"admin_name"`
@@ -157,9 +158,20 @@ type SiteSettings struct {
 
 func DefaultSiteSettings() SiteSettings {
 	return SiteSettings{
-		RegistrationsEnabled:  true,
-		OperatorAnnouncements: []OperatorAnnouncement{},
+		RegistrationsEnabled:   true,
+		MinimumRegistrationAge: 13,
+		OperatorAnnouncements:  []OperatorAnnouncement{},
 	}
+}
+
+func NormalizeMinimumRegistrationAge(age int) int {
+	if age < 0 {
+		return 0
+	}
+	if age > 120 {
+		return 120
+	}
+	return age
 }
 
 func (p *Pool) GetSiteSettings(ctx context.Context) (SiteSettings, error) {
@@ -178,6 +190,8 @@ func (p *Pool) GetSiteSettings(ctx context.Context) (SiteSettings, error) {
 		switch key {
 		case "registrations_enabled":
 			_ = json.Unmarshal(raw, &settings.RegistrationsEnabled)
+		case "minimum_registration_age":
+			_ = json.Unmarshal(raw, &settings.MinimumRegistrationAge)
 		case "server_name":
 			_ = json.Unmarshal(raw, &settings.ServerName)
 		case "server_description":
@@ -207,6 +221,7 @@ func (p *Pool) UpdateSiteSettings(ctx context.Context, settings SiteSettings) (S
 	}
 	values := map[string]any{
 		"registrations_enabled":     settings.RegistrationsEnabled,
+		"minimum_registration_age":  NormalizeMinimumRegistrationAge(settings.MinimumRegistrationAge),
 		"server_name":               strings.TrimSpace(settings.ServerName),
 		"server_description":        strings.TrimSpace(settings.ServerDescription),
 		"admin_name":                strings.TrimSpace(settings.AdminName),

@@ -96,6 +96,7 @@ type DMReport struct {
 	MessageSenderID            uuid.UUID
 	MessageSenderHandle        string
 	MessageSenderDisplayName   string
+	Category                   string
 	Reason                     string
 	IncludePlaintext           bool
 	ReporterSubmittedPlaintext string
@@ -109,6 +110,7 @@ type CreateDMReportInput struct {
 	ReporterUserID             uuid.UUID
 	ThreadID                   uuid.UUID
 	MessageID                  uuid.UUID
+	Category                   string
 	Reason                     string
 	IncludePlaintext           bool
 	ReporterSubmittedPlaintext string
@@ -116,12 +118,14 @@ type CreateDMReportInput struct {
 }
 
 type LegalDisclosurePackage struct {
-	Request LawEnforcementRequest `json:"request"`
-	Account map[string]any        `json:"account,omitempty"`
-	DM      []map[string]any      `json:"direct_messages,omitempty"`
-	Reports []map[string]any      `json:"reports,omitempty"`
-	Audit   []map[string]any      `json:"audit_events,omitempty"`
-	Notes   map[string]string     `json:"notes"`
+	Manifest     map[string]any        `json:"manifest"`
+	Request      LawEnforcementRequest `json:"request"`
+	Account      map[string]any        `json:"account,omitempty"`
+	DM           []map[string]any      `json:"direct_messages,omitempty"`
+	Reports      []map[string]any      `json:"reports,omitempty"`
+	AccessEvents []map[string]any      `json:"access_events,omitempty"`
+	Audit        []map[string]any      `json:"audit_events,omitempty"`
+	Notes        map[string]string     `json:"notes"`
 }
 
 func normalizeLegalRequestStatus(status string) string {
@@ -148,6 +152,15 @@ func normalizeUserNoticeStatus(v string) string {
 		return strings.ToLower(strings.TrimSpace(v))
 	default:
 		return "not_applicable"
+	}
+}
+
+func NormalizeReportCategory(v string) string {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "spam", "abuse", "legal", "safety":
+		return strings.ToLower(strings.TrimSpace(v))
+	default:
+		return "other"
 	}
 }
 
@@ -305,6 +318,40 @@ func (p *Pool) CreateLegalPreservationHold(ctx context.Context, in CreateLegalPr
 	return out, nil
 }
 
+func (p *Pool) HasActiveLegalHold(ctx context.Context, targetUserID uuid.UUID, resourceType string, resourceID *uuid.UUID) (bool, error) {
+	resourceType = strings.ToLower(strings.TrimSpace(resourceType))
+	var count int
+	err := p.db.QueryRow(ctx, `
+		SELECT COUNT(*)::int
+		FROM legal_preservation_holds
+		WHERE released_at IS NULL
+			AND expires_at > NOW()
+			AND (
+				($1::uuid IS NOT NULL AND target_user_id = $1 AND (resource_type IN ('account', 'user') OR $2 = '' OR resource_type = $2))
+				OR ($3::uuid IS NOT NULL AND resource_id = $3 AND ($2 = '' OR resource_type = $2))
+			)
+	`, nullableUUID(targetUserID), resourceType, resourceID).Scan(&count)
+	return count > 0, err
+}
+
+func nullableUUID(id uuid.UUID) any {
+	if id == uuid.Nil {
+		return nil
+	}
+	return id
+}
+
+func (p *Pool) RecordUserAccessEvent(ctx context.Context, userID uuid.UUID, eventType, ip, userAgent string) error {
+	if userID == uuid.Nil {
+		return nil
+	}
+	_, err := p.db.Exec(ctx, `
+		INSERT INTO user_access_events (user_id, event_type, ip, user_agent)
+		VALUES ($1, $2, $3, $4)
+	`, userID, strings.ToLower(strings.TrimSpace(eventType)), strings.TrimSpace(ip), strings.TrimSpace(userAgent))
+	return err
+}
+
 func (p *Pool) InsertAdminAuditEvent(ctx context.Context, in AdminAuditInput) error {
 	metadata := in.Metadata
 	if metadata == nil {
@@ -380,18 +427,20 @@ func (p *Pool) CreateDMReport(ctx context.Context, in CreateDMReportInput) (DMRe
 		return DMReport{}, ErrNotFound
 	}
 	var id uuid.UUID
+	category := NormalizeReportCategory(in.Category)
 	err = p.db.QueryRow(ctx, `
-		INSERT INTO dm_reports (reporter_user_id, thread_id, message_id, reason, include_plaintext, reporter_submitted_plaintext, attachments_note)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO dm_reports (reporter_user_id, thread_id, message_id, category, reason, include_plaintext, reporter_submitted_plaintext, attachments_note)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT (reporter_user_id, message_id) DO UPDATE
-		SET reason = EXCLUDED.reason,
+		SET category = EXCLUDED.category,
+			reason = EXCLUDED.reason,
 			include_plaintext = EXCLUDED.include_plaintext,
 			reporter_submitted_plaintext = EXCLUDED.reporter_submitted_plaintext,
 			attachments_note = EXCLUDED.attachments_note,
 			status = 'open',
 			resolved_at = NULL
 		RETURNING id
-	`, in.ReporterUserID, in.ThreadID, in.MessageID, strings.TrimSpace(in.Reason), in.IncludePlaintext, strings.TrimSpace(in.ReporterSubmittedPlaintext), strings.TrimSpace(in.AttachmentsNote)).Scan(&id)
+	`, in.ReporterUserID, in.ThreadID, in.MessageID, category, strings.TrimSpace(in.Reason), in.IncludePlaintext, strings.TrimSpace(in.ReporterSubmittedPlaintext), strings.TrimSpace(in.AttachmentsNote)).Scan(&id)
 	if err != nil {
 		return DMReport{}, err
 	}
@@ -413,7 +462,7 @@ func (p *Pool) ListAdminDMReports(ctx context.Context, limit int) ([]DMReport, e
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
-	return p.listDMReports(ctx, `ORDER BY r.created_at DESC LIMIT $1`, limit)
+	return p.listDMReports(ctx, `ORDER BY CASE COALESCE(r.category, 'other') WHEN 'legal' THEN 0 WHEN 'safety' THEN 1 ELSE 2 END, r.created_at DESC LIMIT $1`, limit)
 }
 
 func (p *Pool) listDMReports(ctx context.Context, suffix string, args ...any) ([]DMReport, error) {
@@ -424,7 +473,7 @@ func (p *Pool) listDMReports(ctx context.Context, suffix string, args ...any) ([
 			r.thread_id, r.message_id, m.sender_id,
 			su.handle,
 			COALESCE(NULLIF(trim(su.display_name), ''), trim(split_part(su.email, '@', 1))),
-			r.reason, r.include_plaintext, r.reporter_submitted_plaintext, r.attachments_note,
+			r.category, r.reason, r.include_plaintext, r.reporter_submitted_plaintext, r.attachments_note,
 			r.status, r.resolved_at, r.created_at
 		FROM dm_reports r
 		JOIN users ru ON ru.id = r.reporter_user_id
@@ -442,7 +491,7 @@ func (p *Pool) listDMReports(ctx context.Context, suffix string, args ...any) ([
 		if err := rows.Scan(
 			&r.ID, &r.ReporterUserID, &r.ReporterHandle, &r.ReporterDisplayName,
 			&r.ThreadID, &r.MessageID, &r.MessageSenderID, &r.MessageSenderHandle, &r.MessageSenderDisplayName,
-			&r.Reason, &r.IncludePlaintext, &r.ReporterSubmittedPlaintext, &r.AttachmentsNote,
+			&r.Category, &r.Reason, &r.IncludePlaintext, &r.ReporterSubmittedPlaintext, &r.AttachmentsNote,
 			&r.Status, &resolvedAt, &r.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -470,11 +519,12 @@ func (p *Pool) UpdateDMReportStatus(ctx context.Context, id uuid.UUID, status st
 	return nil
 }
 
-func (p *Pool) BuildLegalDisclosurePackage(ctx context.Context, requestID uuid.UUID) (LegalDisclosurePackage, error) {
+func (p *Pool) BuildLegalDisclosurePackage(ctx context.Context, requestID uuid.UUID, generatedBy *uuid.UUID) (LegalDisclosurePackage, error) {
 	req, err := p.LawEnforcementRequestByID(ctx, requestID)
 	if err != nil {
 		return LegalDisclosurePackage{}, err
 	}
+	dataTypes := legalDataTypeSet(req.DataTypes)
 	pkg := LegalDisclosurePackage{
 		Request: req,
 		Notes: map[string]string{
@@ -482,36 +532,131 @@ func (p *Pool) BuildLegalDisclosurePackage(ctx context.Context, requestID uuid.U
 		},
 	}
 	if req.TargetUserID == nil {
+		pkg.Manifest = buildLegalDisclosureManifest(pkg, generatedBy, dataTypes)
 		return pkg, nil
 	}
-	u, err := p.UserByID(ctx, *req.TargetUserID)
-	if err == nil {
-		pkg.Account = map[string]any{
-			"id":           u.ID.String(),
-			"email":        u.Email,
-			"handle":       u.Handle,
-			"display_name": u.DisplayName,
-			"suspended":    u.SuspendedAt != nil,
+	if dataTypes["account"] {
+		u, err := p.UserByID(ctx, *req.TargetUserID)
+		if err == nil {
+			pkg.Account = map[string]any{
+				"id":           u.ID.String(),
+				"email":        u.Email,
+				"handle":       u.Handle,
+				"display_name": u.DisplayName,
+				"suspended":    u.SuspendedAt != nil,
+			}
+		} else if !errors.Is(err, ErrNotFound) {
+			return LegalDisclosurePackage{}, err
 		}
-	} else if !errors.Is(err, ErrNotFound) {
-		return LegalDisclosurePackage{}, err
 	}
-	pkg.DM, err = p.legalDMExport(ctx, *req.TargetUserID, req.TargetFromAt, req.TargetUntilAt, 500)
-	if err != nil {
-		return LegalDisclosurePackage{}, err
+	if dataTypes["dm_metadata"] || dataTypes["encrypted_dm_payloads"] {
+		pkg.DM, err = p.legalDMExport(ctx, *req.TargetUserID, req.TargetFromAt, req.TargetUntilAt, dataTypes["encrypted_dm_payloads"], 500)
+		if err != nil {
+			return LegalDisclosurePackage{}, err
+		}
 	}
-	pkg.Reports, err = p.legalDMReportExport(ctx, *req.TargetUserID, 200)
-	if err != nil {
-		return LegalDisclosurePackage{}, err
+	if dataTypes["dm_reports"] || dataTypes["reports"] {
+		pkg.Reports, err = p.legalDMReportExport(ctx, *req.TargetUserID, 200)
+		if err != nil {
+			return LegalDisclosurePackage{}, err
+		}
 	}
-	pkg.Audit, err = p.legalAuditExport(ctx, requestID, 200)
-	if err != nil {
-		return LegalDisclosurePackage{}, err
+	if dataTypes["access_events"] {
+		pkg.AccessEvents, err = p.legalAccessEventExport(ctx, *req.TargetUserID, req.TargetFromAt, req.TargetUntilAt, 200)
+		if err != nil {
+			return LegalDisclosurePackage{}, err
+		}
 	}
+	if dataTypes["audit_events"] {
+		pkg.Audit, err = p.legalAuditExport(ctx, requestID, 200)
+		if err != nil {
+			return LegalDisclosurePackage{}, err
+		}
+	}
+	pkg.Manifest = buildLegalDisclosureManifest(pkg, generatedBy, dataTypes)
 	return pkg, nil
 }
 
-func (p *Pool) legalDMExport(ctx context.Context, userID uuid.UUID, fromAt, untilAt *time.Time, limit int) ([]map[string]any, error) {
+func legalDataTypeSet(items []string) map[string]bool {
+	allowed := map[string]bool{
+		"account":               true,
+		"dm_metadata":           true,
+		"encrypted_dm_payloads": true,
+		"dm_reports":            true,
+		"reports":               true,
+		"access_events":         true,
+		"audit_events":          true,
+	}
+	out := map[string]bool{}
+	if len(items) == 0 {
+		for k := range allowed {
+			out[k] = true
+		}
+		return out
+	}
+	for _, item := range items {
+		v := strings.ToLower(strings.TrimSpace(item))
+		if allowed[v] {
+			out[v] = true
+		}
+	}
+	return out
+}
+
+func buildLegalDisclosureManifest(pkg LegalDisclosurePackage, generatedBy *uuid.UUID, dataTypes map[string]bool) map[string]any {
+	sectionHashes := map[string]string{}
+	counts := map[string]int{}
+	addSection := func(name string, value any, count int) {
+		if count <= 0 {
+			return
+		}
+		raw, _ := json.Marshal(value)
+		sum := sha256.Sum256(raw)
+		sectionHashes[name] = hex.EncodeToString(sum[:])
+		counts[name] = count
+	}
+	if pkg.Account != nil {
+		addSection("account", pkg.Account, 1)
+	}
+	addSection("direct_messages", pkg.DM, len(pkg.DM))
+	addSection("reports", pkg.Reports, len(pkg.Reports))
+	addSection("access_events", pkg.AccessEvents, len(pkg.AccessEvents))
+	addSection("audit_events", pkg.Audit, len(pkg.Audit))
+	includedTypes := make([]string, 0, len(dataTypes))
+	for k, v := range dataTypes {
+		if v {
+			includedTypes = append(includedTypes, k)
+		}
+	}
+	manifest := map[string]any{
+		"version":        1,
+		"request_id":     pkg.Request.ID.String(),
+		"generated_at":   time.Now().UTC().Format(time.RFC3339),
+		"included_types": includedTypes,
+		"counts":         counts,
+		"section_sha256": sectionHashes,
+	}
+	if generatedBy != nil && *generatedBy != uuid.Nil {
+		manifest["generated_by_admin_id"] = generatedBy.String()
+	}
+	eventHashes := make([]string, 0, len(pkg.Audit))
+	for _, row := range pkg.Audit {
+		if v, ok := row["event_hash"].(string); ok && strings.TrimSpace(v) != "" {
+			eventHashes = append(eventHashes, v)
+		}
+	}
+	if len(eventHashes) > 0 {
+		manifest["audit_event_hashes"] = eventHashes
+	}
+	tmp := pkg
+	tmp.Manifest = manifest
+	raw, _ := json.Marshal(tmp)
+	sum := sha256.Sum256(raw)
+	manifest["package_sha256"] = hex.EncodeToString(sum[:])
+	return manifest
+}
+
+func (p *Pool) legalDMExport(ctx context.Context, userID uuid.UUID, fromAt, untilAt *time.Time, includePayloads bool, limit int) ([]map[string]any, error) {
 	rows, err := p.db.Query(ctx, `
 		SELECT m.id, m.thread_id, m.sender_id, m.sender_payload, m.recipient_payload, m.attachments, m.created_at,
 			t.user_low_id, t.user_high_id
@@ -535,26 +680,30 @@ func (p *Pool) legalDMExport(ctx context.Context, userID uuid.UUID, fromAt, unti
 		if err := rows.Scan(&id, &threadID, &senderID, &senderPayload, &recipientPayload, &attachments, &createdAt, &lowID, &highID); err != nil {
 			return nil, err
 		}
-		out = append(out, map[string]any{
-			"id":                id.String(),
-			"thread_id":         threadID.String(),
-			"sender_id":         senderID.String(),
-			"user_low_id":       lowID.String(),
-			"user_high_id":      highID.String(),
-			"sender_payload":    json.RawMessage(senderPayload),
-			"recipient_payload": json.RawMessage(recipientPayload),
-			"attachments":       json.RawMessage(attachments),
-			"created_at":        createdAt.UTC().Format(time.RFC3339),
-		})
+		item := map[string]any{
+			"id":           id.String(),
+			"thread_id":    threadID.String(),
+			"sender_id":    senderID.String(),
+			"user_low_id":  lowID.String(),
+			"user_high_id": highID.String(),
+			"created_at":   createdAt.UTC().Format(time.RFC3339),
+		}
+		if includePayloads {
+			item["sender_payload"] = json.RawMessage(senderPayload)
+			item["recipient_payload"] = json.RawMessage(recipientPayload)
+			item["attachments"] = json.RawMessage(attachments)
+		}
+		out = append(out, item)
 	}
 	return out, rows.Err()
 }
 
 func (p *Pool) legalDMReportExport(ctx context.Context, userID uuid.UUID, limit int) ([]map[string]any, error) {
 	rows, err := p.db.Query(ctx, `
-		SELECT id, thread_id, message_id, reason, include_plaintext, reporter_submitted_plaintext, attachments_note, status, created_at
+		SELECT id, thread_id, message_id, category, reason, include_plaintext, reporter_submitted_plaintext, attachments_note, status, created_at
 		FROM dm_reports
 		WHERE reporter_user_id = $1
+			OR message_id IN (SELECT id FROM dm_messages WHERE sender_id = $1)
 		ORDER BY created_at DESC
 		LIMIT $2
 	`, userID, limit)
@@ -565,22 +714,56 @@ func (p *Pool) legalDMReportExport(ctx context.Context, userID uuid.UUID, limit 
 	out := []map[string]any{}
 	for rows.Next() {
 		var id, threadID, messageID uuid.UUID
-		var reason, plaintext, note, status string
+		var category, reason, plaintext, note, status string
 		var includePlaintext bool
 		var createdAt time.Time
-		if err := rows.Scan(&id, &threadID, &messageID, &reason, &includePlaintext, &plaintext, &note, &status, &createdAt); err != nil {
+		if err := rows.Scan(&id, &threadID, &messageID, &category, &reason, &includePlaintext, &plaintext, &note, &status, &createdAt); err != nil {
 			return nil, err
 		}
 		out = append(out, map[string]any{
 			"id":                           id.String(),
 			"thread_id":                    threadID.String(),
 			"message_id":                   messageID.String(),
+			"category":                     category,
 			"reason":                       reason,
 			"include_plaintext":            includePlaintext,
 			"reporter_submitted_plaintext": plaintext,
 			"attachments_note":             note,
 			"status":                       status,
 			"created_at":                   createdAt.UTC().Format(time.RFC3339),
+		})
+	}
+	return out, rows.Err()
+}
+
+func (p *Pool) legalAccessEventExport(ctx context.Context, userID uuid.UUID, fromAt, untilAt *time.Time, limit int) ([]map[string]any, error) {
+	rows, err := p.db.Query(ctx, `
+		SELECT id, event_type, ip, user_agent, created_at
+		FROM user_access_events
+		WHERE user_id = $1
+			AND ($2::timestamptz IS NULL OR created_at >= $2)
+			AND ($3::timestamptz IS NULL OR created_at <= $3)
+		ORDER BY created_at DESC
+		LIMIT $4
+	`, userID, fromAt, untilAt, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []map[string]any{}
+	for rows.Next() {
+		var id uuid.UUID
+		var eventType, ip, userAgent string
+		var createdAt time.Time
+		if err := rows.Scan(&id, &eventType, &ip, &userAgent, &createdAt); err != nil {
+			return nil, err
+		}
+		out = append(out, map[string]any{
+			"id":         id.String(),
+			"event_type": eventType,
+			"ip":         ip,
+			"user_agent": userAgent,
+			"created_at": createdAt.UTC().Format(time.RFC3339),
 		})
 	}
 	return out, rows.Err()

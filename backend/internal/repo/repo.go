@@ -27,6 +27,9 @@ var ErrCannotFollowSelf = errors.New("cannot follow self")
 // ErrForbidden is returned for operations without sufficient permission.
 var ErrForbidden = errors.New("forbidden")
 
+// ErrLegalPreservationHoldActive is returned when a legal hold blocks deletion.
+var ErrLegalPreservationHoldActive = errors.New("legal preservation hold active")
+
 // ErrInvalidViewPassword is returned when the view password length is invalid.
 var ErrInvalidViewPassword = errors.New("invalid view password")
 
@@ -637,29 +640,33 @@ func normalizeModerationReportStatus(s string) string {
 	}
 }
 
-func (p *Pool) InsertPostReport(ctx context.Context, reporterUserID, postID uuid.UUID, reason string) error {
+func (p *Pool) InsertPostReport(ctx context.Context, reporterUserID, postID uuid.UUID, category, reason string) error {
+	category = NormalizeReportCategory(category)
 	_, err := p.db.Exec(ctx, `
-		INSERT INTO post_reports (reporter_user_id, post_id, reason, status, resolved_at, created_at)
-		VALUES ($1, $2, $3, 'open', NULL, NOW())
+		INSERT INTO post_reports (reporter_user_id, post_id, category, reason, status, resolved_at, created_at)
+		VALUES ($1, $2, $3, $4, 'open', NULL, NOW())
 		ON CONFLICT (reporter_user_id, post_id) DO UPDATE
-		SET reason = EXCLUDED.reason,
+		SET category = EXCLUDED.category,
+			reason = EXCLUDED.reason,
 			status = 'open',
 			resolved_at = NULL,
 			created_at = NOW()
-	`, reporterUserID, postID, strings.TrimSpace(reason))
+	`, reporterUserID, postID, category, strings.TrimSpace(reason))
 	return err
 }
 
-func (p *Pool) InsertFederatedIncomingPostReport(ctx context.Context, reporterUserID, incomingPostID uuid.UUID, reason string) error {
+func (p *Pool) InsertFederatedIncomingPostReport(ctx context.Context, reporterUserID, incomingPostID uuid.UUID, category, reason string) error {
+	category = NormalizeReportCategory(category)
 	_, err := p.db.Exec(ctx, `
-		INSERT INTO federation_incoming_post_reports (reporter_user_id, federation_incoming_post_id, reason, status, resolved_at, created_at)
-		VALUES ($1, $2, $3, 'open', NULL, NOW())
+		INSERT INTO federation_incoming_post_reports (reporter_user_id, federation_incoming_post_id, category, reason, status, resolved_at, created_at)
+		VALUES ($1, $2, $3, $4, 'open', NULL, NOW())
 		ON CONFLICT (reporter_user_id, federation_incoming_post_id) DO UPDATE
-		SET reason = EXCLUDED.reason,
+		SET category = EXCLUDED.category,
+			reason = EXCLUDED.reason,
 			status = 'open',
 			resolved_at = NULL,
 			created_at = NOW()
-	`, reporterUserID, incomingPostID, strings.TrimSpace(reason))
+	`, reporterUserID, incomingPostID, category, strings.TrimSpace(reason))
 	return err
 }
 
@@ -668,6 +675,7 @@ type AdminPostReportRow struct {
 	CreatedAt             time.Time
 	PostID                uuid.UUID
 	PostCaption           string
+	Category              string
 	Reason                string
 	Status                string
 	ResolvedAt            *time.Time
@@ -689,6 +697,7 @@ func (p *Pool) ListAdminPostReports(ctx context.Context, limit int) ([]AdminPost
 			pr.created_at,
 			p.id,
 			p.caption,
+			COALESCE(pr.category, 'other'),
 			COALESCE(pr.reason, ''),
 			COALESCE(pr.status, 'open'),
 			pr.resolved_at,
@@ -702,7 +711,8 @@ func (p *Pool) ListAdminPostReports(ctx context.Context, limit int) ([]AdminPost
 		JOIN posts p ON p.id = pr.post_id
 		JOIN users author ON author.id = p.user_id
 		JOIN users reporter ON reporter.id = pr.reporter_user_id
-		ORDER BY pr.created_at DESC, pr.id DESC
+		ORDER BY CASE COALESCE(pr.category, 'other') WHEN 'legal' THEN 0 WHEN 'safety' THEN 1 ELSE 2 END,
+			pr.created_at DESC, pr.id DESC
 		LIMIT $1
 	`, limit)
 	if err != nil {
@@ -717,6 +727,7 @@ func (p *Pool) ListAdminPostReports(ctx context.Context, limit int) ([]AdminPost
 			&row.CreatedAt,
 			&row.PostID,
 			&row.PostCaption,
+			&row.Category,
 			&row.Reason,
 			&row.Status,
 			&row.ResolvedAt,
@@ -740,6 +751,7 @@ type AdminFederatedIncomingPostReportRow struct {
 	IncomingPostID      uuid.UUID
 	ObjectIRI           string
 	CaptionText         string
+	Category            string
 	Reason              string
 	Status              string
 	ResolvedAt          *time.Time
@@ -761,6 +773,7 @@ func (p *Pool) ListAdminFederatedIncomingPostReports(ctx context.Context, limit 
 			fp.id,
 			fp.object_iri,
 			fp.caption_text,
+			COALESCE(fr.category, 'other'),
 			COALESCE(fr.reason, ''),
 			COALESCE(fr.status, 'open'),
 			fr.resolved_at,
@@ -773,7 +786,8 @@ func (p *Pool) ListAdminFederatedIncomingPostReports(ctx context.Context, limit 
 		JOIN federation_incoming_posts fp ON fp.id = fr.federation_incoming_post_id
 		JOIN users reporter ON reporter.id = fr.reporter_user_id
 		WHERE fp.deleted_at IS NULL
-		ORDER BY fr.created_at DESC, fr.id DESC
+		ORDER BY CASE COALESCE(fr.category, 'other') WHEN 'legal' THEN 0 WHEN 'safety' THEN 1 ELSE 2 END,
+			fr.created_at DESC, fr.id DESC
 		LIMIT $1
 	`, limit)
 	if err != nil {
@@ -789,6 +803,7 @@ func (p *Pool) ListAdminFederatedIncomingPostReports(ctx context.Context, limit 
 			&row.IncomingPostID,
 			&row.ObjectIRI,
 			&row.CaptionText,
+			&row.Category,
 			&row.Reason,
 			&row.Status,
 			&row.ResolvedAt,
@@ -1402,6 +1417,11 @@ func (p *Pool) DeletePostByActor(ctx context.Context, actorID, postID uuid.UUID,
 	}
 	if owner != actorID && !allowForeign {
 		return ErrForbidden
+	}
+	if active, err := p.HasActiveLegalHold(ctx, owner, "post", &postID); err != nil {
+		return err
+	} else if active {
+		return ErrLegalPreservationHoldActive
 	}
 	_, err = p.db.Exec(ctx, `DELETE FROM posts WHERE id = $1`, postID)
 	return err

@@ -27,6 +27,7 @@ const resendMessage = ref("");
 const handleTouched = ref(false);
 const handleBusy = ref(false);
 const legalDocumentUrls = ref<LegalDocumentURLSettings>({});
+const minimumRegistrationAge = ref(13);
 const handleAvailability = ref<null | { available: boolean; reason: string; normalized: string }>(null);
 let handleTimer: ReturnType<typeof setTimeout> | null = null;
 /** Monotonic validation generation used to discard stale fetch results from blur, debounce, or delayed typing responses. */
@@ -69,9 +70,12 @@ const birthDateError = computed(() => {
   const d = new Date(`${birthDate.value}T00:00:00Z`);
   if (Number.isNaN(d.getTime())) return t("auth.register.errors.birthDateInvalid");
   if (d.getTime() > Date.now()) return t("auth.register.errors.birthDateFuture");
-  const minBirthDate = new Date();
-  minBirthDate.setUTCFullYear(minBirthDate.getUTCFullYear() - 13);
-  if (d.getTime() > minBirthDate.getTime()) return t("auth.register.errors.underAge");
+  const minAge = Math.min(120, Math.max(0, Math.trunc(minimumRegistrationAge.value)));
+  if (minAge > 0) {
+    const minBirthDate = new Date();
+    minBirthDate.setUTCFullYear(minBirthDate.getUTCFullYear() - minAge);
+    if (d.getTime() > minBirthDate.getTime()) return t("auth.register.errors.underAge", { minAge });
+  }
   return null;
 });
 const canSubmit = computed(() =>
@@ -108,7 +112,9 @@ function legalLink(key: LegalDocumentKey): { href: string; external: boolean } {
 
 async function loadLegalDocumentUrls() {
   try {
-    legalDocumentUrls.value = await fetchPublicInstanceSettings();
+    const settings = await fetchPublicInstanceSettings();
+    legalDocumentUrls.value = settings;
+    minimumRegistrationAge.value = Number.isFinite(settings.minimum_registration_age) ? settings.minimum_registration_age : 13;
   } catch {
     legalDocumentUrls.value = {};
   }
@@ -184,7 +190,7 @@ function messageForError(error: unknown): string {
     case "invalid_birth_date":
       return t("auth.register.errors.birthDateInvalid");
     case "under_age":
-      return t("auth.register.errors.underAge");
+      return t("auth.register.errors.underAge", { minAge: minimumRegistrationAge.value });
     case "terms_not_agreed":
       return t("auth.register.errors.termsNotAgreed");
     case "registrations_disabled":

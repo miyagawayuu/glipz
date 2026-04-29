@@ -172,6 +172,9 @@ func (s *Server) handleRegisterVerify(w http.ResponseWriter, r *http.Request) {
 		writeServerError(w, "register verify csrf token", err)
 		return
 	}
+	if err := s.db.RecordUserAccessEvent(r.Context(), userID, "registration_verified", s.clientIPForAuthRateLimit(r), r.UserAgent()); err != nil {
+		fmt.Printf("record registration access event: %v\n", err)
+	}
 	accessTTL := 24 * time.Hour
 	s.setAccessCookie(w, r, tok, accessTTL)
 	s.setCSRFCookie(w, r, csrfToken, accessTTL)

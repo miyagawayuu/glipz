@@ -204,7 +204,12 @@ func (s *Server) handleAdminInstanceSettingsPatch(w http.ResponseWriter, r *http
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_url"})
 		return
 	}
+	if req.MinimumRegistrationAge < 0 || req.MinimumRegistrationAge > 120 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_minimum_registration_age"})
+		return
+	}
 	current.RegistrationsEnabled = req.RegistrationsEnabled
+	current.MinimumRegistrationAge = req.MinimumRegistrationAge
 	current.ServerName = strings.TrimSpace(req.ServerName)
 	current.ServerDescription = strings.TrimSpace(req.ServerDescription)
 	current.AdminName = strings.TrimSpace(req.AdminName)
@@ -233,6 +238,7 @@ func (s *Server) handlePublicInstanceSettings(w http.ResponseWriter, r *http.Req
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"registrations_enabled":     settings.RegistrationsEnabled,
+		"minimum_registration_age":  settings.MinimumRegistrationAge,
 		"server_name":               settings.ServerName,
 		"server_description":        settings.ServerDescription,
 		"admin_name":                settings.AdminName,

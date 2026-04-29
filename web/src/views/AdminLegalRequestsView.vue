@@ -42,7 +42,7 @@ const form = ref({
   target_handle: "",
   target_from_at: "",
   target_until_at: "",
-  data_types: "account,dm_metadata,encrypted_dm_payloads",
+  data_types: "account,dm_metadata,encrypted_dm_payloads,dm_reports,access_events,audit_events",
   emergency: false,
   due_at: "",
   user_notice_status: "not_applicable",

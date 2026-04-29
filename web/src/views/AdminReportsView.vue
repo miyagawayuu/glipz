@@ -17,6 +17,7 @@ type LocalReportRow = {
   created_at: string;
   post_id: string;
   post_caption: string;
+  category: string;
   reason: string;
   status: "open" | "resolved" | "dismissed" | "spam";
   resolved_at?: string;
@@ -34,6 +35,7 @@ type FederatedReportRow = {
   incoming_post_id: string;
   object_iri: string;
   caption_text: string;
+  category: string;
   reason: string;
   status: "open" | "resolved" | "dismissed" | "spam";
   resolved_at?: string;
@@ -49,6 +51,7 @@ type DMReportRow = {
   created_at: string;
   thread_id: string;
   message_id: string;
+  category: string;
   reason: string;
   include_plaintext: boolean;
   reporter_submitted_plaintext: string;
@@ -89,6 +92,27 @@ function reportStatusLabel(status: string): string {
   if (status === "dismissed") return t("views.adminReports.statusDismissed");
   if (status === "spam") return t("views.adminReports.statusSpam");
   return t("views.adminReports.statusOpen");
+}
+
+function reportCategoryLabel(category: string): string {
+  switch (category) {
+    case "legal":
+      return t("views.adminReports.categoryLegal");
+    case "safety":
+      return t("views.adminReports.categorySafety");
+    case "spam":
+      return t("views.adminReports.categorySpam");
+    case "abuse":
+      return t("views.adminReports.categoryAbuse");
+    default:
+      return t("views.adminReports.categoryOther");
+  }
+}
+
+function reportCategoryClass(category: string): string {
+  if (category === "legal") return "bg-red-50 text-red-700";
+  if (category === "safety") return "bg-amber-50 text-amber-800";
+  return "bg-neutral-100 text-neutral-600";
 }
 
 async function updateLocalReportStatus(row: LocalReportRow, status: LocalReportRow["status"]) {
@@ -242,6 +266,7 @@ onMounted(() => {
               <div class="min-w-0">
                 <p class="text-xs font-medium uppercase tracking-wide text-neutral-500">
                   {{ reportStatusLabel(row.status) }}
+                  <span class="ml-2 rounded-full px-2 py-0.5 text-[11px] font-semibold normal-case" :class="reportCategoryClass(row.category)">{{ reportCategoryLabel(row.category) }}</span>
                   <span v-if="row.resolved_at" class="ml-2 normal-case text-neutral-400">{{ $t("views.adminReports.updatedPrefix") }} {{ formatDate(row.resolved_at) }}</span>
                 </p>
                 <p class="text-sm text-neutral-900">
@@ -311,6 +336,7 @@ onMounted(() => {
               <div class="min-w-0">
                 <p class="text-xs font-medium uppercase tracking-wide text-neutral-500">
                   {{ reportStatusLabel(row.status) }}
+                  <span class="ml-2 rounded-full px-2 py-0.5 text-[11px] font-semibold normal-case" :class="reportCategoryClass(row.category)">{{ reportCategoryLabel(row.category) }}</span>
                   <span v-if="row.resolved_at" class="ml-2 normal-case text-neutral-400">{{ $t("views.adminReports.updatedPrefix") }} {{ formatDate(row.resolved_at) }}</span>
                 </p>
                 <p class="text-sm text-neutral-900">
@@ -379,6 +405,7 @@ onMounted(() => {
               <div class="min-w-0">
                 <p class="text-xs font-medium uppercase tracking-wide text-neutral-500">
                   {{ reportStatusLabel(row.status) }}
+                  <span class="ml-2 rounded-full px-2 py-0.5 text-[11px] font-semibold normal-case" :class="reportCategoryClass(row.category)">{{ reportCategoryLabel(row.category) }}</span>
                   <span v-if="row.resolved_at" class="ml-2 normal-case text-neutral-400">{{ $t("views.adminReports.updatedPrefix") }} {{ formatDate(row.resolved_at) }}</span>
                 </p>
                 <p class="text-sm text-neutral-900">

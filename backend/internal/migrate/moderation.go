@@ -40,11 +40,21 @@ func RunModeration(ctx context.Context, pool *pgxpool.Pool) error {
 		`CREATE INDEX IF NOT EXISTS idx_federation_incoming_post_reports_target_created_at
 			ON federation_incoming_post_reports (federation_incoming_post_id, created_at DESC)`,
 		`ALTER TABLE post_reports ADD COLUMN IF NOT EXISTS reason TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE post_reports ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'other'`,
 		`ALTER TABLE post_reports ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'open'`,
 		`ALTER TABLE post_reports ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ`,
 		`ALTER TABLE federation_incoming_post_reports ADD COLUMN IF NOT EXISTS reason TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE federation_incoming_post_reports ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'other'`,
 		`ALTER TABLE federation_incoming_post_reports ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'open'`,
 		`ALTER TABLE federation_incoming_post_reports ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ`,
+		`ALTER TABLE post_reports DROP CONSTRAINT IF EXISTS post_reports_category_check`,
+		`ALTER TABLE post_reports
+			ADD CONSTRAINT post_reports_category_check
+			CHECK (category IN ('other', 'spam', 'abuse', 'legal', 'safety'))`,
+		`ALTER TABLE federation_incoming_post_reports DROP CONSTRAINT IF EXISTS federation_incoming_post_reports_category_check`,
+		`ALTER TABLE federation_incoming_post_reports
+			ADD CONSTRAINT federation_incoming_post_reports_category_check
+			CHECK (category IN ('other', 'spam', 'abuse', 'legal', 'safety'))`,
 		`ALTER TABLE post_reports DROP CONSTRAINT IF EXISTS post_reports_status_check`,
 		`ALTER TABLE post_reports
 			ADD CONSTRAINT post_reports_status_check

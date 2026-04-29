@@ -90,6 +90,7 @@ func RunLegalCompliance(ctx context.Context, pool *pgxpool.Pool) error {
 			reporter_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 			thread_id UUID NOT NULL REFERENCES dm_threads(id) ON DELETE CASCADE,
 			message_id UUID NOT NULL REFERENCES dm_messages(id) ON DELETE CASCADE,
+			category TEXT NOT NULL DEFAULT 'other',
 			reason TEXT NOT NULL,
 			include_plaintext BOOLEAN NOT NULL DEFAULT false,
 			reporter_submitted_plaintext TEXT NOT NULL DEFAULT '',
@@ -99,12 +100,27 @@ func RunLegalCompliance(ctx context.Context, pool *pgxpool.Pool) error {
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			UNIQUE (reporter_user_id, message_id)
 		)`,
+		`ALTER TABLE dm_reports ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'other'`,
+		`ALTER TABLE dm_reports DROP CONSTRAINT IF EXISTS dm_reports_category_check`,
+		`ALTER TABLE dm_reports
+			ADD CONSTRAINT dm_reports_category_check
+			CHECK (category IN ('other', 'spam', 'abuse', 'legal', 'safety'))`,
 		`ALTER TABLE dm_reports DROP CONSTRAINT IF EXISTS dm_reports_status_check`,
 		`ALTER TABLE dm_reports
 			ADD CONSTRAINT dm_reports_status_check
 			CHECK (status IN ('open', 'resolved', 'dismissed', 'spam'))`,
 		`CREATE INDEX IF NOT EXISTS idx_dm_reports_status_created_at ON dm_reports (status, created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_dm_reports_thread_created_at ON dm_reports (thread_id, created_at DESC)`,
+		`CREATE TABLE IF NOT EXISTS user_access_events (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+			event_type TEXT NOT NULL,
+			ip TEXT NOT NULL DEFAULT '',
+			user_agent TEXT NOT NULL DEFAULT '',
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_user_access_events_user_created_at ON user_access_events (user_id, created_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_user_access_events_created_at ON user_access_events (created_at DESC)`,
 	}
 	for i, q := range steps {
 		if _, err := pool.Exec(ctx, q); err != nil {

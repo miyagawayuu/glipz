@@ -226,6 +226,7 @@ const editTextRanges = ref<{ start: number; end: number }[]>([]);
 const editBusy = ref(false);
 const editErr = ref("");
 const reportTarget = ref<TimelinePost | null>(null);
+const reportCategory = ref("other");
 const reportReason = ref("");
 const reportBusy = ref(false);
 const reportErr = ref("");
@@ -659,6 +660,7 @@ async function requestFederationBlock(it: TimelinePost) {
 async function requestReportPost(it: TimelinePost) {
   openMenuId.value = null;
   reportTarget.value = it;
+  reportCategory.value = "other";
   reportReason.value = "";
   reportErr.value = "";
 }
@@ -666,6 +668,7 @@ async function requestReportPost(it: TimelinePost) {
 function closeReportModal() {
   if (reportBusy.value) return;
   reportTarget.value = null;
+  reportCategory.value = "other";
   reportReason.value = "";
   reportErr.value = "";
 }
@@ -689,7 +692,7 @@ async function submitReport() {
     ? `${base}?${new URLSearchParams({ object_url: it.remote_object_url }).toString()}`
     : base;
   try {
-    await api(path, { method: "POST", token, json: { reason } });
+    await api(path, { method: "POST", token, json: { category: reportCategory.value, reason } });
     closeReportModal();
     window.alert(t("components.postTimeline.moderation.reportAccepted"));
   } catch (e: unknown) {
@@ -1698,6 +1701,18 @@ async function submitUnlock(it: TimelinePost) {
         <p class="mt-2 text-sm leading-relaxed text-neutral-600">
           {{ $t("components.postTimeline.reportModal.description") }}
         </p>
+        <label class="mt-4 block text-sm font-medium text-neutral-700" for="report-category">{{ $t("components.postTimeline.reportModal.categoryLabel") }}</label>
+        <select
+          id="report-category"
+          v-model="reportCategory"
+          class="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none ring-lime-500 focus:ring-2"
+        >
+          <option value="other">{{ $t("components.postTimeline.reportModal.categoryOther") }}</option>
+          <option value="spam">{{ $t("components.postTimeline.reportModal.categorySpam") }}</option>
+          <option value="abuse">{{ $t("components.postTimeline.reportModal.categoryAbuse") }}</option>
+          <option value="legal">{{ $t("components.postTimeline.reportModal.categoryLegal") }}</option>
+          <option value="safety">{{ $t("components.postTimeline.reportModal.categorySafety") }}</option>
+        </select>
         <label class="mt-4 block text-sm font-medium text-neutral-700" for="report-reason">{{ $t("components.postTimeline.reportModal.reasonLabel") }}</label>
         <textarea
           id="report-reason"

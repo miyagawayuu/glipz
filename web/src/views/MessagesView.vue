@@ -123,6 +123,7 @@ const notice = ref("");
 const keyPinWarning = ref("");
 const pendingKeyPin = ref<{ peerID: string; fingerprint: string } | null>(null);
 const reportingMessageId = ref("");
+const reportCategory = ref("other");
 const reportReason = ref("");
 const reportIncludePlaintext = ref(false);
 const reportBusy = ref(false);
@@ -784,12 +785,14 @@ async function saveAttachment(message: ResolvedDMMessage, attachment: DMAttachme
 
 function startDMReport(message: ResolvedDMMessage) {
   reportingMessageId.value = message.id;
+  reportCategory.value = "other";
   reportReason.value = "";
   reportIncludePlaintext.value = false;
 }
 
 function cancelDMReport() {
   reportingMessageId.value = "";
+  reportCategory.value = "other";
   reportReason.value = "";
   reportIncludePlaintext.value = false;
 }
@@ -806,6 +809,7 @@ async function submitDMReport(message: ResolvedDMMessage) {
     await api(`/api/v1/dm/threads/${encodeURIComponent(activeThread.value.id)}/messages/${encodeURIComponent(message.id)}/report`, {
       method: "POST",
       json: {
+        category: reportCategory.value,
         reason: reportReason.value,
         include_plaintext: reportIncludePlaintext.value,
         reporter_submitted_plaintext: reportIncludePlaintext.value && !message.decrypt_error ? message.decrypted_text : "",
@@ -1274,6 +1278,16 @@ onBeforeUnmount(() => {
                       :class="item.sent_by_me ? 'border-white/30 bg-lime-500/20' : 'border-amber-200 bg-amber-50'"
                     >
                       <p class="text-xs font-semibold">{{ $t("views.messages.reportTitle") }}</p>
+                      <label class="mt-2 block text-xs font-semibold text-neutral-700">
+                        {{ $t("views.messages.reportCategoryLabel") }}
+                        <select v-model="reportCategory" class="mt-1 w-full rounded border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900">
+                          <option value="other">{{ $t("views.messages.reportCategoryOther") }}</option>
+                          <option value="spam">{{ $t("views.messages.reportCategorySpam") }}</option>
+                          <option value="abuse">{{ $t("views.messages.reportCategoryAbuse") }}</option>
+                          <option value="legal">{{ $t("views.messages.reportCategoryLegal") }}</option>
+                          <option value="safety">{{ $t("views.messages.reportCategorySafety") }}</option>
+                        </select>
+                      </label>
                       <textarea
                         v-model="reportReason"
                         rows="3"
