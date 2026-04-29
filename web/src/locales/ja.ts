@@ -58,6 +58,9 @@ export const jaMessages = {
     announcements: {
       heading: "運営からのお知らせ",
       empty: "お知らせはまだありません。",
+      previous: "前のお知らせ",
+      next: "次のお知らせ",
+      goTo: "{n}件目のお知らせを表示",
     },
     links: {
       heading: "リンク",

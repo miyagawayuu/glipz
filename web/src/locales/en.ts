@@ -61,6 +61,9 @@ export const enOverrides: DeepPartial<AppMessageSchema> = {
     announcements: {
       heading: "Announcements",
       empty: "No announcements yet.",
+      previous: "Previous announcement",
+      next: "Next announcement",
+      goTo: "Show announcement {n}",
     },
     links: {
       heading: "Links",

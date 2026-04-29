@@ -70,7 +70,12 @@ function setThemePreferenceSilent(next: ThemePreference) {
 provide("setThemePreferenceSilent", setThemePreferenceSilent);
 
 const operatorAnnouncements = ref<OperatorAnnouncement[]>(getOperatorAnnouncements());
+const operatorAnnouncementIndex = ref(0);
 const legalDocumentUrls = ref<LegalDocumentURLSettings>({});
+let operatorAnnouncementTimer: ReturnType<typeof setInterval> | null = null;
+
+const currentOperatorAnnouncement = computed(() => operatorAnnouncements.value[operatorAnnouncementIndex.value] ?? null);
+const hasMultipleOperatorAnnouncements = computed(() => operatorAnnouncements.value.length > 1);
 
 async function loadOperatorAnnouncements() {
   try {
@@ -82,6 +87,42 @@ async function loadOperatorAnnouncements() {
   } catch {
     operatorAnnouncements.value = getOperatorAnnouncements();
   }
+}
+
+function clampOperatorAnnouncementIndex() {
+  const len = operatorAnnouncements.value.length;
+  if (len <= 0) {
+    operatorAnnouncementIndex.value = 0;
+    return;
+  }
+  if (operatorAnnouncementIndex.value >= len) {
+    operatorAnnouncementIndex.value = 0;
+  }
+}
+
+function showOperatorAnnouncement(index: number) {
+  const len = operatorAnnouncements.value.length;
+  if (len <= 0) return;
+  operatorAnnouncementIndex.value = (index + len) % len;
+}
+
+function showPreviousOperatorAnnouncement() {
+  showOperatorAnnouncement(operatorAnnouncementIndex.value - 1);
+}
+
+function showNextOperatorAnnouncement() {
+  showOperatorAnnouncement(operatorAnnouncementIndex.value + 1);
+}
+
+function stopOperatorAnnouncementSlider() {
+  if (operatorAnnouncementTimer) clearInterval(operatorAnnouncementTimer);
+  operatorAnnouncementTimer = null;
+}
+
+function startOperatorAnnouncementSlider() {
+  stopOperatorAnnouncementSlider();
+  if (!hasMultipleOperatorAnnouncements.value) return;
+  operatorAnnouncementTimer = setInterval(showNextOperatorAnnouncement, 7000);
 }
 
 function legalLink(key: LegalDocumentKey): { href: string; external: boolean } {
@@ -396,6 +437,15 @@ watch(
 );
 
 watch(
+  () => operatorAnnouncements.value.length,
+  () => {
+    clampOperatorAnnouncementIndex();
+    startOperatorAnnouncementSlider();
+  },
+  { immediate: true },
+);
+
+watch(
   themePreference,
   (next) => {
     persistThemePreference(next);
@@ -514,6 +564,7 @@ onBeforeUnmount(() => {
   document.removeEventListener("keydown", onDocumentKeydown);
   window.removeEventListener("storage", onStorage);
   window.removeEventListener("resize", syncAppHeaderOffset);
+  stopOperatorAnnouncementSlider();
   appHeaderResizeObserver?.disconnect();
   appHeaderResizeObserver = null;
 });
@@ -914,18 +965,49 @@ function avatarInitials(email: string): string {
         :aria-label="$t('app.menu.announcementsAndPolicies')"
       >
         <section>
-          <h2 class="text-xs font-semibold uppercase tracking-wide text-neutral-500">{{ $t("app.announcements.heading") }}</h2>
-          <ul v-if="operatorAnnouncements.length" class="mt-2 space-y-3">
-            <li
-              v-for="a in operatorAnnouncements"
-              :key="a.id"
-              class="rounded-xl border border-neutral-200 bg-neutral-50/90 p-3 text-sm shadow-sm"
-            >
-              <p class="font-semibold text-neutral-900">{{ a.title }}</p>
-              <p class="mt-1.5 leading-relaxed text-neutral-600">{{ a.body }}</p>
-              <p class="mt-2 text-[11px] text-neutral-400">{{ a.date }}</p>
-            </li>
-          </ul>
+          <div class="flex items-center justify-between gap-3">
+            <h2 class="text-xs font-semibold uppercase tracking-wide text-neutral-500">{{ $t("app.announcements.heading") }}</h2>
+            <p v-if="hasMultipleOperatorAnnouncements" class="text-[11px] tabular-nums text-neutral-400">
+              {{ operatorAnnouncementIndex + 1 }} / {{ operatorAnnouncements.length }}
+            </p>
+          </div>
+          <div v-if="currentOperatorAnnouncement" class="mt-2 overflow-hidden rounded-xl border border-lime-100 bg-lime-50/60 text-sm shadow-sm">
+            <div class="p-3">
+              <p class="font-semibold text-neutral-900">{{ currentOperatorAnnouncement.title }}</p>
+              <p class="mt-1.5 leading-relaxed text-neutral-700">{{ currentOperatorAnnouncement.body }}</p>
+              <p class="mt-2 text-[11px] text-lime-700/70">{{ currentOperatorAnnouncement.date }}</p>
+            </div>
+            <div v-if="hasMultipleOperatorAnnouncements" class="flex items-center justify-between border-t border-lime-100 bg-white/65 px-2 py-1.5">
+              <button
+                type="button"
+                class="rounded-full px-2 py-1 text-sm font-semibold text-lime-800 hover:bg-lime-100"
+                :aria-label="$t('app.announcements.previous')"
+                @click="showPreviousOperatorAnnouncement"
+              >
+                ‹
+              </button>
+              <div class="flex items-center gap-1.5">
+                <button
+                  v-for="(_, index) in operatorAnnouncements"
+                  :key="index"
+                  type="button"
+                  class="h-1.5 rounded-full transition-all"
+                  :class="index === operatorAnnouncementIndex ? 'w-5 bg-lime-600' : 'w-1.5 bg-neutral-300 hover:bg-lime-300'"
+                  :aria-label="$t('app.announcements.goTo', { n: index + 1 })"
+                  :aria-current="index === operatorAnnouncementIndex ? 'true' : undefined"
+                  @click="showOperatorAnnouncement(index)"
+                />
+              </div>
+              <button
+                type="button"
+                class="rounded-full px-2 py-1 text-sm font-semibold text-lime-800 hover:bg-lime-100"
+                :aria-label="$t('app.announcements.next')"
+                @click="showNextOperatorAnnouncement"
+              >
+                ›
+              </button>
+            </div>
+          </div>
           <p v-else class="mt-2 text-sm text-neutral-500">{{ $t("app.announcements.empty") }}</p>
         </section>
         <nav class="border-t border-neutral-200 pt-3 text-[12px] leading-relaxed" :aria-label="$t('app.menu.policyLinks')">

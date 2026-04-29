@@ -15,9 +15,11 @@ import (
 
 const (
 	sseMaxConnectionAge = 30 * time.Minute
-	ssePublicIPMax      = 3
-	sseAuthIPMax        = 12
-	sseAuthUserMax      = 4
+	ssePublicIPMax      = 6
+	sseAuthIPMax        = 24
+	// One signed-in tab can hold feed, notification, and DM streams.
+	// Allow a few tabs plus short reconnect overlap before rate limiting.
+	sseAuthUserMax = 12
 )
 
 var sseConnectionCounts = struct {
