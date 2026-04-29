@@ -4,6 +4,11 @@ import { useI18n } from "vue-i18n";
 import { useSecuritySettingsContext } from "../composables/useSecuritySettings";
 
 const { t } = useI18n();
+const props = withDefaults(defineProps<{
+  section?: "all" | "mfa" | "notifications";
+}>(), {
+  section: "all",
+});
 const {
   me,
   secret,
@@ -41,7 +46,7 @@ const webPushSubscribedLabel = computed(() =>
 
 <template>
   <div class="space-y-10">
-    <section>
+    <section v-if="props.section === 'all' || props.section === 'mfa'">
       <h2 class="text-xs font-semibold uppercase tracking-wide text-neutral-500">
         {{ $t("views.settings.sections.twoFactor") }}
       </h2>
@@ -137,7 +142,7 @@ const webPushSubscribedLabel = computed(() =>
     </section>
 
     <!-- 通知（Web Push） -->
-    <section>
+    <section v-if="props.section === 'all' || props.section === 'notifications'">
       <h2 class="text-xs font-semibold uppercase tracking-wide text-neutral-500">
         {{ $t("views.settings.sections.notifications") }}
       </h2>

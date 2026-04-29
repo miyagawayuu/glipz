@@ -13,6 +13,7 @@ data/
 server
 backend/server
 .jj/
+.cursor/
 
 # Capacitor / native app files
 # Keep Capacitor out of the GitHub-published repository.

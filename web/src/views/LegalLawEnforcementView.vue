@@ -1,0 +1,62 @@
+<script setup lang="ts">
+import { computed } from "vue";
+import { useI18n } from "vue-i18n";
+import { RouterLink } from "vue-router";
+import { APP_VERSION } from "../lib/appInfo";
+import { useLegalMarkdownDoc } from "../lib/legalDocs";
+import { useBackLink } from "../lib/useBackLink";
+
+const { tm } = useI18n();
+const points = computed(() => tm("legalLawEnforcement.points") as string[]);
+const sections = computed(() => tm("legalLawEnforcement.sections") as Array<{ title: string; paragraphs: string[] }>);
+const { customDocHtml, customDocUpdatedDate } = useLegalMarkdownDoc("law-enforcement");
+const backLink = useBackLink({ fallbackTo: "/about" });
+</script>
+
+<template>
+  <div class="w-full min-w-0 px-4 py-8 text-neutral-900 sm:px-6 lg:px-8">
+    <div class="mx-auto flex w-full max-w-6xl flex-col gap-8">
+      <RouterLink :to="backLink.to.value" class="text-sm font-medium text-lime-700 hover:text-lime-800" @click="backLink.onClick">{{ backLink.label }}</RouterLink>
+
+      <section class="overflow-hidden rounded-[2rem] border border-lime-200 bg-white dark:border-lime-800/70 dark:bg-neutral-950">
+        <div class="grid gap-8 px-6 py-10 sm:px-8 lg:grid-cols-[minmax(0,1.1fr)_24rem] lg:items-center lg:px-10">
+          <div class="max-w-3xl">
+            <p class="text-sm font-semibold uppercase tracking-[0.2em] text-lime-700">{{ $t("legalLawEnforcement.badge") }}</p>
+            <h1 class="mt-4 text-4xl font-bold tracking-tight text-neutral-900 sm:text-5xl">
+              {{ $t("legalLawEnforcement.title") }}
+            </h1>
+            <p class="mt-5 max-w-2xl text-sm leading-7 text-neutral-700 sm:text-base">
+              {{ $t("legalLawEnforcement.description") }}
+            </p>
+            <div class="mt-6 flex flex-wrap gap-2 text-xs text-neutral-600">
+              <span class="rounded-full border border-neutral-200 bg-white px-3 py-1 dark:border-neutral-200 dark:bg-neutral-900">App {{ APP_VERSION }}</span>
+              <span class="rounded-full border border-neutral-200 bg-white px-3 py-1 dark:border-neutral-200 dark:bg-neutral-900">{{ $t("common.labels.updated", { date: customDocUpdatedDate || "2026-04-29" }) }}</span>
+            </div>
+          </div>
+
+          <div class="rounded-3xl border border-neutral-200 bg-white/90 p-5 shadow-sm dark:border-neutral-200 dark:bg-neutral-900/90">
+            <p class="text-sm font-semibold text-neutral-900">{{ $t("legalLawEnforcement.summaryTitle") }}</p>
+            <ul class="mt-4 space-y-3 text-sm leading-7 text-neutral-700">
+              <li v-for="point in points" :key="point" class="flex gap-3">
+                <span class="mt-2 h-2 w-2 shrink-0 rounded-full bg-lime-500" />
+                <span>{{ point }}</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="rounded-[2rem] border border-neutral-200 bg-white px-6 py-8 dark:border-neutral-200 dark:bg-neutral-950 sm:px-8">
+        <div v-if="customDocHtml" class="prose prose-neutral max-w-none dark:prose-invert prose-a:text-lime-700" v-html="customDocHtml" />
+        <div v-else class="space-y-8">
+          <section v-for="section in sections" :key="section.title" class="border-t border-neutral-200 pt-8 first:border-t-0 first:pt-0 dark:border-neutral-200">
+            <h2 class="text-lg font-semibold text-neutral-900">{{ section.title }}</h2>
+            <div class="mt-4 space-y-3 text-sm leading-7 text-neutral-700">
+              <p v-for="paragraph in section.paragraphs" :key="paragraph">{{ paragraph }}</p>
+            </div>
+          </section>
+        </div>
+      </section>
+    </div>
+  </div>
+</template>

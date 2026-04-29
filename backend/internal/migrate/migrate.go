@@ -56,5 +56,14 @@ END $$`,
 	if err := RunPinnedPosts(ctx, pool); err != nil {
 		return err
 	}
+	if err := RunTimelineSettings(ctx, pool); err != nil {
+		return err
+	}
+	if err := RunModeration(ctx, pool); err != nil {
+		return err
+	}
+	if err := RunLegalCompliance(ctx, pool); err != nil {
+		return err
+	}
 	return nil
 }

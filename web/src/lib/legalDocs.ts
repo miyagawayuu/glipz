@@ -5,7 +5,7 @@ import { marked } from "marked";
 import { apiBase } from "./api";
 import { enforceSafeLinkAttrs } from "./sanitizeHtml";
 
-export type LegalDocName = "terms" | "privacy" | "nsfw-guidelines";
+export type LegalDocName = "terms" | "privacy" | "nsfw-guidelines" | "law-enforcement";
 
 type LegalDocResponse = {
   name: LegalDocName;

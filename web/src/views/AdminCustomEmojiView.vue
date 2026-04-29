@@ -143,18 +143,19 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="mx-auto max-w-3xl px-4 py-8">
+  <div class="mx-auto max-w-6xl px-4 py-8">
     <header>
-      <h1 class="text-xl font-semibold text-neutral-900">{{ $t("views.adminCustomEmojis.title") }}</h1>
+      <p class="text-xs font-semibold uppercase tracking-[0.18em] text-lime-700">{{ $t("views.adminShell.eyebrow") }}</p>
+      <h1 class="mt-2 text-2xl font-bold text-neutral-900">{{ $t("views.adminCustomEmojis.title") }}</h1>
       <p class="mt-2 text-sm text-neutral-600">{{ $t("views.adminCustomEmojis.description") }}</p>
     </header>
 
-    <p v-if="error" class="mt-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{{ error }}</p>
-    <p v-if="notice" class="mt-4 rounded border border-lime-200 bg-lime-50 px-3 py-2 text-sm text-lime-800">{{ notice }}</p>
-    <p v-if="loading" class="mt-6 text-sm text-neutral-500">{{ $t("views.adminCustomEmojis.loading") }}</p>
+    <p v-if="error" class="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{{ error }}</p>
+    <p v-if="notice" class="mt-5 rounded-xl border border-lime-200 bg-lime-50 px-4 py-3 text-sm text-lime-800">{{ notice }}</p>
+    <p v-if="loading" class="mt-8 text-sm text-neutral-500">{{ $t("views.adminCustomEmojis.loading") }}</p>
 
     <template v-else-if="isAdmin">
-      <section class="mt-6 rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+      <section class="mt-6 rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm">
         <h2 class="text-base font-semibold text-neutral-900">{{ $t("views.adminCustomEmojis.createHeading") }}</h2>
         <div class="mt-4 grid gap-4 sm:grid-cols-2">
           <label class="block text-sm">
@@ -188,14 +189,14 @@ onMounted(async () => {
         </div>
       </section>
 
-      <section class="mt-6 rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+      <section class="mt-6 rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm">
         <div class="flex items-center justify-between gap-3">
           <h2 class="text-base font-semibold text-neutral-900">{{ $t("views.adminCustomEmojis.listHeading") }}</h2>
           <span class="text-xs text-neutral-500">{{ items.length }}</span>
         </div>
         <p v-if="!items.length" class="mt-4 text-sm text-neutral-500">{{ $t("views.adminCustomEmojis.empty") }}</p>
         <div v-else class="mt-4 space-y-4">
-          <article v-for="item in items" :key="item.id" class="rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
+          <article v-for="item in items" :key="item.id" class="rounded-3xl border border-neutral-200 bg-neutral-50 p-4">
             <div class="flex items-start justify-between gap-4">
               <div class="flex min-w-0 items-center gap-3">
                 <span class="inline-flex min-w-12 max-w-24 items-center justify-center rounded-2xl bg-white px-2 py-2 shadow-sm">

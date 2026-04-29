@@ -24,6 +24,9 @@ const (
 	remoteFederationRateLimitWindow = 15 * time.Minute
 	remoteFederationRateLimitMax    = 60
 	linkPreviewRateLimitWindow      = 15 * time.Minute
+	sensitiveActionRateLimitWindow  = 10 * time.Minute
+	sensitiveActionRateLimitIPMax   = 40
+	sensitiveActionRateLimitUserMax = 20
 	loginRateLimitRedisTimeout      = 2 * time.Second
 )
 
@@ -64,6 +67,11 @@ func linkPreviewIPRateKey(ip string) string {
 func linkPreviewUserRateKey(subject string) string {
 	sum := sha256.Sum256([]byte(strings.TrimSpace(subject)))
 	return "rl:link_preview:user:" + hex.EncodeToString(sum[:])
+}
+
+func sensitiveActionRateKey(scope, kind, value string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(kind) + ":" + strings.TrimSpace(value)))
+	return "rl:sensitive:" + scope + ":" + hex.EncodeToString(sum[:])
 }
 
 func mfaUserRateKey(subject string) string {
@@ -336,5 +344,46 @@ func (s *Server) linkPreviewRateLimitExceeded(ctx context.Context, r *http.Reque
 
 func writeLinkPreviewRateLimited(w http.ResponseWriter) {
 	w.Header().Set("Retry-After", fmt.Sprintf("%.0f", linkPreviewRateLimitWindow.Seconds()))
+	writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "rate_limited"})
+}
+
+func (s *Server) sensitiveActionRateLimitExceeded(ctx context.Context, r *http.Request, kind string) bool {
+	if s.rdb == nil {
+		return false
+	}
+	limitCtx, cancel := context.WithTimeout(ctx, loginRateLimitRedisTimeout)
+	defer cancel()
+	keys := []string{}
+	if ip := s.clientIPForAuthRateLimit(r); strings.TrimSpace(ip) != "" {
+		keys = append(keys, sensitiveActionRateKey("ip", kind, ip))
+	}
+	if uid, ok := userIDFrom(r.Context()); ok {
+		keys = append(keys, sensitiveActionRateKey("user", kind, uid.String()))
+	}
+	for _, key := range keys {
+		n, err := s.rdb.Incr(limitCtx, key).Result()
+		if err != nil {
+			addRateLimitError("sensitive.incr")
+			log.Printf("sensitive action rate limit incr %s: %v", key, err)
+			if s.cfg.AuthRateLimitFailClosed {
+				return true
+			}
+			continue
+		}
+		if n == 1 {
+			_ = s.rdb.Expire(limitCtx, key, sensitiveActionRateLimitWindow).Err()
+		}
+		switch {
+		case strings.Contains(key, ":ip:") && n > sensitiveActionRateLimitIPMax:
+			return true
+		case strings.Contains(key, ":user:") && n > sensitiveActionRateLimitUserMax:
+			return true
+		}
+	}
+	return false
+}
+
+func writeSensitiveActionRateLimited(w http.ResponseWriter) {
+	w.Header().Set("Retry-After", fmt.Sprintf("%.0f", sensitiveActionRateLimitWindow.Seconds()))
 	writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "rate_limited"})
 }

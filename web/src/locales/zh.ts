@@ -1,5 +1,6 @@
 import { APP_VERSION, FEDERATION_EVENT_SCHEMA_VERSION, FEDERATION_PROTOCOL_VERSION, FEDERATION_SUPPORTED_PROTOCOL_VERSIONS } from "../lib/appInfo";
 import type { AppMessageSchema } from "./ja";
+
 type DeepPartial<T> = {
   [K in keyof T]?: T[K] extends Array<infer U>
     ? Array<DeepPartial<U>>
@@ -8,10 +9,10 @@ type DeepPartial<T> = {
       : T[K];
 };
 
-export const enOverrides: DeepPartial<AppMessageSchema> = {
+export const zhOverrides: DeepPartial<AppMessageSchema> = {
   app: {
-    loading: "Loading…",
-    loadingShort: "Loading...",
+    loading: "加载中…",
+    loadingShort: "加载中...",
     menu: {
       open: "Open menu",
       close: "Close menu",
@@ -97,7 +98,7 @@ export const enOverrides: DeepPartial<AppMessageSchema> = {
       login: "Log in",
     },
     locale: {
-      heading: "Language",
+      heading: "语言",
       ja: "日本語",
       en: "English",
       zh: "中文（简体）",
@@ -426,13 +427,6 @@ export const enOverrides: DeepPartial<AppMessageSchema> = {
     scheduledPosts: "Scheduled posts",
     settings: "Settings",
     customEmojiSettings: "Custom emoji",
-    timelineSettings: "Timeline settings",
-    mfaSettings: "Two-factor authentication",
-    identityPortabilitySettings: "ID portability",
-    notificationSettings: "Notification settings",
-    accountDeletionSettings: "Account deletion",
-    appearanceSettings: "Appearance",
-    directMessageSettings: "Direct message settings",
     search: "Search",
     notifications: "Notifications",
     messages: "Messages",
@@ -979,7 +973,6 @@ export const enOverrides: DeepPartial<AppMessageSchema> = {
       scopeFollowing: "Following",
       emptyFollowing: "No posts from people you follow yet.",
       emptyRecommended: "No recommendations yet. Check back soon.",
-      emptyCustom: "No posts match this timeline yet.",
       emptyAll: "No posts yet. Try sending the first one.",
       fabComposeAria: "Compose post",
       lightboxTitle: "Image viewer",
@@ -999,53 +992,6 @@ export const enOverrides: DeepPartial<AppMessageSchema> = {
         pinRemoved: "Removed from profile pins",
         pinFailed: "Failed to update pinned post",
         shareFailed: "Failed to share",
-      },
-    },
-    timelineSettings: {
-      title: "Timeline settings",
-      lead: "Choose which timelines appear on Home, reorder them, and create custom timelines with your own filters.",
-      backToSettings: "Back to settings",
-      newTimelineLabel: "New timeline",
-      newTimelinePlaceholder: "e.g. Favorites, News, Media posts",
-      newTimelineDefaultName: "Custom",
-      addTimeline: "Add",
-      enabled: "Show on Home",
-      defaultTimeline: "Open first",
-      moveUp: "Move up",
-      moveDown: "Move down",
-      baseScope: "Base timeline",
-      keywords: "Required keywords",
-      includeUsers: "Include users",
-      excludeUsers: "Exclude users",
-      communities: "Communities",
-      listPlaceholder: "Separate with commas",
-      usersPlaceholder: "No {'@'}, separated with commas",
-      communitiesPlaceholder: "Community names, separated with commas",
-      includeReposts: "Include reposts",
-      includeFederated: "Include federated posts",
-      includeNsfw: "Include NSFW posts",
-      resetFilters: "Reset filters",
-      deleteTimeline: "Delete",
-      shareHeading: "Share with a settings code",
-      shareLead: "Turn your current timeline layout into a code that other users can import.",
-      exportCode: "Generate code",
-      importLabel: "Import settings code",
-      importPlaceholder: "Paste a code beginning with GLIPZTL1.",
-      importCode: "Import",
-      resetAll: "Reset all",
-      saved: "Timeline settings saved.",
-      deleted: "Timeline deleted.",
-      exported: "Share code generated.",
-      imported: "Share code imported.",
-      importFailed: "Could not read that settings code.",
-      loading: "Loading timeline settings…",
-      saving: "Saving…",
-      loadFailed: "Could not load timeline settings.",
-      saveFailed: "Could not save timeline settings.",
-      resetDone: "Timeline settings reset.",
-      kind: {
-        builtin: "Built-in timeline",
-        custom: "Custom timeline",
       },
     },
     messages: {
@@ -1397,7 +1343,6 @@ export const enOverrides: DeepPartial<AppMessageSchema> = {
     settings: {
       title: "Settings",
       lead: "Account, security, notifications, appearance, and more—organized by category.",
-      backToSettings: "Back to settings",
       sections: {
         account: "Account",
         posts: "Posts",
@@ -1415,13 +1360,6 @@ export const enOverrides: DeepPartial<AppMessageSchema> = {
         profileEdit: "Edit profile",
         bookmarks: "Bookmarks",
         customEmojis: "Custom emoji",
-        timelineSettings: "Timeline settings",
-        mfaSettings: "Two-factor authentication",
-        identityPortability: "ID portability",
-        notificationSettings: "Notification settings",
-        accountDeletion: "Account deletion",
-        appearanceSettings: "Appearance",
-        directMessageSettings: "Direct message settings",
         scheduledPosts: "Scheduled posts",
         messages: "Direct messages",
         apiDeveloper: "API (OAuth & tokens)",
@@ -1665,7 +1603,6 @@ export const enOverrides: DeepPartial<AppMessageSchema> = {
       { to: "/legal/terms", title: "Terms of Service", body: "Review the usage terms before joining." },
       { to: "/legal/privacy", title: "Privacy Policy", body: "Learn how public and personal data is handled." },
       { to: "/legal/nsfw-guidelines", title: "NSFW Posting Guidelines", body: "Review the rules for adult illustration posts and required censorship." },
-      { to: "/legal/law-enforcement", title: "Law Enforcement Requests", body: "Review how legal requests, emergencies, preservation, and encrypted DMs are handled." },
       { to: "/federation/guidelines", title: "Federation Guidelines", body: "Review the public Glipz Federation specification." },
       { to: "/legal/api-guidelines", title: "API reference", body: "Browse the public Glipz REST API as OpenAPI (English) for bots and integrations." },
     ],

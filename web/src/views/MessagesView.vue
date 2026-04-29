@@ -122,6 +122,10 @@ const fedFileInput = ref<HTMLInputElement | null>(null);
 const notice = ref("");
 const keyPinWarning = ref("");
 const pendingKeyPin = ref<{ peerID: string; fingerprint: string } | null>(null);
+const reportingMessageId = ref("");
+const reportReason = ref("");
+const reportIncludePlaintext = ref(false);
+const reportBusy = ref(false);
 let threadListInFlight: Promise<void> | null = null;
 let threadRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -778,6 +782,45 @@ async function saveAttachment(message: ResolvedDMMessage, attachment: DMAttachme
   }
 }
 
+function startDMReport(message: ResolvedDMMessage) {
+  reportingMessageId.value = message.id;
+  reportReason.value = "";
+  reportIncludePlaintext.value = false;
+}
+
+function cancelDMReport() {
+  reportingMessageId.value = "";
+  reportReason.value = "";
+  reportIncludePlaintext.value = false;
+}
+
+async function submitDMReport(message: ResolvedDMMessage) {
+  if (!activeThread.value || reportBusy.value) return;
+  if (!reportReason.value.trim()) {
+    error.value = t("views.messages.reportReasonRequired");
+    return;
+  }
+  reportBusy.value = true;
+  error.value = "";
+  try {
+    await api(`/api/v1/dm/threads/${encodeURIComponent(activeThread.value.id)}/messages/${encodeURIComponent(message.id)}/report`, {
+      method: "POST",
+      json: {
+        reason: reportReason.value,
+        include_plaintext: reportIncludePlaintext.value,
+        reporter_submitted_plaintext: reportIncludePlaintext.value && !message.decrypt_error ? message.decrypted_text : "",
+        attachments_note: message.attachments.length ? t("views.messages.reportAttachmentsNote", { count: message.attachments.length }) : "",
+      },
+    });
+    notice.value = t("views.messages.reportSubmitted");
+    cancelDMReport();
+  } catch (e: unknown) {
+    error.value = e instanceof Error ? e.message : t("views.messages.errors.reportFailed");
+  } finally {
+    reportBusy.value = false;
+  }
+}
+
 async function saveFederationAttachment(message: { id: string; sent_by_me: boolean }, attachment: any, index: number) {
   if (!identity.value || !fedActiveRemoteAcct.value || !fedActiveThreadId.value) return;
   attachmentBusyKey.value = `${message.id}:fed:${index}`;
@@ -1215,6 +1258,42 @@ onBeforeUnmount(() => {
                     </p>
                     <UserBadges :badges="item.message.sender_badges" size="xs" />
                     <p class="whitespace-pre-wrap break-words text-sm leading-6">{{ item.message.decrypted_text }}</p>
+                    <div class="mt-2 flex flex-wrap justify-end gap-2">
+                      <button
+                        type="button"
+                        class="rounded-full border px-2.5 py-1 text-[11px] font-semibold"
+                        :class="item.sent_by_me ? 'border-white/40 text-white hover:bg-white/10' : 'border-neutral-200 text-neutral-600 hover:bg-neutral-50'"
+                        @click="startDMReport(item.message)"
+                      >
+                        {{ $t("views.messages.reportMessage") }}
+                      </button>
+                    </div>
+                    <div
+                      v-if="reportingMessageId === item.message.id"
+                      class="mt-3 rounded-xl border px-3 py-3"
+                      :class="item.sent_by_me ? 'border-white/30 bg-lime-500/20' : 'border-amber-200 bg-amber-50'"
+                    >
+                      <p class="text-xs font-semibold">{{ $t("views.messages.reportTitle") }}</p>
+                      <textarea
+                        v-model="reportReason"
+                        rows="3"
+                        maxlength="1000"
+                        class="mt-2 w-full rounded border border-neutral-200 px-3 py-2 text-sm text-neutral-900"
+                        :placeholder="$t('views.messages.reportReasonPlaceholder')"
+                      />
+                      <label class="mt-2 flex items-start gap-2 text-xs">
+                        <input v-model="reportIncludePlaintext" type="checkbox" class="mt-0.5 rounded border-neutral-300" :disabled="item.message.decrypt_error" />
+                        <span>{{ $t("views.messages.reportIncludePlaintext") }}</span>
+                      </label>
+                      <div class="mt-3 flex flex-wrap gap-2">
+                        <button type="button" class="rounded-full bg-red-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50" :disabled="reportBusy" @click="submitDMReport(item.message)">
+                          {{ reportBusy ? $t("views.messages.reporting") : $t("views.messages.submitReport") }}
+                        </button>
+                        <button type="button" class="rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-semibold" @click="cancelDMReport">
+                          {{ $t("common.actions.cancel") }}
+                        </button>
+                      </div>
+                    </div>
                     <div v-if="item.kind === 'message' && item.message.attachments.length" class="mt-3 space-y-2">
                       <div
                         v-for="(attachment, index) in item.message.attachments"

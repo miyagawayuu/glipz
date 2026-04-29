@@ -29,6 +29,19 @@ func (p *Pool) DeleteUserAccount(ctx context.Context, userID uuid.UUID) (Account
 	if err != nil {
 		return AccountDeletionResult{}, err
 	}
+	var activeHoldCount int
+	if err := tx.QueryRow(ctx, `
+		SELECT COUNT(*)::int
+		FROM legal_preservation_holds
+		WHERE target_user_id = $1
+			AND released_at IS NULL
+			AND expires_at > NOW()
+	`, userID).Scan(&activeHoldCount); err != nil {
+		return AccountDeletionResult{}, err
+	}
+	if activeHoldCount > 0 {
+		return AccountDeletionResult{}, ErrForbidden
+	}
 	tag, err := tx.Exec(ctx, `DELETE FROM users WHERE id = $1`, userID)
 	if err != nil {
 		return AccountDeletionResult{}, err

@@ -1,18 +1,9 @@
 <script setup lang="ts">
 import type { Ref } from "vue";
-import { computed, inject, onActivated, onMounted, provide, ref } from "vue";
+import { computed, inject } from "vue";
 import { RouterLink } from "vue-router";
-import { useI18n } from "vue-i18n";
-import DMSettingsPanel from "../components/DMSettingsPanel.vue";
-import AccountDeletionSettings from "../components/AccountDeletionSettings.vue";
 import FanclubPatreonSettings from "../components/FanclubPatreonSettings.vue";
 import Icon from "../components/Icon.vue";
-import IdentityPortabilitySettings from "../components/IdentityPortabilitySettings.vue";
-import SecuritySettingsPanel from "../components/SecuritySettingsPanel.vue";
-import { securitySettingsKey, useSecuritySettings } from "../composables/useSecuritySettings";
-import type { ThemePreference } from "../lib/theme";
-import { readStoredThemePreference } from "../lib/theme";
-import { setLocale, type AppLocale } from "../i18n";
 
 type AppMe = {
   handle: string;
@@ -20,60 +11,12 @@ type AppMe = {
   fanclub_patreon_enabled?: boolean;
 } | null;
 
-const { t, locale } = useI18n();
-const securitySettings = useSecuritySettings();
-provide(securitySettingsKey, securitySettings);
 const appMe = inject<Ref<AppMe> | null>("appMe", null);
-const setThemePreferenceSilent = inject<(next: ThemePreference) => void>("setThemePreferenceSilent", () => {});
-
-const themePreference = ref<ThemePreference>(readStoredThemePreference());
 
 const profilePath = computed(() => (appMe?.value?.handle ? `/@${appMe.value.handle}` : "/feed"));
 const showAdmin = computed(() => Boolean(appMe?.value?.is_site_admin));
 const showFanclubPatreon = computed(() => Boolean(appMe?.value?.fanclub_patreon_enabled));
 const showFanclub = computed(() => showFanclubPatreon.value);
-
-const themeOptions = computed(() =>
-  (["system", "light", "dark"] as const).map((value) => ({
-    value,
-    label:
-      value === "system"
-        ? t("app.theme.system")
-        : value === "light"
-          ? t("app.theme.light")
-          : t("app.theme.dark"),
-    description:
-      value === "system"
-        ? t("app.theme.systemDescription")
-        : value === "light"
-          ? t("app.theme.lightDescription")
-          : t("app.theme.darkDescription"),
-  })),
-);
-
-const localeOptions = computed(() => [
-  { value: "ja" as const, label: t("app.locale.ja") },
-  { value: "en" as const, label: t("app.locale.en") },
-]);
-const selectedThemeDescription = computed(() =>
-  themeOptions.value.find((opt) => opt.value === themePreference.value)?.description ?? "",
-);
-
-function selectTheme(next: ThemePreference) {
-  themePreference.value = next;
-  setThemePreferenceSilent(next);
-}
-
-function selectLocale(next: AppLocale) {
-  setLocale(next);
-}
-
-function syncThemeFromStorage() {
-  themePreference.value = readStoredThemePreference();
-}
-
-onMounted(syncThemeFromStorage);
-onActivated(syncThemeFromStorage);
 </script>
 
 <template>
@@ -89,7 +32,7 @@ onActivated(syncThemeFromStorage);
     </div>
   </Teleport>
 
-  <div class="mx-auto max-w-2xl px-4 py-8">
+  <div class="w-full px-4 py-8">
     <div class="space-y-10">
       <section>
         <h2 class="text-xs font-semibold uppercase tracking-wide text-neutral-500">
@@ -116,6 +59,34 @@ onActivated(syncThemeFromStorage);
           >
             <span class="font-medium">{{ $t("views.settings.items.customEmojis") }}</span>
             <Icon name="chevronDown" class="h-4 w-4 shrink-0 -rotate-90 text-neutral-400" decorative />
+          </RouterLink>
+          <RouterLink
+            to="/settings/timeline"
+            class="flex items-center justify-between gap-3 px-4 py-3.5 text-sm text-neutral-900 transition-colors hover:bg-lime-50"
+          >
+            <span class="font-medium">{{ $t("views.settings.items.timelineSettings") }}</span>
+            <Icon name="chevronDown" class="h-4 w-4 shrink-0 -rotate-90 text-neutral-400" decorative />
+          </RouterLink>
+          <RouterLink
+            to="/settings/mfa"
+            class="flex items-center justify-between gap-3 px-4 py-3.5 text-sm text-neutral-900 transition-colors hover:bg-lime-50"
+          >
+            <span class="font-medium">{{ $t("views.settings.items.mfaSettings") }}</span>
+            <Icon name="chevronDown" class="h-4 w-4 shrink-0 -rotate-90 text-neutral-400" decorative />
+          </RouterLink>
+          <RouterLink
+            to="/settings/identity-portability"
+            class="flex items-center justify-between gap-3 px-4 py-3.5 text-sm text-neutral-900 transition-colors hover:bg-lime-50"
+          >
+            <span class="font-medium">{{ $t("views.settings.items.identityPortability") }}</span>
+            <Icon name="chevronDown" class="h-4 w-4 shrink-0 -rotate-90 text-neutral-400" decorative />
+          </RouterLink>
+          <RouterLink
+            to="/settings/account-deletion"
+            class="flex items-center justify-between gap-3 px-4 py-3.5 text-sm text-red-700 transition-colors hover:bg-red-50"
+          >
+            <span class="font-medium">{{ $t("views.settings.items.accountDeletion") }}</span>
+            <Icon name="chevronDown" class="h-4 w-4 shrink-0 -rotate-90 text-red-300" decorative />
           </RouterLink>
         </div>
         <p class="mt-2 text-xs text-neutral-500">{{ $t("views.settings.hints.account") }}</p>
@@ -145,23 +116,25 @@ onActivated(syncThemeFromStorage);
 
       <section>
         <h2 class="text-xs font-semibold uppercase tracking-wide text-neutral-500">
-          {{ $t("views.settings.sections.directMessages") }}
+          {{ $t("views.settings.sections.communication") }}
         </h2>
-        <div class="mt-3">
-          <DMSettingsPanel />
+        <div class="mt-3 divide-y divide-neutral-200 overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm">
+          <RouterLink
+            to="/settings/direct-messages"
+            class="flex items-center justify-between gap-3 px-4 py-3.5 text-sm text-neutral-900 transition-colors hover:bg-lime-50"
+          >
+            <span class="font-medium">{{ $t("views.settings.items.directMessageSettings") }}</span>
+            <Icon name="chevronDown" class="h-4 w-4 shrink-0 -rotate-90 text-neutral-400" decorative />
+          </RouterLink>
+          <RouterLink
+            to="/settings/notifications"
+            class="flex items-center justify-between gap-3 px-4 py-3.5 text-sm text-neutral-900 transition-colors hover:bg-lime-50"
+          >
+            <span class="font-medium">{{ $t("views.settings.items.notificationSettings") }}</span>
+            <Icon name="chevronDown" class="h-4 w-4 shrink-0 -rotate-90 text-neutral-400" decorative />
+          </RouterLink>
         </div>
       </section>
-
-      <section>
-        <h2 class="text-xs font-semibold uppercase tracking-wide text-neutral-500">
-          {{ $t("views.settings.sections.identityPortability") }}
-        </h2>
-        <IdentityPortabilitySettings />
-      </section>
-
-      <SecuritySettingsPanel />
-
-      <AccountDeletionSettings />
 
       <section>
         <h2 class="text-xs font-semibold uppercase tracking-wide text-neutral-500">
@@ -189,40 +162,14 @@ onActivated(syncThemeFromStorage);
         <h2 class="text-xs font-semibold uppercase tracking-wide text-neutral-500">
           {{ $t("views.settings.sections.appearance") }}
         </h2>
-        <div class="mt-3 space-y-3 rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
-          <div>
-            <p class="text-sm font-medium text-neutral-900">{{ $t("app.theme.heading") }}</p>
-            <select
-              class="mt-2 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none ring-lime-500/30 transition focus:border-lime-400 focus:ring-2 focus:ring-lime-400/40"
-              :value="themePreference"
-              @change="selectTheme(($event.target as HTMLSelectElement).value as ThemePreference)"
-            >
-              <option
-                v-for="opt in themeOptions"
-                :key="opt.value"
-                :value="opt.value"
-              >
-                {{ opt.label }}
-              </option>
-            </select>
-            <p class="mt-2 text-xs text-neutral-500">{{ selectedThemeDescription }}</p>
-          </div>
-          <div class="border-t border-neutral-200 pt-4">
-            <p class="text-sm font-medium text-neutral-900">{{ $t("app.locale.heading") }}</p>
-            <select
-              class="mt-2 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none ring-lime-500/30 transition focus:border-lime-400 focus:ring-2 focus:ring-lime-400/40"
-              :value="locale"
-              @change="selectLocale(($event.target as HTMLSelectElement).value as AppLocale)"
-            >
-              <option
-                v-for="opt in localeOptions"
-                :key="opt.value"
-                :value="opt.value"
-              >
-                {{ opt.label }}
-              </option>
-            </select>
-          </div>
+        <div class="mt-3 divide-y divide-neutral-200 overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm">
+          <RouterLink
+            to="/settings/appearance"
+            class="flex items-center justify-between gap-3 px-4 py-3.5 text-sm text-neutral-900 transition-colors hover:bg-lime-50"
+          >
+            <span class="font-medium">{{ $t("views.settings.items.appearanceSettings") }}</span>
+            <Icon name="chevronDown" class="h-4 w-4 shrink-0 -rotate-90 text-neutral-400" decorative />
+          </RouterLink>
         </div>
       </section>
 

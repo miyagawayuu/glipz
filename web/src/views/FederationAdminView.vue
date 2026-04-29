@@ -182,27 +182,30 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="mx-auto max-w-3xl px-4 py-8">
-    <h1 class="text-xl font-semibold text-neutral-900">{{ t("views.adminFederation.title") }}</h1>
-    <p class="mt-2 text-sm text-neutral-600">
-      {{ t("views.adminFederation.descriptionPrefix") }}<code class="rounded bg-neutral-100 px-1">GLIPZ_ADMIN_USER_IDS</code>{{ t("views.adminFederation.descriptionSuffix") }}
-    </p>
-    <p v-if="err" class="mt-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{{ err }}</p>
-    <p v-if="loading" class="mt-6 text-sm text-neutral-500">{{ t("views.adminFederation.loading") }}</p>
+  <div class="mx-auto max-w-6xl px-4 py-8">
+    <header>
+      <p class="text-xs font-semibold uppercase tracking-[0.18em] text-lime-700">{{ t("views.adminShell.eyebrow") }}</p>
+      <h1 class="mt-2 text-2xl font-bold text-neutral-900">{{ t("views.adminFederation.title") }}</h1>
+      <p class="mt-2 max-w-3xl text-sm leading-6 text-neutral-600">
+        {{ t("views.adminFederation.descriptionPrefix") }}<code class="rounded bg-neutral-100 px-1">GLIPZ_ADMIN_USER_IDS</code>{{ t("views.adminFederation.descriptionSuffix") }}
+      </p>
+    </header>
+    <p v-if="err" class="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{{ err }}</p>
+    <p v-if="loading" class="mt-8 text-sm text-neutral-500">{{ t("views.adminFederation.loading") }}</p>
     <template v-else-if="isAdmin">
-      <section class="mt-8 space-y-2">
+      <section class="mt-8 rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm">
         <h2 class="text-sm font-semibold uppercase tracking-wide text-neutral-500">{{ t("views.adminFederation.queueHeading") }}</h2>
-        <p class="text-sm text-neutral-800">
+        <p class="mt-2 text-sm text-neutral-800">
           {{ t("views.adminFederation.queueSummary", { pending, dead }) }}
         </p>
       </section>
-      <section class="mt-8">
+      <section class="mt-6 rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm">
         <div class="flex flex-wrap items-end gap-3">
           <label class="block text-sm">
-            <span class="text-neutral-600">{{ t("views.adminFederation.stateLabel") }}</span>
+            <span class="mb-1 block font-medium text-neutral-700">{{ t("views.adminFederation.stateLabel") }}</span>
             <select
               v-model="deliveryStatus"
-              class="mt-1 block rounded border border-neutral-200 px-2 py-1.5 text-sm"
+              class="block rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-900 outline-none ring-lime-500/30 transition focus:border-lime-400 focus:ring-2 focus:ring-lime-400/40"
               @change="loadDeliveries"
             >
               <option value="pending">pending</option>
@@ -213,13 +216,13 @@ onMounted(() => {
           </label>
           <button
             type="button"
-            class="rounded bg-lime-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-lime-600"
+            class="rounded-full bg-lime-600 px-4 py-2 text-sm font-semibold text-white hover:bg-lime-700"
             @click="loadDeliveries"
           >
             {{ t("views.adminFederation.refresh") }}
           </button>
         </div>
-        <div class="mt-3 overflow-x-auto rounded border border-neutral-200">
+        <div class="mt-4 overflow-x-auto rounded-2xl border border-neutral-200">
           <table class="min-w-full divide-y divide-neutral-200 text-left text-xs">
             <thead class="bg-neutral-50 text-neutral-600">
               <tr>
@@ -248,23 +251,23 @@ onMounted(() => {
           </table>
         </div>
       </section>
-      <section class="mt-10">
+      <section class="mt-6 rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm">
         <h2 class="text-sm font-semibold uppercase tracking-wide text-neutral-500">{{ t("views.adminFederation.domainBlockHeading") }}</h2>
-        <form class="mt-3 flex flex-wrap items-end gap-2" @submit.prevent="addBlock">
+        <form class="mt-4 flex flex-wrap items-end gap-3" @submit.prevent="addBlock">
           <input
             v-model="newHost"
             type="text"
             required
             :placeholder="t('views.adminFederation.hostPlaceholder')"
-            class="min-w-[12rem] rounded border border-neutral-200 px-2 py-1.5 text-sm"
+            class="min-w-[12rem] rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-900 outline-none ring-lime-500/30 transition focus:border-lime-400 focus:ring-2 focus:ring-lime-400/40"
           />
           <input
             v-model="newNote"
             type="text"
             :placeholder="t('views.adminFederation.notePlaceholder')"
-            class="min-w-[10rem] flex-1 rounded border border-neutral-200 px-2 py-1.5 text-sm"
+            class="min-w-[10rem] flex-1 rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-900 outline-none ring-lime-500/30 transition focus:border-lime-400 focus:ring-2 focus:ring-lime-400/40"
           />
-          <button type="submit" class="rounded bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800">
+          <button type="submit" class="rounded-full bg-lime-600 px-4 py-2 text-sm font-semibold text-white hover:bg-lime-700">
             {{ t("views.adminFederation.add") }}
           </button>
         </form>
@@ -272,7 +275,7 @@ onMounted(() => {
           <li
             v-for="b in blocks"
             :key="b.host"
-            class="flex items-center justify-between gap-2 rounded border border-neutral-200 px-3 py-2"
+            class="flex items-center justify-between gap-2 rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3"
           >
             <div>
               <span class="font-mono font-medium">{{ b.host }}</span>
@@ -290,26 +293,26 @@ onMounted(() => {
         </ul>
       </section>
 
-      <section class="mt-10">
+      <section class="mt-6 rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm">
         <h2 class="text-sm font-semibold uppercase tracking-wide text-neutral-500">
           {{ t("views.adminFederation.knownInstancesHeading") }}
         </h2>
         <p class="mt-2 text-sm text-neutral-600">{{ t("views.adminFederation.knownInstancesHint") }}</p>
-        <form class="mt-3 flex flex-wrap items-end gap-2" @submit.prevent="addKnownInstance">
+        <form class="mt-4 flex flex-wrap items-end gap-3" @submit.prevent="addKnownInstance">
           <input
             v-model="newKnownHost"
             type="text"
             required
             :placeholder="t('views.adminFederation.hostPlaceholder')"
-            class="min-w-[12rem] rounded border border-neutral-200 px-2 py-1.5 text-sm"
+            class="min-w-[12rem] rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-900 outline-none ring-lime-500/30 transition focus:border-lime-400 focus:ring-2 focus:ring-lime-400/40"
           />
           <input
             v-model="newKnownNote"
             type="text"
             :placeholder="t('views.adminFederation.notePlaceholder')"
-            class="min-w-[10rem] flex-1 rounded border border-neutral-200 px-2 py-1.5 text-sm"
+            class="min-w-[10rem] flex-1 rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-900 outline-none ring-lime-500/30 transition focus:border-lime-400 focus:ring-2 focus:ring-lime-400/40"
           />
-          <button type="submit" class="rounded bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800">
+          <button type="submit" class="rounded-full bg-lime-600 px-4 py-2 text-sm font-semibold text-white hover:bg-lime-700">
             {{ t("views.adminFederation.add") }}
           </button>
         </form>
@@ -317,7 +320,7 @@ onMounted(() => {
           <li
             v-for="k in knownInstances"
             :key="k.host"
-            class="flex items-center justify-between gap-2 rounded border border-neutral-200 px-3 py-2"
+            class="flex items-center justify-between gap-2 rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3"
           >
             <div>
               <span class="font-mono font-medium">{{ k.host }}</span>

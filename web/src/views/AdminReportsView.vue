@@ -44,8 +44,26 @@ type FederatedReportRow = {
   reporter_display_name: string;
 };
 
+type DMReportRow = {
+  id: string;
+  created_at: string;
+  thread_id: string;
+  message_id: string;
+  reason: string;
+  include_plaintext: boolean;
+  reporter_submitted_plaintext: string;
+  attachments_note: string;
+  status: "open" | "resolved" | "dismissed" | "spam";
+  resolved_at?: string;
+  message_sender_handle: string;
+  message_sender_display_name: string;
+  reporter_handle: string;
+  reporter_display_name: string;
+};
+
 const localReports = ref<LocalReportRow[]>([]);
 const federatedReports = ref<FederatedReportRow[]>([]);
+const dmReports = ref<DMReportRow[]>([]);
 const updatingKey = ref("");
 const reportStatusOptions = computed(() =>
   [
@@ -119,6 +137,29 @@ async function updateFederatedReportStatus(row: FederatedReportRow, status: Fede
   }
 }
 
+async function updateDMReportStatus(row: DMReportRow, status: DMReportRow["status"]) {
+  const token = getAccessToken();
+  if (!token) return;
+  updatingKey.value = `dm:${row.id}`;
+  err.value = "";
+  try {
+    await api(`/api/v1/admin/reports/dm/${encodeURIComponent(row.id)}`, {
+      method: "PATCH",
+      token,
+      json: { status },
+    });
+    dmReports.value = dmReports.value.map((it) =>
+      it.id === row.id
+        ? { ...it, status, resolved_at: status === "open" ? "" : new Date().toISOString() }
+        : it,
+    );
+  } catch (e: unknown) {
+    err.value = e instanceof Error ? e.message : t("views.adminReports.errors.updateFailed");
+  } finally {
+    updatingKey.value = "";
+  }
+}
+
 async function loadMe() {
   const token = getAccessToken();
   if (!token) {
@@ -135,12 +176,14 @@ async function loadMe() {
 async function loadReports() {
   const token = getAccessToken();
   if (!token || !isAdmin.value) return;
-  const [localRes, federatedRes] = await Promise.all([
+  const [localRes, federatedRes, dmRes] = await Promise.all([
     api<{ items: LocalReportRow[] }>("/api/v1/admin/reports/posts", { method: "GET", token }),
     api<{ items: FederatedReportRow[] }>("/api/v1/admin/reports/federated-posts", { method: "GET", token }),
+    api<{ items: DMReportRow[] }>("/api/v1/admin/reports/dm", { method: "GET", token }),
   ]);
   localReports.value = localRes.items ?? [];
   federatedReports.value = federatedRes.items ?? [];
+  dmReports.value = dmRes.items ?? [];
 }
 
 async function refresh() {
@@ -164,23 +207,24 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="mx-auto max-w-4xl px-4 py-8">
-    <div class="flex flex-wrap items-center justify-between gap-3">
+  <div class="mx-auto max-w-6xl px-4 py-8">
+    <header class="flex flex-wrap items-center justify-between gap-3">
       <div>
-        <h1 class="text-xl font-semibold text-neutral-900">{{ $t("views.adminReports.title") }}</h1>
+        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-lime-700">{{ $t("views.adminShell.eyebrow") }}</p>
+        <h1 class="mt-2 text-2xl font-bold text-neutral-900">{{ $t("views.adminReports.title") }}</h1>
         <p class="mt-2 text-sm text-neutral-600">{{ $t("views.adminReports.description") }}</p>
       </div>
       <button
         type="button"
-        class="rounded bg-lime-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-lime-600"
+        class="rounded-full bg-lime-600 px-4 py-2 text-sm font-semibold text-white hover:bg-lime-700"
         @click="refresh"
       >
         {{ $t("views.adminReports.refresh") }}
       </button>
-    </div>
+    </header>
 
-    <p v-if="err" class="mt-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{{ err }}</p>
-    <p v-if="loading" class="mt-6 text-sm text-neutral-500">{{ $t("views.adminReports.loading") }}</p>
+    <p v-if="err" class="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{{ err }}</p>
+    <p v-if="loading" class="mt-8 text-sm text-neutral-500">{{ $t("views.adminReports.loading") }}</p>
 
     <template v-else-if="isAdmin">
       <section class="mt-8">
@@ -192,7 +236,7 @@ onMounted(() => {
           <article
             v-for="row in localReports"
             :key="row.id"
-            class="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm"
+            class="rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm"
           >
             <div class="flex flex-wrap items-start justify-between gap-2">
               <div class="min-w-0">
@@ -231,7 +275,7 @@ onMounted(() => {
               <label class="flex items-center gap-2 text-sm text-neutral-700">
                 <span>{{ $t("views.adminReports.statusLabel") }}</span>
                 <select
-                  class="rounded border border-neutral-200 px-2 py-1 text-sm"
+                  class="rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none ring-lime-500/30 transition focus:border-lime-400 focus:ring-2 focus:ring-lime-400/40"
                   :disabled="updatingKey === `local:${row.id}`"
                   :value="row.status"
                   @change="updateLocalReportStatus(row, ($event.target as HTMLSelectElement).value as LocalReportRow['status'])"
@@ -261,7 +305,7 @@ onMounted(() => {
           <article
             v-for="row in federatedReports"
             :key="row.id"
-            class="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm"
+            class="rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm"
           >
             <div class="flex flex-wrap items-start justify-between gap-2">
               <div class="min-w-0">
@@ -298,7 +342,7 @@ onMounted(() => {
               <label class="flex items-center gap-2 text-sm text-neutral-700">
                 <span>{{ $t("views.adminReports.statusLabel") }}</span>
                 <select
-                  class="rounded border border-neutral-200 px-2 py-1 text-sm"
+                  class="rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none ring-lime-500/30 transition focus:border-lime-400 focus:ring-2 focus:ring-lime-400/40"
                   :disabled="updatingKey === `fed:${row.id}`"
                   :value="row.status"
                   @change="updateFederatedReportStatus(row, ($event.target as HTMLSelectElement).value as FederatedReportRow['status'])"
@@ -318,6 +362,70 @@ onMounted(() => {
           </article>
         </div>
         <p v-else class="mt-3 text-sm text-neutral-500">{{ $t("views.adminReports.emptyFederated") }}</p>
+      </section>
+
+      <section class="mt-10">
+        <div class="flex items-center justify-between gap-3">
+          <h2 class="text-sm font-semibold uppercase tracking-wide text-neutral-500">{{ $t("views.adminReports.dmSection") }}</h2>
+          <span class="text-xs text-neutral-500">{{ dmReports.length }}{{ $t("views.adminReports.countSuffix") }}</span>
+        </div>
+        <div v-if="dmReports.length" class="mt-3 space-y-3">
+          <article
+            v-for="row in dmReports"
+            :key="row.id"
+            class="rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm"
+          >
+            <div class="flex flex-wrap items-start justify-between gap-2">
+              <div class="min-w-0">
+                <p class="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                  {{ reportStatusLabel(row.status) }}
+                  <span v-if="row.resolved_at" class="ml-2 normal-case text-neutral-400">{{ $t("views.adminReports.updatedPrefix") }} {{ formatDate(row.resolved_at) }}</span>
+                </p>
+                <p class="text-sm text-neutral-900">
+                  {{ $t("views.adminReports.dmSender") }}
+                  <span class="font-medium">{{ row.message_sender_display_name }}</span>
+                  <span class="ml-1 text-neutral-500">@{{ row.message_sender_handle }}</span>
+                </p>
+                <p class="mt-1 text-sm text-neutral-700">
+                  {{ $t("views.adminReports.reporter") }}
+                  <RouterLink :to="`/@${row.reporter_handle}`" class="font-medium text-lime-700 hover:underline">
+                    {{ row.reporter_display_name }}
+                  </RouterLink>
+                  <span class="ml-1 text-neutral-500">@{{ row.reporter_handle }}</span>
+                </p>
+              </div>
+              <time class="shrink-0 text-xs text-neutral-500" :datetime="row.created_at">{{ formatDate(row.created_at) }}</time>
+            </div>
+            <div class="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+              <p class="text-xs font-semibold text-amber-900">{{ $t("views.adminReports.reasonHeading") }}</p>
+              <p class="mt-1 whitespace-pre-wrap text-sm text-amber-950">{{ row.reason }}</p>
+            </div>
+            <details v-if="row.include_plaintext && row.reporter_submitted_plaintext" class="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2">
+              <summary class="cursor-pointer text-xs font-semibold text-red-900">{{ $t("views.adminReports.dmPlaintextSummary") }}</summary>
+              <p class="mt-2 whitespace-pre-wrap text-sm text-red-950">{{ row.reporter_submitted_plaintext }}</p>
+            </details>
+            <p v-if="row.attachments_note" class="mt-3 whitespace-pre-wrap rounded-xl bg-neutral-50 px-3 py-2 text-sm text-neutral-800">
+              {{ row.attachments_note }}
+            </p>
+            <div class="mt-3 flex flex-wrap gap-3 text-sm">
+              <RouterLink :to="`/messages/${row.thread_id}`" class="font-medium text-lime-700 hover:underline">
+                {{ $t("views.adminReports.openDMThread") }}
+              </RouterLink>
+              <label class="flex items-center gap-2 text-sm text-neutral-700">
+                <span>{{ $t("views.adminReports.statusLabel") }}</span>
+                <select
+                  class="rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none ring-lime-500/30 transition focus:border-lime-400 focus:ring-2 focus:ring-lime-400/40"
+                  :disabled="updatingKey === `dm:${row.id}`"
+                  :value="row.status"
+                  @change="updateDMReportStatus(row, ($event.target as HTMLSelectElement).value as DMReportRow['status'])"
+                >
+                  <option v-for="opt in reportStatusOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+                </select>
+              </label>
+            </div>
+          </article>
+        </div>
+        <p v-else class="mt-3 text-sm text-neutral-500">{{ $t("views.adminReports.emptyDM") }}</p>
       </section>
     </template>
   </div>

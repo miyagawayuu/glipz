@@ -2,8 +2,14 @@ import { createI18n } from "vue-i18n";
 import { APP_NAME } from "../lib/appInfo";
 import { enOverrides } from "../locales/en";
 import { jaMessages, type AppMessageSchema } from "../locales/ja";
+import { zhOverrides } from "../locales/zh";
+import { koOverrides } from "../locales/ko";
+import { ruOverrides } from "../locales/ru";
+import { esOverrides } from "../locales/es";
+import { ptOverrides } from "../locales/pt";
+import { deOverrides } from "../locales/de";
 
-export type AppLocale = "ja" | "en";
+export type AppLocale = "ja" | "en" | "zh" | "ko" | "ru" | "es" | "pt" | "de";
 
 type DeepPartial<T> = {
   [K in keyof T]?: T[K] extends Array<infer U>
@@ -15,10 +21,26 @@ type DeepPartial<T> = {
 
 const STORAGE_KEY = "glipz.locale";
 const FALLBACK_LOCALE: AppLocale = "ja";
-const supportedLocales: AppLocale[] = ["ja", "en"];
+export const supportedLocaleOptions: Array<{ value: AppLocale; labelKey: string }> = [
+  { value: "ja", labelKey: "app.locale.ja" },
+  { value: "en", labelKey: "app.locale.en" },
+  { value: "zh", labelKey: "app.locale.zh" },
+  { value: "ko", labelKey: "app.locale.ko" },
+  { value: "ru", labelKey: "app.locale.ru" },
+  { value: "es", labelKey: "app.locale.es" },
+  { value: "pt", labelKey: "app.locale.pt" },
+  { value: "de", labelKey: "app.locale.de" },
+];
+const supportedLocales = supportedLocaleOptions.map((option) => option.value);
 const localeTags: Record<AppLocale, string> = {
   ja: "ja-JP",
   en: "en-US",
+  zh: "zh-CN",
+  ko: "ko-KR",
+  ru: "ru-RU",
+  es: "es-ES",
+  pt: "pt-BR",
+  de: "de-DE",
 };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -90,6 +112,12 @@ function applyDocumentLanguage(locale: AppLocale) {
 const messages: Record<AppLocale, AppMessageSchema> = {
   ja: jaMessages,
   en: mergeDeep(jaMessages, enOverrides),
+  zh: mergeDeep(jaMessages, zhOverrides),
+  ko: mergeDeep(jaMessages, koOverrides),
+  ru: mergeDeep(jaMessages, ruOverrides),
+  es: mergeDeep(jaMessages, esOverrides),
+  pt: mergeDeep(jaMessages, ptOverrides),
+  de: mergeDeep(jaMessages, deOverrides),
 };
 
 export const i18n = createI18n({

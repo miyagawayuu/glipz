@@ -60,8 +60,11 @@ Key features include:
 
 ### Direct Messages
 
-- End-to-end encrypted identity setup
+- End-to-end encrypted identity setup with client-side encrypted message bodies
+  and attachments
 - File and media sharing
+- Participant-submitted DM reports for moderation, with optional explicit
+  plaintext inclusion by the reporting participant
 
 ### Customization
 
@@ -82,6 +85,8 @@ Key features include:
 - Admin-managed federation delivery monitoring, domain blocks, and known instances; known instances are discovery hints, not automatic trust grants
 - Database-backed instance settings, including public server metadata and federation policy summary
 - Operator-editable Markdown legal pages (`LEGAL_DOCS_DIR`) or admin-configured external legal document URLs
+- Law enforcement request policy document support, including
+  `law-enforcement.md` in `LEGAL_DOCS_DIR`
 
 ### Media
 
@@ -108,8 +113,10 @@ Key features include:
 - Dedicated `/admin` control panel with its own fixed side menu and admin-only access
 - Dashboard with instance statistics, open reports, and federation queue status
 - User search, suspension/unsuspension, and user badge assignment from the user management page
-- Local and federated post report review
+- Local, federated post, and DM report review
 - Federation delivery monitoring, domain blocking, and known-instance management
+- Law enforcement request tracking, legal preservation holds, disclosure package
+  export, and sensitive admin audit logging
 - Site custom emoji management
 - Runtime instance settings stored in PostgreSQL (`site_settings`), including:
   - registrations enabled/disabled

@@ -477,3 +477,77 @@ html.dark .prose {
 .divide-frame > :not([hidden]) ~ :not([hidden]) {
   border-color: rgb(var(--color-frame));
 }
+
+html.custom-theme .bg-white {
+  background-color: rgb(var(--theme-surface));
+}
+
+html.custom-theme .bg-white\/90 {
+  background-color: rgb(var(--theme-surface) / 0.9);
+}
+
+html.custom-theme .bg-white\/95 {
+  background-color: rgb(var(--theme-surface) / 0.95);
+}
+
+html.custom-theme .supports-\[backdrop-filter\]\:bg-white\/70 {
+  background-color: rgb(var(--theme-surface) / 0.7);
+}
+
+html.custom-theme .supports-\[backdrop-filter\]\:bg-white\/80 {
+  background-color: rgb(var(--theme-surface) / 0.8);
+}
+
+html.custom-theme .bg-neutral-50,
+html.custom-theme .bg-neutral-50\/90,
+html.custom-theme .bg-neutral-50\/80,
+html.custom-theme .bg-neutral-50\/60,
+html.custom-theme .bg-neutral-50\/50,
+html.custom-theme .bg-neutral-100,
+html.custom-theme .bg-neutral-100\/85,
+html.custom-theme .bg-neutral-200\/50,
+html.custom-theme .hover\:bg-neutral-50:hover,
+html.custom-theme .hover\:bg-neutral-50\/90:hover,
+html.custom-theme .hover\:bg-neutral-200:hover,
+html.custom-theme .hover\:bg-neutral-200\/50:hover,
+html.custom-theme .hover\:bg-white:hover {
+  background-color: rgb(var(--theme-surface-muted));
+}
+
+html.custom-theme .bg-lime-50,
+html.custom-theme .bg-lime-50\/80,
+html.custom-theme .bg-lime-50\/60,
+html.custom-theme .bg-lime-50\/50,
+html.custom-theme .bg-lime-50\/40,
+html.custom-theme .bg-lime-100,
+html.custom-theme .hover\:bg-lime-50:hover {
+  background-color: rgb(var(--theme-accent-bg) / 0.75);
+}
+
+html.custom-theme .bg-lime-600,
+html.custom-theme .hover\:bg-lime-500:hover,
+html.custom-theme .hover\:bg-lime-600:hover,
+html.custom-theme .hover\:bg-lime-700:hover {
+  background-color: rgb(var(--theme-accent-bg-strong));
+}
+
+html.custom-theme .text-neutral-900,
+html.custom-theme .text-neutral-800 {
+  color: rgb(var(--theme-text));
+}
+
+html.custom-theme .text-neutral-700,
+html.custom-theme .text-neutral-600,
+html.custom-theme .text-neutral-500,
+html.custom-theme .hover\:text-neutral-900:hover,
+html.custom-theme .hover\:text-neutral-800:hover {
+  color: rgb(var(--theme-text-muted));
+}
+
+html.custom-theme .text-lime-900,
+html.custom-theme .text-lime-800,
+html.custom-theme .text-lime-700,
+html.custom-theme .hover\:text-lime-900:hover,
+html.custom-theme .hover\:text-lime-800:hover {
+  color: rgb(var(--theme-accent-text-strong));
+}

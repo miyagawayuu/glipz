@@ -130,7 +130,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="mx-auto max-w-3xl px-4 py-8">
+  <div class="w-full px-4 py-8">
     <header>
       <h1 class="text-xl font-semibold text-neutral-900">{{ $t("views.customEmojiSettings.title") }}</h1>
       <p class="mt-2 text-sm text-neutral-600">{{ $t("views.customEmojiSettings.description") }}</p>

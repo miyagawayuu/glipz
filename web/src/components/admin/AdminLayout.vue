@@ -28,6 +28,7 @@ const navItems = computed(() => [
   { to: "/admin", exact: true, label: t("views.adminShell.nav.dashboard"), icon: "chart" as const },
   { to: "/admin/users", label: t("views.adminShell.nav.users"), icon: "user" as const },
   { to: "/admin/reports", label: t("views.adminShell.nav.reports"), icon: "warning" as const },
+  { to: "/admin/legal-requests", label: t("views.adminShell.nav.legalRequests"), icon: "lock" as const },
   { to: "/admin/federation", label: t("views.adminShell.nav.federation"), icon: "share" as const },
   { to: "/admin/custom-emojis", label: t("views.adminShell.nav.customEmojis"), icon: "image" as const },
   { to: "/admin/instance-settings", label: t("views.adminShell.nav.instanceSettings"), icon: "settings" as const },

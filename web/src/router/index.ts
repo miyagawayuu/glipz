@@ -134,6 +134,41 @@ export const router = createRouter({
       meta: { requiresAuth: true, mobileEdgeToEdge: true, titleKey: "routes.customEmojiSettings" },
     },
     {
+      path: "/settings/timeline",
+      component: () => import("../views/TimelineSettingsView.vue"),
+      meta: { requiresAuth: true, mobileEdgeToEdge: true, titleKey: "routes.timelineSettings" },
+    },
+    {
+      path: "/settings/mfa",
+      component: () => import("../views/MfaSettingsView.vue"),
+      meta: { requiresAuth: true, mobileEdgeToEdge: true, titleKey: "routes.mfaSettings" },
+    },
+    {
+      path: "/settings/identity-portability",
+      component: () => import("../views/IdentityPortabilitySettingsView.vue"),
+      meta: { requiresAuth: true, mobileEdgeToEdge: true, titleKey: "routes.identityPortabilitySettings" },
+    },
+    {
+      path: "/settings/notifications",
+      component: () => import("../views/NotificationSettingsView.vue"),
+      meta: { requiresAuth: true, mobileEdgeToEdge: true, titleKey: "routes.notificationSettings" },
+    },
+    {
+      path: "/settings/account-deletion",
+      component: () => import("../views/AccountDeletionSettingsView.vue"),
+      meta: { requiresAuth: true, mobileEdgeToEdge: true, titleKey: "routes.accountDeletionSettings" },
+    },
+    {
+      path: "/settings/appearance",
+      component: () => import("../views/AppearanceSettingsView.vue"),
+      meta: { requiresAuth: true, mobileEdgeToEdge: true, titleKey: "routes.appearanceSettings" },
+    },
+    {
+      path: "/settings/direct-messages",
+      component: () => import("../views/DirectMessageSettingsView.vue"),
+      meta: { requiresAuth: true, mobileEdgeToEdge: true, titleKey: "routes.directMessageSettings" },
+    },
+    {
       path: "/security",
       redirect: (to) => ({ path: "/settings", query: to.query }),
     },
@@ -173,6 +208,11 @@ export const router = createRouter({
           meta: { requiresAuth: true, requiresAdmin: true, adminShell: true, titleKey: "routes.federationAdmin" },
         },
         {
+          path: "legal-requests",
+          component: () => import("../views/AdminLegalRequestsView.vue"),
+          meta: { requiresAuth: true, requiresAdmin: true, adminShell: true, titleKey: "routes.adminLegalRequests" },
+        },
+        {
           path: "custom-emojis",
           component: () => import("../views/AdminCustomEmojiView.vue"),
           meta: { requiresAuth: true, requiresAdmin: true, adminShell: true, titleKey: "routes.adminCustomEmojis" },
@@ -198,6 +238,11 @@ export const router = createRouter({
       path: "/legal/nsfw-guidelines",
       component: () => import("../views/NSFWGuidelinesView.vue"),
       meta: { requiresAuth: false, wideMain: true, guestSimpleLayout: true, titleKey: "routes.nsfwGuidelines" },
+    },
+    {
+      path: "/legal/law-enforcement",
+      component: () => import("../views/LegalLawEnforcementView.vue"),
+      meta: { requiresAuth: false, wideMain: true, guestSimpleLayout: true, titleKey: "routes.lawEnforcement" },
     },
     {
       path: "/legal/api-guidelines",

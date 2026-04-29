@@ -203,8 +203,15 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c s3client.
 			r.Post("/admin/federation/entitlements", s.handleAdminFederationIssueEntitlement)
 			r.Get("/admin/reports/posts", s.handleAdminPostReports)
 			r.Get("/admin/reports/federated-posts", s.handleAdminFederatedPostReports)
+			r.Get("/admin/reports/dm", s.handleAdminDMReports)
 			r.Patch("/admin/reports/posts/{reportID}", s.handleAdminUpdatePostReportStatus)
 			r.Patch("/admin/reports/federated-posts/{reportID}", s.handleAdminUpdateFederatedPostReportStatus)
+			r.Patch("/admin/reports/dm/{reportID}", s.handleAdminUpdateDMReportStatus)
+			r.Get("/admin/legal-requests", s.handleAdminLegalRequests)
+			r.Post("/admin/legal-requests", s.handleAdminCreateLegalRequest)
+			r.Patch("/admin/legal-requests/{requestID}", s.handleAdminUpdateLegalRequest)
+			r.Post("/admin/legal-requests/{requestID}/holds", s.handleAdminCreateLegalHold)
+			r.Get("/admin/legal-requests/{requestID}/export", s.handleAdminExportLegalRequest)
 			r.Get("/admin/users/by-handle/{handle}/badges", s.handleAdminGetUserBadges)
 			r.Put("/admin/users/by-handle/{handle}/badges", s.handleAdminPutUserBadges)
 			r.Get("/admin/custom-emojis/site", s.handleAdminListSiteCustomEmojis)
@@ -254,6 +261,7 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c s3client.
 			r.Get("/dm/threads/{threadID}", s.handleGetDMThread)
 			r.Get("/dm/threads/{threadID}/messages", s.handleListDMMessages)
 			r.Post("/dm/threads/{threadID}/messages", s.handleCreateDMMessage)
+			r.Post("/dm/threads/{threadID}/messages/{messageID}/report", s.handleCreateDMReport)
 			r.Post("/dm/threads/{threadID}/read", s.handleMarkDMThreadRead)
 			r.Post("/auth/mfa/setup", s.handleMFASetup)
 			r.Post("/auth/mfa/enable", s.handleMFAEnable)
@@ -267,11 +275,15 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c s3client.
 			r.Get("/me/personal-access-tokens", s.handlePersonalAccessTokenList)
 			r.Delete("/me/personal-access-tokens/{tokenID}", s.handlePersonalAccessTokenDelete)
 			r.Patch("/me/dm-settings", s.handlePatchMeDMSettings)
+			r.Get("/me/timeline-settings", s.handleGetMeTimelineSettings)
+			r.Put("/me/timeline-settings", s.handlePutMeTimelineSettings)
+			r.Delete("/me/timeline-settings", s.handleDeleteMeTimelineSettings)
 			r.Get("/me/web-push", s.handleGetMeWebPush)
 			r.Put("/me/web-push/subscription", s.handlePutMeWebPushSubscription)
 			r.Post("/me/web-push/unsubscribe", s.handleDeleteMeWebPushSubscription)
 			r.Get("/me/scheduled-posts", s.handleListScheduledPosts)
 			r.Get("/posts/feed", s.handleFeed)
+			r.Post("/posts/feed/custom", s.handleCustomFeed)
 			r.Get("/posts/bookmarks", s.handleBookmarks)
 			r.Post("/communities", s.handleCreateCommunity)
 			r.Patch("/communities/{communityID}", s.handlePatchCommunity)
@@ -381,6 +393,9 @@ func oauthClaimsAllowRequest(claims *authjwt.Claims, r *http.Request) bool {
 			strings.HasPrefix(path, "/api/v1/public/federation/incoming"):
 			return true
 		}
+	}
+	if scope["posts:read"] && method == http.MethodPost && path == "/api/v1/posts/feed/custom" {
+		return true
 	}
 	if scope["media:write"] {
 		switch path {
@@ -900,6 +915,10 @@ func (s *Server) handleMeAccountDelete(w http.ResponseWriter, r *http.Request) {
 	deleted, err := s.db.DeleteUserAccount(r.Context(), uid)
 	if errors.Is(err, repo.ErrNotFound) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+		return
+	}
+	if errors.Is(err, repo.ErrForbidden) {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "legal_preservation_hold_active"})
 		return
 	}
 	if err != nil {
@@ -2635,6 +2654,132 @@ func (s *Server) handleFeed(w http.ResponseWriter, r *http.Request) {
 	writeJSONBytes(w, http.StatusOK, payload)
 }
 
+type customFeedFiltersRequest struct {
+	Filters struct {
+		BaseScope        string   `json:"baseScope"`
+		Keywords         []string `json:"keywords"`
+		IncludeUsers     []string `json:"includeUsers"`
+		ExcludeUsers     []string `json:"excludeUsers"`
+		Communities      []string `json:"communities"`
+		IncludeReposts   bool     `json:"includeReposts"`
+		IncludeFederated bool     `json:"includeFederated"`
+		IncludeNSFW      bool     `json:"includeNsfw"`
+	} `json:"filters"`
+}
+
+func (s *Server) handleCustomFeed(w http.ResponseWriter, r *http.Request) {
+	uid, ok := userIDFrom(r.Context())
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	var req customFeedFiltersRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_json"})
+		return
+	}
+	scope := strings.TrimSpace(strings.ToLower(req.Filters.BaseScope))
+	if scope != "following" {
+		scope = ""
+	}
+	items, err := s.feedItemsForViewer(r.Context(), uid, scope)
+	if err != nil {
+		writeServerError(w, "feedItemsForViewer custom", err)
+		return
+	}
+	items = filterCustomFeedItems(items, req.Filters)
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func normalizeCustomFeedTerms(values []string, limit int) []string {
+	out := make([]string, 0, len(values))
+	seen := map[string]bool{}
+	for _, value := range values {
+		term := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(value, "@")))
+		if term == "" || seen[term] {
+			continue
+		}
+		if len(term) > 80 {
+			term = term[:80]
+		}
+		out = append(out, term)
+		seen[term] = true
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out
+}
+
+func customFeedUserMatches(item feedItem, terms []string) bool {
+	if len(terms) == 0 {
+		return true
+	}
+	handle := strings.ToLower(strings.TrimPrefix(item.UserHandle, "@"))
+	email := strings.ToLower(item.UserEmail)
+	remote := strings.ToLower(item.RemoteActorURL)
+	for _, term := range terms {
+		if handle == term || strings.Contains(email, term) || strings.Contains(remote, term) {
+			return true
+		}
+	}
+	return false
+}
+
+func customFeedContainsKeyword(item feedItem, keywords []string) bool {
+	if len(keywords) == 0 {
+		return true
+	}
+	text := strings.ToLower(item.Caption)
+	if item.Repost != nil {
+		text += " " + strings.ToLower(item.Repost.Comment)
+	}
+	for _, keyword := range keywords {
+		if strings.Contains(text, keyword) {
+			return true
+		}
+	}
+	return false
+}
+
+func filterCustomFeedItems(items []feedItem, filters struct {
+	BaseScope        string   `json:"baseScope"`
+	Keywords         []string `json:"keywords"`
+	IncludeUsers     []string `json:"includeUsers"`
+	ExcludeUsers     []string `json:"excludeUsers"`
+	Communities      []string `json:"communities"`
+	IncludeReposts   bool     `json:"includeReposts"`
+	IncludeFederated bool     `json:"includeFederated"`
+	IncludeNSFW      bool     `json:"includeNsfw"`
+}) []feedItem {
+	keywords := normalizeCustomFeedTerms(filters.Keywords, 16)
+	includeUsers := normalizeCustomFeedTerms(filters.IncludeUsers, 16)
+	excludeUsers := normalizeCustomFeedTerms(filters.ExcludeUsers, 16)
+	out := make([]feedItem, 0, len(items))
+	for _, item := range items {
+		if !filters.IncludeReposts && item.Repost != nil {
+			continue
+		}
+		if !filters.IncludeFederated && item.IsFederated {
+			continue
+		}
+		if !filters.IncludeNSFW && item.IsNSFW {
+			continue
+		}
+		if !customFeedContainsKeyword(item, keywords) {
+			continue
+		}
+		if len(includeUsers) > 0 && !customFeedUserMatches(item, includeUsers) {
+			continue
+		}
+		if len(excludeUsers) > 0 && customFeedUserMatches(item, excludeUsers) {
+			continue
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
 func (s *Server) feedItemsForViewer(ctx context.Context, uid uuid.UUID, scope string) ([]feedItem, error) {
 	limit := s.cfg.FeedPageSize
 	if limit <= 0 {
@@ -4266,4 +4411,79 @@ func (s *Server) handlePatchMeDMSettings(w http.ResponseWriter, r *http.Request)
 		"status":                "ok",
 		"dm_invite_auto_accept": dmInviteAuto,
 	})
+}
+
+const maxTimelineSettingsBytes = 64 * 1024
+
+func validTimelineSettingsPayload(raw json.RawMessage) bool {
+	if len(raw) == 0 || len(raw) > maxTimelineSettingsBytes {
+		return false
+	}
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &root); err != nil {
+		return false
+	}
+	if _, ok := root["timelines"]; !ok {
+		return false
+	}
+	var timelines []json.RawMessage
+	if err := json.Unmarshal(root["timelines"], &timelines); err != nil {
+		return false
+	}
+	return len(timelines) > 0 && len(timelines) <= 64
+}
+
+func (s *Server) handleGetMeTimelineSettings(w http.ResponseWriter, r *http.Request) {
+	uid, ok := userIDFrom(r.Context())
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	raw, found, err := s.db.GetUserTimelineSettings(r.Context(), uid)
+	if err != nil {
+		writeServerError(w, "GetUserTimelineSettings", err)
+		return
+	}
+	if !found {
+		writeJSON(w, http.StatusOK, map[string]any{"settings": nil})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"settings": json.RawMessage(raw)})
+}
+
+func (s *Server) handlePutMeTimelineSettings(w http.ResponseWriter, r *http.Request) {
+	uid, ok := userIDFrom(r.Context())
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	var req struct {
+		Settings json.RawMessage `json:"settings"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxTimelineSettingsBytes+1024)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_json"})
+		return
+	}
+	if !validTimelineSettingsPayload(req.Settings) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_timeline_settings"})
+		return
+	}
+	if err := s.db.UpsertUserTimelineSettings(r.Context(), uid, req.Settings); err != nil {
+		writeServerError(w, "UpsertUserTimelineSettings", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"settings": req.Settings})
+}
+
+func (s *Server) handleDeleteMeTimelineSettings(w http.ResponseWriter, r *http.Request) {
+	uid, ok := userIDFrom(r.Context())
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	if err := s.db.DeleteUserTimelineSettings(r.Context(), uid); err != nil {
+		writeServerError(w, "DeleteUserTimelineSettings", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }

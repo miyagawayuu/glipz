@@ -18,6 +18,7 @@ var legalDocNames = map[string]struct{}{
 	"terms":           {},
 	"privacy":         {},
 	"nsfw-guidelines": {},
+	"law-enforcement": {},
 }
 
 var legalDocLocalePattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{2,16}$`)

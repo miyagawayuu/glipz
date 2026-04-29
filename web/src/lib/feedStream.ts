@@ -1,5 +1,6 @@
 import { api, apiBase, apiPublicGet } from "./api";
 import type { TimelinePoll, TimelinePost, TimelineReaction } from "../types/timeline";
+import type { TimelineFilters } from "./timelineSettings";
 
 export type FeedPubPayload =
   | { v: number; kind: "post_created"; post_id: string; author_id: string }
@@ -268,6 +269,15 @@ export async function fetchPublicFeedItems(): Promise<TimelinePost[]> {
   } catch {
     return [];
   }
+}
+
+export async function fetchCustomTimelineFeedItems(filters: TimelineFilters, token: string): Promise<TimelinePost[]> {
+  const res = await api<{ items: Parameters<typeof mapFeedItem>[0][] }>("/api/v1/posts/feed/custom", {
+    method: "POST",
+    token,
+    json: { filters },
+  });
+  return (res.items ?? []).map((x) => mapFeedItem(x));
 }
 
 /** Fetches a single post using the feed projection. Omitting token keeps the request anonymous. */

@@ -7,6 +7,7 @@ Supported filenames:
 - `terms.md`
 - `privacy.md`
 - `nsfw-guidelines.md`
+- `law-enforcement.md`
 
 Locale-specific variants take precedence when the viewer uses that locale:
 
@@ -16,6 +17,8 @@ Locale-specific variants take precedence when the viewer uses that locale:
 - `privacy.en.md`
 - `nsfw-guidelines.ja.md`
 - `nsfw-guidelines.en.md`
+- `law-enforcement.ja.md`
+- `law-enforcement.en.md`
 
 With the default Docker Compose setup, place the files under `data/legal-docs/`
 on the host and restart the backend. The frontend keeps using the built-in

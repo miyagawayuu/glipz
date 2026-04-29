@@ -9,6 +9,7 @@ import {
   fetchFederatedIncomingFeedItem,
   fetchFederatedThreadReplies,
   fetchFeedItem,
+  fetchCustomTimelineFeedItems,
   fetchPostThreadReplies,
   mapFeedItem,
   type FeedPubPayload,
@@ -40,6 +41,15 @@ import {
   SAFE_MEDIA_ACCEPT,
 } from "../lib/composerMedia";
 import { safeMediaURL } from "../lib/redirect";
+import {
+  enabledTimelines,
+  fetchTimelineSettings,
+  readTimelineSettings,
+  timelineDisplayLabel,
+  type BuiltInTimelineID,
+  type TimelineDefinition,
+  type TimelineSettings,
+} from "../lib/timelineSettings";
 
 const MAX_IMAGES = MAX_COMPOSER_IMAGE_SLOTS;
 
@@ -121,8 +131,8 @@ const router = useRouter();
 const route = useRoute();
 const { t } = useI18n();
 
-type FeedScope = "all" | "following" | "recommended";
-const feedScope = ref<FeedScope>("all");
+const timelineSettings = ref<TimelineSettings>(readTimelineSettings());
+const activeTimelineId = ref(timelineSettings.value.defaultTimelineId);
 const postComposerRef = ref<{ startReply: (it: TimelinePost | ReplyingTo) => void; focus: () => void } | null>(null);
 
 const items = ref<TimelinePost[]>([]);
@@ -177,6 +187,16 @@ const composerScheduleOpen = ref(false);
 /** Whether the visibility settings panel is open. */
 const composerVisibilityOpen = ref(false);
 const fanclubPatreonEnabled = ref(false);
+
+const visibleTimelines = computed(() => enabledTimelines(timelineSettings.value));
+const activeTimeline = computed<TimelineDefinition>(() =>
+  visibleTimelines.value.find((timeline) => timeline.id === activeTimelineId.value)
+    ?? visibleTimelines.value[0]
+    ?? timelineSettings.value.timelines[0],
+);
+const timelineGridStyle = computed(() => ({
+  gridTemplateColumns: `repeat(${Math.max(1, visibleTimelines.value.length)}, minmax(0, 1fr))`,
+}));
 
 const attachmentKind = computed(() =>
   selectedImages.value.length ? inferPostMediaType(selectedImages.value) : "none",
@@ -307,9 +327,10 @@ function startFeedStream() {
   stopFeedStream();
   const token = getAccessToken();
   if (!token) return;
-  if (feedScope.value === "recommended") return;
+  const timeline = activeTimeline.value;
+  if (timeline.kind !== "builtin" || timeline.id === "recommended") return;
   disconnectFeedStream = connectFeedStream({
-    scope: feedScope.value,
+    scope: timeline.id as "all" | "following",
     token,
     onPayload: (p: FeedPubPayload) => void handleFeedPub(p),
   });
@@ -436,10 +457,29 @@ async function loadMe() {
   }
 }
 
-async function setFeedScope(s: FeedScope) {
-  if (feedScope.value === s) return;
+async function syncTimelineSettings() {
+  const token = getAccessToken();
+  if (!token) return;
+  try {
+    timelineSettings.value = await fetchTimelineSettings(token);
+  } catch {
+    timelineSettings.value = readTimelineSettings();
+  }
+  if (!visibleTimelines.value.some((timeline) => timeline.id === activeTimelineId.value)) {
+    activeTimelineId.value = visibleTimelines.value[0]?.id ?? "all";
+  }
+}
+
+function builtInFeedPath(scope: BuiltInTimelineID): string {
+  if (scope === "following") return "/api/v1/posts/feed?scope=following";
+  if (scope === "recommended") return "/api/v1/posts/feed?scope=recommended";
+  return "/api/v1/posts/feed";
+}
+
+async function setActiveTimeline(id: string) {
+  if (activeTimelineId.value === id) return;
   stopFeedStream();
-  feedScope.value = s;
+  activeTimelineId.value = id;
   await load();
   startFeedStream();
 }
@@ -452,17 +492,16 @@ async function load() {
   }
   err.value = "";
   try {
-    const path =
-      feedScope.value === "following"
-        ? "/api/v1/posts/feed?scope=following"
-        : feedScope.value === "recommended"
-          ? "/api/v1/posts/feed?scope=recommended"
-          : "/api/v1/posts/feed";
-    const res = await api<{ items: TimelinePost[] }>(path, {
-      method: "GET",
-      token,
-    });
-    items.value = res.items.map((x) => mapFeedItem(x as Parameters<typeof mapFeedItem>[0]));
+    const timeline = activeTimeline.value;
+    if (timeline.kind === "custom") {
+      items.value = await fetchCustomTimelineFeedItems(timeline.filters, token);
+    } else {
+      const res = await api<{ items: TimelinePost[] }>(builtInFeedPath(timeline.id as BuiltInTimelineID), {
+        method: "GET",
+        token,
+      });
+      items.value = res.items.map((x) => mapFeedItem(x as Parameters<typeof mapFeedItem>[0]));
+    }
     await loadThreadsForFeed();
   } catch (e: unknown) {
     err.value = e instanceof Error ? e.message : t("views.feed.loadFailed");
@@ -639,6 +678,11 @@ async function sharePost(it: TimelinePost) {
 }
 
 onActivated(() => {
+  void (async () => {
+    await syncTimelineSettings();
+    await load();
+    startFeedStream();
+  })();
   const tok = getAccessToken();
   if (tok) void loadPatreon(tok);
 });
@@ -648,7 +692,9 @@ onMounted(() => {
   window.addEventListener("resize", updateFeedFabVisibility);
   window.addEventListener("glipz:post-created", onSidebarPostCreated);
   void loadMe();
-  void load().then(() => {
+  void (async () => {
+    await syncTimelineSettings();
+    await load();
     startFeedStream();
     updateFeedFabVisibility();
     const h = router.currentRoute.value.hash;
@@ -674,7 +720,7 @@ onMounted(() => {
       });
       void router.replace({ path: "/feed", query: {} });
     }
-  });
+  })();
 });
 
 function onFilesSelect(e: Event) {
@@ -948,82 +994,38 @@ function addPollOptionField() {
 
 <template>
   <Teleport to="#app-view-header-slot-desktop">
-    <div class="grid grid-cols-3">
+    <div class="grid overflow-x-auto" :style="timelineGridStyle">
       <button
+        v-for="timeline in visibleTimelines"
+        :key="timeline.id"
         type="button"
-        class="relative border-b-2 py-3 text-base font-semibold transition-colors"
+        class="relative whitespace-nowrap border-b-2 px-3 py-3 text-base font-semibold transition-colors"
         :class="
-          feedScope === 'all'
+          activeTimeline.id === timeline.id
             ? 'border-lime-600 text-neutral-900'
             : 'border-transparent text-neutral-500 hover:text-neutral-800'
         "
-        @click="setFeedScope('all')"
+        @click="setActiveTimeline(timeline.id)"
       >
-        {{ $t("views.feed.scopeAll") }}
-      </button>
-      <button
-        type="button"
-        class="relative border-b-2 py-3 text-base font-semibold transition-colors"
-        :class="
-          feedScope === 'recommended'
-            ? 'border-lime-600 text-neutral-900'
-            : 'border-transparent text-neutral-500 hover:text-neutral-800'
-        "
-        @click="setFeedScope('recommended')"
-      >
-        {{ $t("views.feed.scopeRecommended") }}
-      </button>
-      <button
-        type="button"
-        class="relative border-b-2 py-3 text-base font-semibold transition-colors"
-        :class="
-          feedScope === 'following'
-            ? 'border-lime-600 text-neutral-900'
-            : 'border-transparent text-neutral-500 hover:text-neutral-800'
-        "
-        @click="setFeedScope('following')"
-      >
-        {{ $t("views.feed.scopeFollowing") }}
+        {{ timelineDisplayLabel(timeline, t) }}
       </button>
     </div>
   </Teleport>
   <Teleport to="#app-view-header-slot-mobile">
-    <div class="grid grid-cols-3">
+    <div class="grid overflow-x-auto" :style="timelineGridStyle">
       <button
+        v-for="timeline in visibleTimelines"
+        :key="timeline.id"
         type="button"
-        class="relative border-b-2 py-3 text-base font-semibold transition-colors"
+        class="relative whitespace-nowrap border-b-2 px-3 py-3 text-base font-semibold transition-colors"
         :class="
-          feedScope === 'all'
+          activeTimeline.id === timeline.id
             ? 'border-lime-600 text-neutral-900'
             : 'border-transparent text-neutral-500 hover:text-neutral-800'
         "
-        @click="setFeedScope('all')"
+        @click="setActiveTimeline(timeline.id)"
       >
-        {{ $t("views.feed.scopeAll") }}
-      </button>
-      <button
-        type="button"
-        class="relative border-b-2 py-3 text-base font-semibold transition-colors"
-        :class="
-          feedScope === 'recommended'
-            ? 'border-lime-600 text-neutral-900'
-            : 'border-transparent text-neutral-500 hover:text-neutral-800'
-        "
-        @click="setFeedScope('recommended')"
-      >
-        {{ $t("views.feed.scopeRecommended") }}
-      </button>
-      <button
-        type="button"
-        class="relative border-b-2 py-3 text-base font-semibold transition-colors"
-        :class="
-          feedScope === 'following'
-            ? 'border-lime-600 text-neutral-900'
-            : 'border-transparent text-neutral-500 hover:text-neutral-800'
-        "
-        @click="setFeedScope('following')"
-      >
-        {{ $t("views.feed.scopeFollowing") }}
+        {{ timelineDisplayLabel(timeline, t) }}
       </button>
     </div>
   </Teleport>
@@ -1507,9 +1509,11 @@ function addPollOptionField() {
 
     <p v-if="!items.length && !err" class="border-b border-neutral-200 px-4 py-16 text-center text-neutral-500">
       {{
-        feedScope === "following"
+        activeTimeline.kind === "custom"
+          ? $t("views.feed.emptyCustom")
+          : activeTimeline.id === "following"
           ? $t("views.feed.emptyFollowing")
-          : feedScope === "recommended"
+          : activeTimeline.id === "recommended"
             ? $t("views.feed.emptyRecommended")
             : $t("views.feed.emptyAll")
       }}

@@ -6,6 +6,46 @@ Glipz uses `web/package.json` as the source of truth for the application
 version. Federation protocol compatibility is versioned separately with
 `glipz-federation/{major}` and `event_schema_version`.
 
+## [0.0.3] - Unreleased
+
+### Added
+
+- Appearance settings now include a custom theme builder with saved color
+  palettes and live preview.
+- Timeline settings now allow users to choose, reorder, hide, and create home
+  timeline tabs with custom filters.
+- Timeline settings can be exported/imported with share codes and are saved to
+  the user's server-side account settings.
+- Custom timeline tabs can fetch filtered feeds using a dedicated authenticated
+  feed endpoint.
+- Law enforcement readiness tooling for admins, including legal request intake,
+  status tracking, preservation hold creation, exportable disclosure packages,
+  and a public law enforcement request policy page.
+- DM reporting can include participant-submitted plaintext by explicit consent
+  while preserving client-side encryption for protected message content.
+- Tamper-resistant admin audit events record sensitive legal-compliance actions
+  with hash chaining.
+
+### Changed
+
+- Admin report, federation, custom emoji, and legal request pages now follow the
+  dashboard layout for page width, headings, cards, forms, and primary actions.
+- Account deletion now respects active legal preservation holds.
+
+### Fixed
+
+- Escaped literal `@` characters in new timeline-setting translations to avoid
+  vue-i18n message parse errors.
+- Frontend production builds split large vendor and locale bundles to avoid Vite
+  chunk-size warnings.
+
+### Database Migrations
+
+- Startup migrations add `user_timeline_settings` for server-saved per-user
+  timeline customization.
+- Startup migrations add law enforcement requests, legal preservation holds,
+  admin audit events, and DM report storage.
+
 ## [0.0.2] - Unreleased
 
 ### Added

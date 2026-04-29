@@ -220,6 +220,7 @@ const usesGuestSimpleLayout = computed(() => {
     route.path === "/legal/terms"
     || route.path === "/legal/privacy"
     || route.path === "/legal/nsfw-guidelines"
+    || route.path === "/legal/law-enforcement"
     || route.path === "/legal/api-guidelines"
     || route.path === "/federation/guidelines"
   );
