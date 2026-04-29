@@ -140,6 +140,13 @@ MAILGUN_API_KEY=key-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 MAIL_FROM_EMAIL=no-reply@your-domain.com
 MAIL_FROM_NAME=Glipz
 
+# Or use SMTP instead of Mailgun:
+# SMTP_HOST=smtp.your-provider.example
+# SMTP_PORT=587
+# SMTP_USERNAME=...
+# SMTP_PASSWORD=...
+# SMTP_TLS=auto
+
 # === Optional: site admin + provider integrations ===
 
 # GLIPZ_ADMIN_USER_IDS=uuid-of-admin-user
@@ -175,6 +182,7 @@ MAIL_FROM_NAME=Glipz
 | `PATREON_ENABLED` | Enables Patreon UI/routes; defaults to disabled |
 | `PATREON_*` | Patreon OAuth credentials; required when Patreon is enabled, and redirect URI must match your public API origin |
 | `MAILGUN_API_BASE` | Optional Mailgun regional API base, for example `https://api.eu.mailgun.net` |
+| `SMTP_*` | Optional SMTP mail delivery. Used when Mailgun is not configured. `SMTP_TLS` accepts `auto`, `starttls`, `tls`, or `none` |
 
 Use `sslmode=require` or stronger for production PostgreSQL connections unless
 the database connection is protected by an equivalent private TLS tunnel. Keep
@@ -213,7 +221,7 @@ and `event_id` replay protection for version 2 and later. `JWT_SECRET` feeds the
 instance signing key material, so changing it after federation is live changes
 the advertised public key and peer trust relationship.
 
-Mailgun's default API base works for the US region. Set `MAILGUN_API_BASE` when your Mailgun domain uses a regional API endpoint such as the EU region.
+Mailgun's default API base works for the US region. Set `MAILGUN_API_BASE` when your Mailgun domain uses a regional API endpoint such as the EU region. SMTP delivery is used only when `MAILGUN_DOMAIN` / `MAILGUN_API_KEY` are not configured.
 
 ---
 

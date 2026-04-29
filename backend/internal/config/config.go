@@ -52,6 +52,11 @@ type Config struct {
 	MailgunAPIBase         string
 	MailFromEmail          string
 	MailFromName           string
+	SMTPHost               string
+	SMTPPort               string
+	SMTPUser               string
+	SMTPPass               string
+	SMTPTLS                string
 	WebPushVAPIDPublicKey  string
 	WebPushVAPIDPrivateKey string
 	WebPushVAPIDSubject    string
@@ -194,6 +199,23 @@ func Load() (Config, error) {
 	c.MailgunAPIBase = strings.TrimSpace(os.Getenv("MAILGUN_API_BASE"))
 	c.MailFromEmail = strings.TrimSpace(os.Getenv("MAIL_FROM_EMAIL"))
 	c.MailFromName = strings.TrimSpace(os.Getenv("MAIL_FROM_NAME"))
+	if c.MailFromEmail == "" {
+		c.MailFromEmail = strings.TrimSpace(os.Getenv("SMTP_FROM_EMAIL"))
+	}
+	if c.MailFromName == "" {
+		c.MailFromName = strings.TrimSpace(os.Getenv("SMTP_FROM_NAME"))
+	}
+	c.SMTPHost = strings.TrimSpace(os.Getenv("SMTP_HOST"))
+	c.SMTPPort = strings.TrimSpace(os.Getenv("SMTP_PORT"))
+	c.SMTPUser = strings.TrimSpace(os.Getenv("SMTP_USERNAME"))
+	c.SMTPPass = strings.TrimSpace(os.Getenv("SMTP_PASSWORD"))
+	if c.SMTPUser == "" {
+		c.SMTPUser = strings.TrimSpace(os.Getenv("SMTP_USER"))
+	}
+	if c.SMTPPass == "" {
+		c.SMTPPass = strings.TrimSpace(os.Getenv("SMTP_PASS"))
+	}
+	c.SMTPTLS = strings.TrimSpace(os.Getenv("SMTP_TLS"))
 	c.WebPushVAPIDPublicKey = strings.TrimSpace(os.Getenv("WEB_PUSH_VAPID_PUBLIC_KEY"))
 	c.WebPushVAPIDPrivateKey = strings.TrimSpace(os.Getenv("WEB_PUSH_VAPID_PRIVATE_KEY"))
 	c.WebPushVAPIDSubject = strings.TrimSpace(os.Getenv("WEB_PUSH_VAPID_SUBJECT"))

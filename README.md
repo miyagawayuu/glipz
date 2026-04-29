@@ -230,7 +230,7 @@ Mailpit (started with the Docker stack) is for local development. In production,
 - [ ] `FRONTEND_ORIGIN` and (if federation) `GLIPZ_PROTOCOL_*` variables set
 - [ ] If trusting proxy headers, backend is private and proxy overwrites `X-Real-IP`, `X-Forwarded-For`, and `X-Forwarded-Proto`
 - [ ] Database and Redis secured
-- [ ] Email provider configured (Mailgun, etc.)
+- [ ] Email provider configured (Mailgun, SMTP, etc.)
 - [ ] `GLIPZ_ADMIN_USER_IDS` set for site administrators who can access `/admin`
 - [ ] Patreon fan club (if used): `PATREON_ENABLED=true`, `PATREON_CLIENT_ID`, `PATREON_CLIENT_SECRET`, and matching redirect URI
 
@@ -450,6 +450,7 @@ Membership entitlement over Glipz federation (`POST .../federation/posts/{postID
 | `VITE_ALLOWED_DM_ATTACHMENT_BASE_URLS` | Frontend allowlist for CDN/direct encrypted DM attachment URL prefixes | Optional |
 | `PATREON_ENABLED` | Enables Patreon UI/routes; defaults to disabled | Optional |
 | `PATREON_*` | Patreon OAuth credentials for fan club features | Required when Patreon is enabled |
+| `MAILGUN_*` / `SMTP_*` | Mail delivery for registration verification emails | Optional |
 | `WEB_PUSH_VAPID_*` | Web Push (VAPID) keys | Optional |
 
 Most operational instance settings are editable at runtime from `/admin/instance-settings` and are stored in PostgreSQL (`site_settings`). Environment variables such as `FEDERATION_POLICY_SUMMARY` are still useful as initial/default configuration, but the admin-saved database value is what operators should manage after deployment.

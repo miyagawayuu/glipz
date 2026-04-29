@@ -59,6 +59,11 @@ func (s *Server) sendRegistrationVerificationEmail(email, verifyURL string, expi
 		APIBase:   s.cfg.MailgunAPIBase,
 		FromEmail: s.cfg.MailFromEmail,
 		FromName:  s.cfg.MailFromName,
+		SMTPHost:  s.cfg.SMTPHost,
+		SMTPPort:  s.cfg.SMTPPort,
+		SMTPUser:  s.cfg.SMTPUser,
+		SMTPPass:  s.cfg.SMTPPass,
+		SMTPTLS:   s.cfg.SMTPTLS,
 	}
 	if !cfg.Enabled() {
 		log.Printf("registration verification email skipped for %s; verification token withheld from logs", email)
