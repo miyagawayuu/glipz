@@ -164,7 +164,6 @@ onUnmounted(() => {
           </div>
           <div class="min-w-0">
           <h2 class="truncate text-lg font-semibold text-neutral-900">{{ community.name }}</h2>
-          <p class="mt-0.5 truncate font-mono text-xs text-neutral-500">{{ community.id }}</p>
           <p v-if="community.description" class="mt-2 line-clamp-2 text-sm text-neutral-700">{{ community.description }}</p>
           </div>
         </div>

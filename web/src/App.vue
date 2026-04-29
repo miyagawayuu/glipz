@@ -928,68 +928,73 @@ function avatarInitials(email: string): string {
           </ul>
           <p v-else class="mt-2 text-sm text-neutral-500">{{ $t("app.announcements.empty") }}</p>
         </section>
-        <nav class="border-t border-neutral-200 pt-4 text-sm" :aria-label="$t('app.menu.policyLinks')">
-          <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">{{ $t("app.links.heading") }}</p>
-          <a
-            v-if="legalLink('terms').external"
-            :href="legalLink('terms').href"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="block rounded-lg px-2 py-2 text-neutral-700 hover:bg-lime-50 hover:text-lime-900"
-          >
-            {{ $t("app.links.terms") }}
-          </a>
-          <RouterLink
-            v-else
-            :to="legalLink('terms').href"
-            class="block rounded-lg px-2 py-2 text-neutral-700 hover:bg-lime-50 hover:text-lime-900"
-          >
-            {{ $t("app.links.terms") }}
-          </RouterLink>
-          <a
-            v-if="legalLink('privacy').external"
-            :href="legalLink('privacy').href"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="block rounded-lg px-2 py-2 text-neutral-700 hover:bg-lime-50 hover:text-lime-900"
-          >
-            {{ $t("app.links.privacy") }}
-          </a>
-          <RouterLink
-            v-else
-            :to="legalLink('privacy').href"
-            class="block rounded-lg px-2 py-2 text-neutral-700 hover:bg-lime-50 hover:text-lime-900"
-          >
-            {{ $t("app.links.privacy") }}
-          </RouterLink>
-          <a
-            v-if="legalLink('nsfw').external"
-            :href="legalLink('nsfw').href"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="block rounded-lg px-2 py-2 text-neutral-700 hover:bg-lime-50 hover:text-lime-900"
-          >
-            {{ $t("app.links.nsfw") }}
-          </a>
-          <RouterLink
-            v-else
-            :to="legalLink('nsfw').href"
-            class="block rounded-lg px-2 py-2 text-neutral-700 hover:bg-lime-50 hover:text-lime-900"
-          >
-            {{ $t("app.links.nsfw") }}
-          </RouterLink>
-          <RouterLink
-            to="/federation/guidelines"
-            class="block rounded-lg px-2 py-2 text-neutral-700 hover:bg-lime-50 hover:text-lime-900"
-          >
-            {{ $t("app.links.federation") }}
-          </RouterLink>
-          <RouterLink
-            to="/legal/api-guidelines"
-            class="block rounded-lg px-2 py-2 text-neutral-700 hover:bg-lime-50 hover:text-lime-900"
-          >
-            {{ $t("app.links.apiReference") }}
-          </RouterLink>
+        <nav class="border-t border-neutral-200 pt-3 text-[12px] leading-relaxed" :aria-label="$t('app.menu.policyLinks')">
+          <div class="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-neutral-400">
+            <a
+              v-if="legalLink('terms').external"
+              :href="legalLink('terms').href"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="rounded px-0.5 text-neutral-600 hover:text-lime-800 hover:underline"
+            >
+              {{ $t("app.links.terms") }}
+            </a>
+            <RouterLink
+              v-else
+              :to="legalLink('terms').href"
+              class="rounded px-0.5 text-neutral-600 hover:text-lime-800 hover:underline"
+            >
+              {{ $t("app.links.terms") }}
+            </RouterLink>
+            <span aria-hidden="true">｜</span>
+            <a
+              v-if="legalLink('privacy').external"
+              :href="legalLink('privacy').href"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="rounded px-0.5 text-neutral-600 hover:text-lime-800 hover:underline"
+            >
+              {{ $t("app.links.privacy") }}
+            </a>
+            <RouterLink
+              v-else
+              :to="legalLink('privacy').href"
+              class="rounded px-0.5 text-neutral-600 hover:text-lime-800 hover:underline"
+            >
+              {{ $t("app.links.privacy") }}
+            </RouterLink>
+            <span aria-hidden="true">｜</span>
+            <a
+              v-if="legalLink('nsfw').external"
+              :href="legalLink('nsfw').href"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="rounded px-0.5 text-neutral-600 hover:text-lime-800 hover:underline"
+            >
+              {{ $t("app.links.nsfw") }}
+            </a>
+            <RouterLink
+              v-else
+              :to="legalLink('nsfw').href"
+              class="rounded px-0.5 text-neutral-600 hover:text-lime-800 hover:underline"
+            >
+              {{ $t("app.links.nsfw") }}
+            </RouterLink>
+            <span aria-hidden="true">｜</span>
+            <RouterLink
+              to="/federation/guidelines"
+              class="rounded px-0.5 text-neutral-600 hover:text-lime-800 hover:underline"
+            >
+              {{ $t("app.links.federation") }}
+            </RouterLink>
+            <span aria-hidden="true">｜</span>
+            <RouterLink
+              to="/legal/api-guidelines"
+              class="rounded px-0.5 text-neutral-600 hover:text-lime-800 hover:underline"
+            >
+              {{ $t("app.links.apiReference") }}
+            </RouterLink>
+          </div>
         </nav>
       </aside>
     </div>

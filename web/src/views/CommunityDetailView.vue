@@ -24,6 +24,7 @@ import { addTimelineReaction, removeTimelineReaction, toggleTimelineBookmark, to
 import { avatarInitials, postDetailPath } from "../lib/feedDisplay";
 import { fetchPostThreadReplies } from "../lib/feedStream";
 import { buildComposerReplyQuery, composeRoutePath } from "../lib/postComposer";
+import { renderNoteMarkdown } from "../lib/noteRender";
 import { safeMediaURL } from "../lib/redirect";
 import type { TimelinePost } from "../types/timeline";
 
@@ -98,6 +99,8 @@ const memberCountLead = computed(() => {
   }
   return String(count);
 });
+const communityDetailsHtml = computed(() => renderNoteMarkdown(community.value?.details ?? ""));
+const editCommunityDetailsPreviewHtml = computed(() => renderNoteMarkdown(editCommunityDetails.value));
 
 function safeMemberAvatarURL(raw: unknown): string {
   return safeMediaURL(raw);
@@ -500,7 +503,7 @@ onUnmounted(() => {
     </div>
     <div class="px-4 pb-4">
       <div v-if="community" class="flex items-start justify-between gap-3">
-        <div class="min-w-0">
+        <div class="min-w-0 flex-1">
           <div
             class="group relative -mt-10 mb-3 flex h-20 w-20 items-center justify-center overflow-hidden rounded-full bg-lime-100 text-2xl font-bold text-lime-800 ring-4 ring-white"
             :class="canManageCommunity ? 'cursor-pointer' : ''"
@@ -530,63 +533,63 @@ onUnmounted(() => {
             {{ $t("views.communities.backToList") }}
           </RouterLink>
           <h1 class="mt-2 truncate text-2xl font-bold text-neutral-900">{{ community.name }}</h1>
-          <p class="mt-0.5 truncate font-mono text-xs text-neutral-500">{{ community.id }}</p>
           <p v-if="community.description" class="mt-3 whitespace-pre-wrap text-sm text-neutral-700">{{ community.description }}</p>
-          <div class="mt-4 flex items-center gap-2.5">
-            <div v-if="memberPreviews.length" class="flex -space-x-1.5">
-              <div
-                v-for="member in memberPreviews"
-                :key="member.user_id"
-                class="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-neutral-200 text-[11px] font-semibold text-neutral-700 ring-2 ring-white"
-                :title="member.display_name || member.handle"
-              >
-                <img
-                  v-if="safeMemberAvatarURL(member.avatar_url)"
-                  :src="safeMemberAvatarURL(member.avatar_url)"
-                  alt=""
-                  referrerpolicy="no-referrer"
-                  class="h-full w-full object-cover"
-                />
-                <span v-else>{{ avatarInitials(member.display_name || member.handle) }}</span>
+          <div class="mt-4 flex items-center justify-between gap-3">
+            <div class="flex min-w-0 items-center gap-2.5">
+              <div v-if="memberPreviews.length" class="flex shrink-0 -space-x-1.5">
+                <div
+                  v-for="member in memberPreviews"
+                  :key="member.user_id"
+                  class="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-neutral-200 text-[11px] font-semibold text-neutral-700 ring-2 ring-white"
+                  :title="member.display_name || member.handle"
+                >
+                  <img
+                    v-if="safeMemberAvatarURL(member.avatar_url)"
+                    :src="safeMemberAvatarURL(member.avatar_url)"
+                    alt=""
+                    referrerpolicy="no-referrer"
+                    class="h-full w-full object-cover"
+                  />
+                  <span v-else>{{ avatarInitials(member.display_name || member.handle) }}</span>
+                </div>
               </div>
+              <p class="min-w-0 text-base font-normal leading-none text-neutral-800 sm:text-lg">
+                <span class="font-bold text-neutral-900">{{ memberCountLead }}</span>{{ $t("views.communityDetail.memberCountSuffix") }}
+              </p>
             </div>
-            <p class="text-base font-normal leading-none text-neutral-800 sm:text-lg">
-              <span class="font-bold text-neutral-900">{{ memberCountLead }}</span>{{ $t("views.communityDetail.memberCountSuffix") }}
-            </p>
+            <div class="flex shrink-0 items-center gap-2">
+              <button
+                v-if="canManageCommunity"
+                type="button"
+                class="inline-flex h-9 w-9 items-center justify-center rounded-full bg-neutral-100 text-neutral-700 hover:bg-neutral-200"
+                :aria-label="$t('views.communityDetail.editCommunity')"
+                :title="$t('views.communityDetail.editCommunity')"
+                @click="openCommunityEdit"
+              >
+                <Icon name="pencil" class="h-4 w-4" />
+              </button>
+              <button
+                v-if="signedIn && community.viewer_status !== 'approved' && community.viewer_status !== 'pending'"
+                type="button"
+                class="rounded-full bg-lime-500 px-4 py-2 text-sm font-semibold text-white hover:bg-lime-600 disabled:opacity-50"
+                :disabled="actionBusy === 'join'"
+                @click="join"
+              >
+                {{ $t("views.communityDetail.requestJoin") }}
+              </button>
+              <span v-else-if="community.viewer_status === 'pending'" class="rounded-full bg-amber-50 px-3 py-1 text-sm font-medium text-amber-800">
+                {{ $t("views.communityDetail.pending") }}
+              </span>
+              <button
+                v-else-if="community.viewer_status === 'approved'"
+                type="button"
+                class="rounded-full bg-lime-50 px-3 py-1 text-sm font-medium text-lime-800"
+                disabled
+              >
+                {{ $t("views.communityDetail.member") }}
+              </button>
+            </div>
           </div>
-        </div>
-        <div class="mt-4 shrink-0">
-          <div v-if="canManageCommunity" class="mb-2 flex justify-end gap-2">
-          <button
-            type="button"
-            class="rounded-full bg-neutral-100 px-3 py-1 text-xs font-semibold text-neutral-700 hover:bg-neutral-200"
-            @click="openCommunityEdit"
-          >
-            {{ $t("views.communityDetail.editCommunity") }}
-          </button>
-          <button
-            type="button"
-            class="rounded-full bg-red-50 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-100"
-            @click="requestDeleteCommunity"
-          >
-            {{ $t("views.communityDetail.deleteCommunity") }}
-          </button>
-        </div>
-        <button
-          v-if="signedIn && community.viewer_status !== 'approved' && community.viewer_status !== 'pending'"
-          type="button"
-          class="rounded-full bg-lime-500 px-4 py-2 text-sm font-semibold text-white hover:bg-lime-600 disabled:opacity-50"
-          :disabled="actionBusy === 'join'"
-          @click="join"
-        >
-          {{ $t("views.communityDetail.requestJoin") }}
-        </button>
-        <span v-else-if="community.viewer_status === 'pending'" class="rounded-full bg-amber-50 px-3 py-1 text-sm font-medium text-amber-800">
-          {{ $t("views.communityDetail.pending") }}
-        </span>
-        <span v-else-if="community.viewer_status === 'approved'" class="rounded-full bg-lime-50 px-3 py-1 text-sm font-medium text-lime-800">
-          {{ $t("views.communityDetail.member") }}
-        </span>
         </div>
       </div>
     </div>
@@ -598,46 +601,6 @@ onUnmounted(() => {
 
   <p v-if="err" class="border-b border-neutral-200 px-4 py-3 text-sm text-red-600">{{ err }}</p>
   <p v-else-if="busy" class="border-b border-neutral-200 px-4 py-3 text-sm text-neutral-500">{{ $t("app.loading") }}</p>
-
-  <section v-if="community && editingCommunity" class="border-b border-neutral-200 bg-neutral-50 px-4 py-4">
-    <div class="space-y-3 rounded-2xl border border-neutral-200 bg-white p-4">
-      <h2 class="text-sm font-semibold text-neutral-900">{{ $t("views.communityDetail.editCommunity") }}</h2>
-      <input
-        v-model="editCommunityName"
-        maxlength="80"
-        class="w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-neutral-900 outline-none ring-lime-500 focus:ring-2"
-        :placeholder="$t('views.communityCreate.name')"
-      />
-      <textarea
-        v-model="editCommunityDescription"
-        maxlength="500"
-        rows="4"
-        class="w-full resize-none rounded-xl border border-neutral-200 bg-white px-3 py-2 text-neutral-900 outline-none ring-lime-500 focus:ring-2"
-        :placeholder="$t('views.communityCreate.body')"
-      />
-      <textarea
-        v-model="editCommunityDetails"
-        maxlength="5000"
-        rows="8"
-        class="w-full resize-y rounded-xl border border-neutral-200 bg-white px-3 py-2 text-neutral-900 outline-none ring-lime-500 focus:ring-2"
-        :placeholder="$t('views.communityDetail.detailsPlaceholder')"
-      />
-      <p class="text-xs text-neutral-500">{{ $t("views.communityDetail.imageEditHint") }}</p>
-      <div class="flex justify-end gap-2">
-        <button type="button" class="rounded-full px-4 py-1.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-100" @click="editingCommunity = false">
-          {{ $t("views.compose.cancel") }}
-        </button>
-        <button
-          type="button"
-          class="rounded-full bg-lime-500 px-4 py-1.5 text-sm font-semibold text-white hover:bg-lime-600 disabled:opacity-50"
-          :disabled="actionBusy === 'community-edit'"
-          @click="submitCommunityEdit"
-        >
-          {{ $t("views.communityDetail.saveCommunity") }}
-        </button>
-      </div>
-    </div>
-  </section>
 
   <section v-if="community && isOwner && joinRequests.length" class="border-b border-neutral-200 px-4 py-4">
     <h2 class="text-sm font-semibold text-neutral-900">{{ $t("views.communityDetail.joinRequests") }}</h2>
@@ -695,7 +658,11 @@ onUnmounted(() => {
           {{ $t("views.communityDetail.editCommunity") }}
         </button>
       </div>
-      <p v-if="community.details" class="mt-4 whitespace-pre-wrap text-sm leading-6 text-neutral-800">{{ community.details }}</p>
+      <div
+        v-if="community.details"
+        class="prose prose-sm mt-4 max-w-none text-neutral-800 prose-a:text-lime-700 prose-pre:bg-neutral-900 prose-pre:text-neutral-100"
+        v-html="communityDetailsHtml"
+      />
       <p v-else class="mt-4 rounded-xl bg-neutral-50 px-4 py-6 text-center text-sm text-neutral-500">
         {{ $t(canManageCommunity ? "views.communityDetail.emptyDetailsOwner" : "views.communityDetail.emptyDetails") }}
       </p>
@@ -784,6 +751,104 @@ onUnmounted(() => {
     @plain="confirmRepost(null)"
     @with-comment="confirmRepost"
   />
+  <Teleport to="body">
+    <div
+      v-if="community && editingCommunity"
+      class="fixed inset-0 z-[110] flex items-end justify-center sm:items-center sm:p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="community-edit-modal-title"
+    >
+      <div class="absolute inset-0 bg-black/50" aria-hidden="true" @click="editingCommunity = false" />
+      <div class="relative z-10 w-full max-w-xl rounded-t-2xl border border-neutral-200 bg-white shadow-xl sm:rounded-2xl">
+        <div class="flex items-center justify-between gap-3 border-b border-neutral-200 px-4 py-3">
+          <h2 id="community-edit-modal-title" class="text-base font-semibold text-neutral-900">
+            {{ $t("views.communityDetail.editCommunity") }}
+          </h2>
+          <button
+            type="button"
+            class="rounded-full p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800"
+            :aria-label="$t('views.compose.cancel')"
+            @click="editingCommunity = false"
+          >
+            <Icon name="close" class="h-5 w-5" />
+          </button>
+        </div>
+
+        <div class="max-h-[min(78vh,42rem)] overflow-y-auto px-4 py-4">
+          <div class="space-y-3">
+            <input
+              v-model="editCommunityName"
+              maxlength="80"
+              class="w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-neutral-900 outline-none ring-lime-500 focus:ring-2"
+              :placeholder="$t('views.communityCreate.name')"
+            />
+            <textarea
+              v-model="editCommunityDescription"
+              maxlength="500"
+              rows="4"
+              class="w-full resize-none rounded-xl border border-neutral-200 bg-white px-3 py-2 text-neutral-900 outline-none ring-lime-500 focus:ring-2"
+              :placeholder="$t('views.communityCreate.body')"
+            />
+            <div>
+              <label class="mb-1 block text-sm font-medium text-neutral-700" for="community-details-markdown">
+                {{ $t("views.communityDetail.detailsMarkdownLabel") }}
+              </label>
+              <textarea
+                id="community-details-markdown"
+                v-model="editCommunityDetails"
+                maxlength="5000"
+                rows="8"
+                class="w-full resize-y rounded-xl border border-neutral-200 bg-white px-3 py-2 font-mono text-sm text-neutral-900 outline-none ring-lime-500 focus:ring-2"
+                :placeholder="$t('views.communityDetail.detailsPlaceholder')"
+              />
+              <p class="mt-1 text-xs text-neutral-500">{{ $t("views.communityDetail.markdownHint") }}</p>
+            </div>
+            <div class="rounded-xl border border-neutral-200 bg-neutral-50 p-3">
+              <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                {{ $t("views.communityDetail.markdownPreview") }}
+              </p>
+              <div
+                v-if="editCommunityDetails.trim()"
+                class="prose prose-sm max-w-none text-neutral-800 prose-a:text-lime-700 prose-pre:bg-neutral-900 prose-pre:text-neutral-100"
+                v-html="editCommunityDetailsPreviewHtml"
+              />
+              <p v-else class="text-sm text-neutral-500">{{ $t("views.communityDetail.emptyDetails") }}</p>
+            </div>
+            <p class="text-xs text-neutral-500">{{ $t("views.communityDetail.imageEditHint") }}</p>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center justify-between gap-2 border-t border-neutral-200 px-4 py-3">
+          <button
+            type="button"
+            class="rounded-full bg-red-50 px-4 py-1.5 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50"
+            :disabled="actionBusy === 'community-delete'"
+            @click="requestDeleteCommunity"
+          >
+            {{ $t("views.communityDetail.deleteCommunity") }}
+          </button>
+          <div class="flex justify-end gap-2">
+            <button
+              type="button"
+              class="rounded-full px-4 py-1.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-100"
+              @click="editingCommunity = false"
+            >
+              {{ $t("views.compose.cancel") }}
+            </button>
+            <button
+              type="button"
+              class="rounded-full bg-lime-500 px-4 py-1.5 text-sm font-semibold text-white hover:bg-lime-600 disabled:opacity-50"
+              :disabled="actionBusy === 'community-edit'"
+              @click="submitCommunityEdit"
+            >
+              {{ $t("views.communityDetail.saveCommunity") }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </Teleport>
   </div>
   <Teleport to="body">
     <div
