@@ -18,6 +18,8 @@ version. Federation protocol compatibility is versioned separately with
   the user's server-side account settings.
 - Custom timeline tabs can fetch filtered feeds using a dedicated authenticated
   feed endpoint.
+- Custom timeline tabs can use a recommended sort with tunable ranking weights
+  for recency, popularity, author affinity, federated posts, and diversity.
 - Law enforcement readiness tooling for admins, including legal request intake,
   status tracking, preservation hold creation, exportable disclosure packages,
   and a public law enforcement request policy page.
@@ -29,15 +31,31 @@ version. Federation protocol compatibility is versioned separately with
   including legal and safety priority flags.
 - Instance administrators can configure the minimum account creation age from
   instance settings.
+- Right-sidebar widget plugins can be registered from the frontend and managed
+  from a plugin manager page.
+- Built-in sample sidebar plugins now include a compact calendar and a
+  "Today in History" date-fact widget.
+- A language settings page lets users switch between the supported app locales.
+- Identity portability now supports a migration-file workflow that bundles the
+  encrypted identity export, transfer session, transfer token, expiration, and
+  import options into a downloadable/uploadable JSON file.
 
 ### Changed
 
+- The Glipz logo and app icon assets were refreshed, with light/dark logo
+  variants used across the app shell and auth pages.
 - Admin report, federation, custom emoji, and legal request pages now follow the
   dashboard layout for page width, headings, cards, forms, and primary actions.
 - Account deletion now respects active legal preservation holds.
 - Legal disclosure exports now honor requested data types and include a manifest
   with section counts, SHA-256 hashes, and audit-event hash references.
 - Post deletion now respects active legal preservation holds.
+- Login, registration, MFA, and messages now use simpler route-level chrome
+  controls for their dedicated layouts.
+- Sidebar plugins are disabled by default until a user enables them, and users
+  can choose plugin order plus collapse individual sidebar widgets.
+- Supported UI locales are now managed from the language settings page; the
+  incomplete German locale override was removed from the supported locale list.
 
 ### Fixed
 

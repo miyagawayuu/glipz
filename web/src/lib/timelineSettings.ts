@@ -4,6 +4,26 @@ export type BuiltInTimelineID = "all" | "recommended" | "following";
 export type TimelineSource = BuiltInTimelineID;
 export type TimelineSort = "recent" | "recommended";
 export type TimelineDefinitionKind = "builtin" | "custom";
+export type TimelineRankingMode = "default" | "weighted";
+
+export type TimelineRankingWeights = {
+  recency: number;
+  popularity: number;
+  affinity: number;
+  federated: number;
+};
+
+export type TimelineRankingConstraints = {
+  diversity: number;
+};
+
+export type TimelineRankingSettings = {
+  version: 1;
+  mode: TimelineRankingMode;
+  presetId: string;
+  weights: TimelineRankingWeights;
+  constraints: TimelineRankingConstraints;
+};
 
 export type TimelineFilters = {
   baseScope: TimelineSource;
@@ -14,6 +34,7 @@ export type TimelineFilters = {
   includeReposts: boolean;
   includeFederated: boolean;
   includeNsfw: boolean;
+  ranking: TimelineRankingSettings;
 };
 
 export type TimelineDefinition = {
@@ -34,6 +55,21 @@ export type TimelineSettings = {
 export const TIMELINE_SETTINGS_STORAGE_KEY = "glipz.timelineSettings";
 const TIMELINE_SETTINGS_MIGRATED_STORAGE_KEY = "glipz.timelineSettings.migrated";
 
+export const DEFAULT_TIMELINE_RANKING_SETTINGS: TimelineRankingSettings = {
+  version: 1,
+  mode: "default",
+  presetId: "balanced",
+  weights: {
+    recency: 50,
+    popularity: 50,
+    affinity: 50,
+    federated: 50,
+  },
+  constraints: {
+    diversity: 50,
+  },
+};
+
 export const DEFAULT_TIMELINE_SETTINGS: TimelineSettings = {
   version: 1,
   defaultTimelineId: "all",
@@ -53,6 +89,7 @@ export const DEFAULT_TIMELINE_SETTINGS: TimelineSettings = {
         includeReposts: true,
         includeFederated: true,
         includeNsfw: true,
+        ranking: structuredClone(DEFAULT_TIMELINE_RANKING_SETTINGS),
       },
     },
     {
@@ -70,6 +107,7 @@ export const DEFAULT_TIMELINE_SETTINGS: TimelineSettings = {
         includeReposts: true,
         includeFederated: true,
         includeNsfw: true,
+        ranking: structuredClone(DEFAULT_TIMELINE_RANKING_SETTINGS),
       },
     },
     {
@@ -87,6 +125,7 @@ export const DEFAULT_TIMELINE_SETTINGS: TimelineSettings = {
         includeReposts: true,
         includeFederated: true,
         includeNsfw: true,
+        ranking: structuredClone(DEFAULT_TIMELINE_RANKING_SETTINGS),
       },
     },
   ],
@@ -129,6 +168,37 @@ function normalizeSort(value: unknown, baseScope: TimelineSource): TimelineSort 
   return "recent";
 }
 
+function normalizeRankingMode(value: unknown): TimelineRankingMode {
+  return value === "weighted" ? "weighted" : "default";
+}
+
+function normalizeRankingValue(value: unknown, fallback: number): number {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(100, Math.max(0, Math.round(n)));
+}
+
+function normalizeRankingSettings(value: unknown, fallback = DEFAULT_TIMELINE_RANKING_SETTINGS): TimelineRankingSettings {
+  const raw = isPlainObject(value) ? value : {};
+  const rawWeights = isPlainObject(raw.weights) ? raw.weights : {};
+  const rawConstraints = isPlainObject(raw.constraints) ? raw.constraints : {};
+  const presetId = typeof raw.presetId === "string" && raw.presetId.trim() ? normalizeID(raw.presetId, fallback.presetId) : fallback.presetId;
+  return {
+    version: 1,
+    mode: normalizeRankingMode(raw.mode),
+    presetId,
+    weights: {
+      recency: normalizeRankingValue(rawWeights.recency, fallback.weights.recency),
+      popularity: normalizeRankingValue(rawWeights.popularity, fallback.weights.popularity),
+      affinity: normalizeRankingValue(rawWeights.affinity, fallback.weights.affinity),
+      federated: normalizeRankingValue(rawWeights.federated, fallback.weights.federated),
+    },
+    constraints: {
+      diversity: normalizeRankingValue(rawConstraints.diversity, fallback.constraints.diversity),
+    },
+  };
+}
+
 export function createTimelineID(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return `custom-${crypto.randomUUID().slice(0, 8)}`;
@@ -146,6 +216,7 @@ export function defaultTimelineFilters(baseScope: TimelineSource = "all"): Timel
     includeReposts: true,
     includeFederated: true,
     includeNsfw: true,
+    ranking: structuredClone(DEFAULT_TIMELINE_RANKING_SETTINGS),
   };
 }
 
@@ -165,12 +236,23 @@ export function timelineDisplayLabel(definition: TimelineDefinition, translate: 
 }
 
 function normalizeTimelineDefinition(value: unknown, fallback?: TimelineDefinition): TimelineDefinition | null {
-  if (!isPlainObject(value)) return fallback ? { ...fallback, filters: { ...fallback.filters } } : null;
+  if (!isPlainObject(value)) {
+    return fallback
+      ? {
+          ...fallback,
+          filters: {
+            ...fallback.filters,
+            ranking: normalizeRankingSettings(fallback.filters.ranking),
+          },
+        }
+      : null;
+  }
   const fallbackID = fallback?.id ?? createTimelineID();
   const id = normalizeID(value.id, fallbackID);
   const builtin = BUILTIN_IDS.includes(id as BuiltInTimelineID);
   const kind: TimelineDefinitionKind = builtin ? "builtin" : "custom";
   const baseScope = normalizeBaseScope(isPlainObject(value.filters) ? value.filters.baseScope : undefined);
+  const fallbackRanking = fallback?.filters.ranking ?? DEFAULT_TIMELINE_RANKING_SETTINGS;
   const filters: TimelineFilters = {
     baseScope: builtin ? (id as BuiltInTimelineID) : baseScope,
     keywords: normalizeStringList(isPlainObject(value.filters) ? value.filters.keywords : undefined),
@@ -180,6 +262,7 @@ function normalizeTimelineDefinition(value: unknown, fallback?: TimelineDefiniti
     includeReposts: isPlainObject(value.filters) ? value.filters.includeReposts !== false : true,
     includeFederated: isPlainObject(value.filters) ? value.filters.includeFederated !== false : true,
     includeNsfw: isPlainObject(value.filters) ? value.filters.includeNsfw !== false : true,
+    ranking: normalizeRankingSettings(isPlainObject(value.filters) ? value.filters.ranking : undefined, fallbackRanking),
   };
   return {
     id,

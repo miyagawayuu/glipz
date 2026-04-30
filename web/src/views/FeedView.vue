@@ -494,7 +494,7 @@ async function load() {
   try {
     const timeline = activeTimeline.value;
     if (timeline.kind === "custom") {
-      items.value = await fetchCustomTimelineFeedItems(timeline.filters, token);
+      items.value = await fetchCustomTimelineFeedItems(timeline.filters, timeline.sort, token);
     } else {
       const res = await api<{ items: TimelinePost[] }>(builtInFeedPath(timeline.id as BuiltInTimelineID), {
         method: "GET",

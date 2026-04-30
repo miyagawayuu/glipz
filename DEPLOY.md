@@ -536,5 +536,6 @@ provided.
 
 - [README.md](README.md) — Project overview
 - [SETUP.md](SETUP.md) — Local development
+- [PLUGINS.md](PLUGINS.md) — Sidebar widget plugin development
 - [.env.example](.env.example) — All configuration options
 - [LICENSE](LICENSE) — AGPLv3 license

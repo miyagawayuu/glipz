@@ -12,22 +12,22 @@ export const router = createRouter({
     {
       path: "/login",
       component: () => import("../views/LoginView.vue"),
-      meta: { titleKey: "routes.login", noindex: true },
+      meta: { titleKey: "routes.login", noindex: true, guestSimpleLayout: true },
     },
     {
       path: "/register",
       component: () => import("../views/RegisterView.vue"),
-      meta: { titleKey: "routes.register", noindex: true },
+      meta: { titleKey: "routes.register", noindex: true, guestSimpleLayout: true },
     },
     {
       path: "/register/verify",
       component: () => import("../views/RegisterVerifyView.vue"),
-      meta: { titleKey: "routes.registerVerify", noindex: true },
+      meta: { titleKey: "routes.registerVerify", noindex: true, guestSimpleLayout: true },
     },
     {
       path: "/mfa",
       component: () => import("../views/MfaView.vue"),
-      meta: { titleKey: "routes.mfa", noindex: true },
+      meta: { titleKey: "routes.mfa", noindex: true, guestSimpleLayout: true },
     },
     {
       path: "/remote/profile",
@@ -111,12 +111,12 @@ export const router = createRouter({
     {
       path: "/messages",
       component: () => import("../views/MessagesView.vue"),
-      meta: { requiresAuth: true, hideRightAside: true, wideMain: true, mobileEdgeToEdge: true, titleKey: "routes.messages" },
+      meta: { requiresAuth: true, hideAppHeader: true, hideRightAside: true, wideMain: true, mobileEdgeToEdge: true, titleKey: "routes.messages" },
     },
     {
       path: "/messages/:threadId",
       component: () => import("../views/MessagesView.vue"),
-      meta: { requiresAuth: true, hideRightAside: true, wideMain: true, mobileEdgeToEdge: true, hideMobileChrome: true, titleKey: "routes.messages" },
+      meta: { requiresAuth: true, hideAppHeader: true, hideRightAside: true, wideMain: true, mobileEdgeToEdge: true, hideMobileChrome: true, titleKey: "routes.messages" },
     },
     {
       path: "/bookmarks",
@@ -137,6 +137,11 @@ export const router = createRouter({
       path: "/settings/timeline",
       component: () => import("../views/TimelineSettingsView.vue"),
       meta: { requiresAuth: true, mobileEdgeToEdge: true, titleKey: "routes.timelineSettings" },
+    },
+    {
+      path: "/settings/plugins",
+      component: () => import("../views/PluginSettingsView.vue"),
+      meta: { requiresAuth: true, mobileEdgeToEdge: true, titleKey: "routes.pluginSettings" },
     },
     {
       path: "/settings/mfa",
@@ -162,6 +167,11 @@ export const router = createRouter({
       path: "/settings/appearance",
       component: () => import("../views/AppearanceSettingsView.vue"),
       meta: { requiresAuth: true, mobileEdgeToEdge: true, titleKey: "routes.appearanceSettings" },
+    },
+    {
+      path: "/settings/language",
+      component: () => import("../views/LanguageSettingsView.vue"),
+      meta: { requiresAuth: true, mobileEdgeToEdge: true, titleKey: "routes.languageSettings" },
     },
     {
       path: "/settings/direct-messages",

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -2178,6 +2179,7 @@ type feedReactionJSON struct {
 
 type feedItem struct {
 	ID                     string                      `json:"id"`
+	UserID                 string                      `json:"user_id,omitempty"`
 	UserEmail              string                      `json:"user_email,omitempty"`
 	IsOwnPost              bool                        `json:"is_own_post,omitempty"`
 	UserHandle             string                      `json:"user_handle"`
@@ -2367,6 +2369,7 @@ func (s *Server) postRowToFeedItem(ctx context.Context, row repo.PostRow, viewer
 	}
 	return feedItem{
 		ID:                     row.ID.String(),
+		UserID:                 row.UserID.String(),
 		UserEmail:              "",
 		IsOwnPost:              viewer != uuid.Nil && row.UserID == viewer,
 		UserHandle:             row.UserHandle,
@@ -2659,16 +2662,39 @@ func (s *Server) handleFeed(w http.ResponseWriter, r *http.Request) {
 }
 
 type customFeedFiltersRequest struct {
-	Filters struct {
-		BaseScope        string   `json:"baseScope"`
-		Keywords         []string `json:"keywords"`
-		IncludeUsers     []string `json:"includeUsers"`
-		ExcludeUsers     []string `json:"excludeUsers"`
-		Communities      []string `json:"communities"`
-		IncludeReposts   bool     `json:"includeReposts"`
-		IncludeFederated bool     `json:"includeFederated"`
-		IncludeNSFW      bool     `json:"includeNsfw"`
-	} `json:"filters"`
+	Sort    string            `json:"sort"`
+	Filters customFeedFilters `json:"filters"`
+}
+
+type customFeedFilters struct {
+	BaseScope        string                   `json:"baseScope"`
+	Keywords         []string                 `json:"keywords"`
+	IncludeUsers     []string                 `json:"includeUsers"`
+	ExcludeUsers     []string                 `json:"excludeUsers"`
+	Communities      []string                 `json:"communities"`
+	IncludeReposts   bool                     `json:"includeReposts"`
+	IncludeFederated bool                     `json:"includeFederated"`
+	IncludeNSFW      bool                     `json:"includeNsfw"`
+	Ranking          customFeedRankingRequest `json:"ranking"`
+}
+
+type customFeedRankingRequest struct {
+	Version     int                                 `json:"version"`
+	Mode        string                              `json:"mode"`
+	PresetID    string                              `json:"presetId"`
+	Weights     customFeedRankingWeightsRequest     `json:"weights"`
+	Constraints customFeedRankingConstraintsRequest `json:"constraints"`
+}
+
+type customFeedRankingWeightsRequest struct {
+	Recency    *int `json:"recency"`
+	Popularity *int `json:"popularity"`
+	Affinity   *int `json:"affinity"`
+	Federated  *int `json:"federated"`
+}
+
+type customFeedRankingConstraintsRequest struct {
+	Diversity *int `json:"diversity"`
 }
 
 func (s *Server) handleCustomFeed(w http.ResponseWriter, r *http.Request) {
@@ -2692,6 +2718,14 @@ func (s *Server) handleCustomFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	items = filterCustomFeedItems(items, req.Filters)
+	if strings.TrimSpace(strings.ToLower(req.Sort)) == "recommended" {
+		ranked, err := s.rankCustomFeedItems(r.Context(), uid, items, req.Filters.Ranking)
+		if err != nil {
+			writeServerError(w, "rankCustomFeedItems", err)
+			return
+		}
+		items = ranked
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
@@ -2746,16 +2780,7 @@ func customFeedContainsKeyword(item feedItem, keywords []string) bool {
 	return false
 }
 
-func filterCustomFeedItems(items []feedItem, filters struct {
-	BaseScope        string   `json:"baseScope"`
-	Keywords         []string `json:"keywords"`
-	IncludeUsers     []string `json:"includeUsers"`
-	ExcludeUsers     []string `json:"excludeUsers"`
-	Communities      []string `json:"communities"`
-	IncludeReposts   bool     `json:"includeReposts"`
-	IncludeFederated bool     `json:"includeFederated"`
-	IncludeNSFW      bool     `json:"includeNsfw"`
-}) []feedItem {
+func filterCustomFeedItems(items []feedItem, filters customFeedFilters) []feedItem {
 	keywords := normalizeCustomFeedTerms(filters.Keywords, 16)
 	includeUsers := normalizeCustomFeedTerms(filters.IncludeUsers, 16)
 	excludeUsers := normalizeCustomFeedTerms(filters.ExcludeUsers, 16)
@@ -2782,6 +2807,217 @@ func filterCustomFeedItems(items []feedItem, filters struct {
 		out = append(out, item)
 	}
 	return out
+}
+
+type customFeedWeights struct {
+	recency    float64
+	popularity float64
+	affinity   float64
+	federated  float64
+}
+
+type customFeedConstraints struct {
+	diversity int
+}
+
+type customFeedRankingConfig struct {
+	mode        string
+	presetID    string
+	weights     customFeedWeights
+	constraints customFeedConstraints
+}
+
+type customFeedSignals struct {
+	recency    float64
+	popularity float64
+	affinity   float64
+	federated  float64
+}
+
+type customFeedRankedItem struct {
+	item      feedItem
+	score     float64
+	visibleAt time.Time
+	authorKey string
+	index     int
+}
+
+func normalizeCustomRankingValue(value *int, fallback int) int {
+	if value == nil {
+		return fallback
+	}
+	if *value < 0 {
+		return 0
+	}
+	if *value > 100 {
+		return 100
+	}
+	return *value
+}
+
+func normalizeCustomFeedRanking(req customFeedRankingRequest) customFeedRankingConfig {
+	mode := strings.TrimSpace(strings.ToLower(req.Mode))
+	if mode != "weighted" {
+		mode = "default"
+	}
+	presetID := strings.TrimSpace(req.PresetID)
+	if presetID == "" {
+		presetID = "balanced"
+	}
+	return customFeedRankingConfig{
+		mode:     mode,
+		presetID: presetID,
+		weights: customFeedWeights{
+			recency:    float64(normalizeCustomRankingValue(req.Weights.Recency, 50)) / 50.0,
+			popularity: float64(normalizeCustomRankingValue(req.Weights.Popularity, 50)) / 50.0,
+			affinity:   float64(normalizeCustomRankingValue(req.Weights.Affinity, 50)) / 50.0,
+			federated:  float64(normalizeCustomRankingValue(req.Weights.Federated, 50)),
+		},
+		constraints: customFeedConstraints{
+			diversity: normalizeCustomRankingValue(req.Constraints.Diversity, 50),
+		},
+	}
+}
+
+func customFeedItemVisibleAt(item feedItem) time.Time {
+	if t, err := time.Parse(time.RFC3339, item.VisibleAt); err == nil {
+		return t.UTC()
+	}
+	if t, err := time.Parse(time.RFC3339, item.CreatedAt); err == nil {
+		return t.UTC()
+	}
+	return time.Time{}
+}
+
+func customFeedItemAuthorKey(item feedItem) string {
+	if item.UserID != "" {
+		return item.UserID
+	}
+	if item.RemoteActorURL != "" {
+		return item.RemoteActorURL
+	}
+	if item.UserHandle != "" {
+		return strings.ToLower(strings.TrimPrefix(item.UserHandle, "@"))
+	}
+	return item.ID
+}
+
+func customFeedSignalsForItem(item feedItem, now time.Time, affinityScores map[uuid.UUID]float64) customFeedSignals {
+	visibleAt := customFeedItemVisibleAt(item)
+	ageH := now.Sub(visibleAt).Hours()
+	if ageH < 0 || visibleAt.IsZero() {
+		ageH = 0
+	}
+	affinity := 0.0
+	if item.UserID != "" {
+		if userID, err := uuid.Parse(item.UserID); err == nil {
+			affinity = affinityScores[userID]
+		}
+	}
+	return customFeedSignals{
+		recency:    math.Exp(-ageH / 36.0),
+		popularity: math.Log1p(float64(maxI64(item.LikeCount, 0) + 2*maxI64(item.RepostCount, 0) + 2*maxI64(item.ReplyCount, 0))),
+		affinity:   affinity,
+		federated:  boolFloat(item.IsFederated),
+	}
+}
+
+func scoreCustomFeedSignals(signals customFeedSignals, config customFeedRankingConfig) float64 {
+	score := 1.4*config.weights.recency*signals.recency + config.weights.popularity*signals.popularity + 1.6*config.weights.affinity*signals.affinity
+	if signals.federated > 0 {
+		score += (config.weights.federated - 50.0) / 50.0
+	}
+	return score
+}
+
+func boolFloat(value bool) float64 {
+	if value {
+		return 1
+	}
+	return 0
+}
+
+func applyCustomFeedDiversity(items []customFeedRankedItem, diversity int) []feedItem {
+	if diversity <= 0 || len(items) <= 1 {
+		out := make([]feedItem, 0, len(items))
+		for _, item := range items {
+			out = append(out, item.item)
+		}
+		return out
+	}
+	maxPerAuthor := 4 - int(math.Round(float64(diversity)/50.0))
+	if maxPerAuthor < 2 {
+		maxPerAuthor = 2
+	}
+	if maxPerAuthor > 4 {
+		maxPerAuthor = 4
+	}
+	avoidConsecutive := diversity >= 50
+	authorCount := map[string]int{}
+	selected := make([]customFeedRankedItem, 0, len(items))
+	used := make([]bool, len(items))
+	lastAuthor := ""
+	for i, item := range items {
+		if authorCount[item.authorKey] >= maxPerAuthor {
+			continue
+		}
+		if avoidConsecutive && lastAuthor != "" && item.authorKey == lastAuthor {
+			continue
+		}
+		authorCount[item.authorKey]++
+		lastAuthor = item.authorKey
+		used[i] = true
+		selected = append(selected, item)
+	}
+	for i, item := range items {
+		if used[i] {
+			continue
+		}
+		selected = append(selected, item)
+	}
+	out := make([]feedItem, 0, len(selected))
+	for _, item := range selected {
+		out = append(out, item.item)
+	}
+	return out
+}
+
+func (s *Server) rankCustomFeedItems(ctx context.Context, uid uuid.UUID, items []feedItem, req customFeedRankingRequest) ([]feedItem, error) {
+	if len(items) <= 1 {
+		return items, nil
+	}
+	config := normalizeCustomFeedRanking(req)
+	affinityScores := map[uuid.UUID]float64{}
+	if config.weights.affinity > 0 {
+		aff, err := s.db.AuthorAffinityScores(ctx, uid, time.Now().Add(-90*24*time.Hour))
+		if err != nil {
+			return nil, err
+		}
+		affinityScores = aff
+	}
+	now := time.Now().UTC()
+	ranked := make([]customFeedRankedItem, 0, len(items))
+	for i, item := range items {
+		visibleAt := customFeedItemVisibleAt(item)
+		signals := customFeedSignalsForItem(item, now, affinityScores)
+		ranked = append(ranked, customFeedRankedItem{
+			item:      item,
+			score:     scoreCustomFeedSignals(signals, config),
+			visibleAt: visibleAt,
+			authorKey: customFeedItemAuthorKey(item),
+			index:     i,
+		})
+	}
+	sort.SliceStable(ranked, func(i, j int) bool {
+		if ranked[i].score != ranked[j].score {
+			return ranked[i].score > ranked[j].score
+		}
+		if !ranked[i].visibleAt.Equal(ranked[j].visibleAt) {
+			return ranked[i].visibleAt.After(ranked[j].visibleAt)
+		}
+		return ranked[i].index < ranked[j].index
+	})
+	return applyCustomFeedDiversity(ranked, config.constraints.diversity), nil
 }
 
 func (s *Server) feedItemsForViewer(ctx context.Context, uid uuid.UUID, scope string) ([]feedItem, error) {

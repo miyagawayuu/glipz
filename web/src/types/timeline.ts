@@ -21,6 +21,7 @@ export type TimelineReaction = {
 /** One timeline entry shared by feed and user-page views. */
 export type TimelinePost = {
   id: string;
+  user_id?: string;
   user_email: string;
   /** Server-side ownership hint; avoids exposing email just to show owner actions. */
   is_own_post?: boolean;

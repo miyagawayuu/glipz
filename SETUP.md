@@ -178,6 +178,11 @@ The Vite dev server binds to `127.0.0.1` by default. If you intentionally need
 LAN access from another device, start it with `VITE_DEV_HOST=0.0.0.0 npm run dev`
 and only do so on a trusted network.
 
+Sidebar plugins are loaded by the frontend bundle, but they are disabled by
+default. After logging in, open **Settings → Plugin manager** to enable the
+built-in Calendar or Today in History widgets and adjust their right-sidebar
+order/collapse state. See [PLUGINS.md](PLUGINS.md) for development details.
+
 Vite proxies these routes to the backend (override backend host with `VITE_PROXY_TARGET` if needed, for example when the API runs only inside Docker):
 
 - `/api` → Backend API (including SSE: feed, notifications, DMs)
@@ -366,6 +371,7 @@ Before going live:
 ## Related Documentation
 
 - [README.md](README.md) — Project overview
+- [PLUGINS.md](PLUGINS.md) — Sidebar widget plugin development
 - [DEPLOY.md](DEPLOY.md) — Production deployment
 - [.env.example](.env.example) — All configuration options
 - [LICENSE](LICENSE) — AGPLv3 license

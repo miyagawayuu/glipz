@@ -81,6 +81,7 @@ const mediaTilesBusy = ref(false);
 const mediaTilesErr = ref("");
 /** Logged-in email, used for menus on the viewer's own posts. */
 const myEmail = ref<string | null>(null);
+const profileHeaderInApp = ref(Boolean(getAccessToken()));
 const err = ref("");
 const editBio = ref("");
 const editProfileUrls = ref<string[]>([""]);
@@ -186,6 +187,7 @@ async function removePost(id: string) {
 
 async function loadMeEmail() {
   const token = getAccessToken();
+  profileHeaderInApp.value = Boolean(token);
   if (!token) {
     myEmail.value = null;
     return;
@@ -199,6 +201,7 @@ async function loadMeEmail() {
     const msg = e instanceof Error ? e.message : "";
     if (msg === "unauthorized") {
       clearTokens();
+      profileHeaderInApp.value = false;
     }
     myEmail.value = null;
   }
@@ -904,8 +907,51 @@ watch(handleParam, () => void loadAll());
 </script>
 
 <template>
+  <Teleport v-if="profileHeaderInApp" to="#app-view-header-slot-desktop">
+    <div class="flex h-14 items-center gap-3">
+      <button
+        type="button"
+        class="rounded-full p-2 text-neutral-600 hover:bg-neutral-100"
+        :aria-label="$t('views.userProfile.backAria')"
+        @click="router.push('/feed')"
+      >
+        <Icon name="back" class="h-5 w-5" />
+      </button>
+      <div class="min-w-0">
+        <div class="flex flex-wrap items-center gap-1.5">
+          <h1 class="truncate text-lg font-bold leading-tight text-neutral-900">
+            {{ profile ? profile.display_name : "…" }}
+          </h1>
+          <UserBadges v-if="profile" :badges="profile.badges" size="xs" />
+        </div>
+        <p class="truncate text-sm text-neutral-500">{{ profile ? profileHandleAt : "" }}</p>
+      </div>
+    </div>
+  </Teleport>
+  <Teleport v-if="profileHeaderInApp" to="#app-view-header-slot-mobile">
+    <div class="flex h-14 items-center gap-3 px-4">
+      <button
+        type="button"
+        class="rounded-full p-2 text-neutral-600 hover:bg-neutral-100"
+        :aria-label="$t('views.userProfile.backAria')"
+        @click="router.push('/feed')"
+      >
+        <Icon name="back" class="h-5 w-5" />
+      </button>
+      <div class="min-w-0">
+        <div class="flex flex-wrap items-center gap-1.5">
+          <h1 class="truncate text-lg font-bold leading-tight text-neutral-900">
+            {{ profile ? profile.display_name : "…" }}
+          </h1>
+          <UserBadges v-if="profile" :badges="profile.badges" size="xs" />
+        </div>
+        <p class="truncate text-sm text-neutral-500">{{ profile ? profileHandleAt : "" }}</p>
+      </div>
+    </div>
+  </Teleport>
   <div class="min-h-0 h-full w-full min-w-0 text-neutral-900">
     <header
+      v-if="!profileHeaderInApp"
       class="sticky top-0 z-10 flex h-14 items-center gap-3 border-b border-neutral-200 bg-white/90 px-4 backdrop-blur supports-[backdrop-filter]:bg-white/70"
     >
       <button
@@ -1033,11 +1079,6 @@ watch(handleParam, () => void loadAll());
             </div>
           </div>
           <div>
-            <div class="flex flex-wrap items-center gap-2">
-              <p class="text-xl font-bold text-neutral-900">{{ profile.display_name }}</p>
-              <UserBadges :badges="profile.badges" />
-            </div>
-            <p class="text-sm text-neutral-500">{{ profileHandleAt }}</p>
             <p class="mt-1 text-sm text-neutral-600">
               <RouterLink
                 :to="`/@${encodeURIComponent(profile.handle)}/following`"

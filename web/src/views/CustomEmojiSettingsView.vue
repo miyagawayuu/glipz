@@ -3,6 +3,7 @@ import { onMounted, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import EmojiInline from "../components/EmojiInline.vue";
+import SettingsBackLink from "../components/SettingsBackLink.vue";
 import { getAccessToken } from "../auth";
 import { createMyCustomEmoji, deleteMyCustomEmoji, listMyCustomEmojis, patchMyCustomEmoji } from "../lib/customEmojiApi";
 import { refreshCustomEmojiCatalog } from "../lib/customEmojis";
@@ -131,7 +132,8 @@ onMounted(async () => {
 
 <template>
   <div class="w-full px-4 py-8">
-    <header>
+    <SettingsBackLink />
+    <header class="mt-4">
       <h1 class="text-xl font-semibold text-neutral-900">{{ $t("views.customEmojiSettings.title") }}</h1>
       <p class="mt-2 text-sm text-neutral-600">{{ $t("views.customEmojiSettings.description") }}</p>
     </header>

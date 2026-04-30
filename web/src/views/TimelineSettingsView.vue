@@ -12,7 +12,10 @@ import {
   saveTimelineSettings,
   timelineDisplayLabel,
   type TimelineDefinition,
+  type TimelineRankingConstraints,
+  type TimelineRankingWeights,
   type TimelineSettings,
+  type TimelineSort,
   type TimelineSource,
 } from "../lib/timelineSettings";
 import { exportTimelineSettingsCode, importTimelineSettingsCode } from "../lib/timelineSettingsShare";
@@ -33,10 +36,39 @@ const timelineSourceOptions = computed<Array<{ value: TimelineSource; label: str
   { value: "following", label: t("views.feed.scopeFollowing") },
 ]);
 
+const timelineSortOptions = computed<Array<{ value: TimelineSort; label: string }>>(() => [
+  { value: "recent", label: t("views.timelineSettings.sortRecent") },
+  { value: "recommended", label: t("views.timelineSettings.sortRecommended") },
+]);
+
+const rankingWeightControls: Array<{ key: keyof TimelineRankingWeights; labelKey: string; helpKey: string }> = [
+  { key: "recency", labelKey: "views.timelineSettings.ranking.recency", helpKey: "views.timelineSettings.ranking.recencyHelp" },
+  { key: "popularity", labelKey: "views.timelineSettings.ranking.popularity", helpKey: "views.timelineSettings.ranking.popularityHelp" },
+  { key: "affinity", labelKey: "views.timelineSettings.ranking.affinity", helpKey: "views.timelineSettings.ranking.affinityHelp" },
+  { key: "federated", labelKey: "views.timelineSettings.ranking.federated", helpKey: "views.timelineSettings.ranking.federatedHelp" },
+];
+
+const rankingConstraintControls: Array<{ key: keyof TimelineRankingConstraints; labelKey: string; helpKey: string }> = [
+  { key: "diversity", labelKey: "views.timelineSettings.ranking.diversity", helpKey: "views.timelineSettings.ranking.diversityHelp" },
+];
+
 async function save(next = settings.value): Promise<boolean> {
   const token = getAccessToken();
   if (!token) return false;
-  settings.value = { ...next, timelines: next.timelines.map((timeline) => ({ ...timeline, filters: { ...timeline.filters } })) };
+  settings.value = {
+    ...next,
+    timelines: next.timelines.map((timeline) => ({
+      ...timeline,
+      filters: {
+        ...timeline.filters,
+        ranking: {
+          ...timeline.filters.ranking,
+          weights: { ...timeline.filters.ranking.weights },
+          constraints: { ...timeline.filters.ranking.constraints },
+        },
+      },
+    })),
+  };
   saving.value = true;
   try {
     settings.value = await saveTimelineSettings(token, settings.value);
@@ -71,6 +103,30 @@ function updateFilters(id: string, patch: Partial<TimelineDefinition["filters"]>
   const timeline = settings.value.timelines.find((item) => item.id === id);
   if (!timeline) return;
   updateTimeline(id, { filters: { ...timeline.filters, ...patch } });
+}
+
+function updateRankingWeights(id: string, patch: Partial<TimelineRankingWeights>) {
+  const timeline = settings.value.timelines.find((item) => item.id === id);
+  if (!timeline) return;
+  updateFilters(id, {
+    ranking: {
+      ...timeline.filters.ranking,
+      mode: "weighted",
+      weights: { ...timeline.filters.ranking.weights, ...patch },
+    },
+  });
+}
+
+function updateRankingConstraints(id: string, patch: Partial<TimelineRankingConstraints>) {
+  const timeline = settings.value.timelines.find((item) => item.id === id);
+  if (!timeline) return;
+  updateFilters(id, {
+    ranking: {
+      ...timeline.filters.ranking,
+      mode: "weighted",
+      constraints: { ...timeline.filters.ranking.constraints, ...patch },
+    },
+  });
 }
 
 function moveTimeline(id: string, direction: -1 | 1) {
@@ -282,6 +338,19 @@ onMounted(async () => {
             </select>
           </label>
           <label class="block">
+            <span class="text-xs font-medium text-neutral-700">{{ $t("views.timelineSettings.sortMode") }}</span>
+            <select
+              class="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900"
+              :value="timeline.sort"
+              :disabled="timeline.kind === 'builtin'"
+              @change="updateTimeline(timeline.id, { sort: ($event.target as HTMLSelectElement).value as TimelineSort })"
+            >
+              <option v-for="option in timelineSortOptions" :key="option.value" :value="option.value">
+                {{ option.label }}
+              </option>
+            </select>
+          </label>
+          <label class="block">
             <span class="text-xs font-medium text-neutral-700">{{ $t("views.timelineSettings.keywords") }}</span>
             <input
               type="text"
@@ -322,6 +391,52 @@ onMounted(async () => {
             />
           </label>
         </div>
+
+        <section
+          v-if="timeline.kind === 'custom' && timeline.sort === 'recommended'"
+          class="mt-4 rounded-2xl border border-lime-100 bg-lime-50/50 p-4"
+        >
+          <div>
+            <h3 class="text-sm font-semibold text-neutral-900">{{ $t("views.timelineSettings.ranking.heading") }}</h3>
+            <p class="mt-1 text-xs leading-relaxed text-neutral-600">{{ $t("views.timelineSettings.ranking.lead") }}</p>
+          </div>
+
+          <div class="mt-4 grid gap-4 sm:grid-cols-2">
+            <label v-for="control in rankingWeightControls" :key="control.key" class="block">
+              <span class="flex items-center justify-between gap-3 text-xs font-medium text-neutral-700">
+                <span>{{ $t(control.labelKey) }}</span>
+                <span>{{ timeline.filters.ranking.weights[control.key] }}</span>
+              </span>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                step="5"
+                class="mt-2 w-full accent-lime-600"
+                :value="timeline.filters.ranking.weights[control.key]"
+                @change="updateRankingWeights(timeline.id, { [control.key]: Number(($event.target as HTMLInputElement).value) })"
+              />
+              <span class="mt-1 block text-xs text-neutral-500">{{ $t(control.helpKey) }}</span>
+            </label>
+
+            <label v-for="control in rankingConstraintControls" :key="control.key" class="block">
+              <span class="flex items-center justify-between gap-3 text-xs font-medium text-neutral-700">
+                <span>{{ $t(control.labelKey) }}</span>
+                <span>{{ timeline.filters.ranking.constraints[control.key] }}</span>
+              </span>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                step="5"
+                class="mt-2 w-full accent-lime-600"
+                :value="timeline.filters.ranking.constraints[control.key]"
+                @change="updateRankingConstraints(timeline.id, { [control.key]: Number(($event.target as HTMLInputElement).value) })"
+              />
+              <span class="mt-1 block text-xs text-neutral-500">{{ $t(control.helpKey) }}</span>
+            </label>
+          </div>
+        </section>
 
         <div class="mt-4 flex flex-wrap gap-3">
           <label class="inline-flex items-center gap-2 text-sm text-neutral-800">

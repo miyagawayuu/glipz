@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { RouterLink } from "vue-router";
+import AuthLogo from "../components/AuthLogo.vue";
 import { formatDateTime } from "../i18n";
 import { api, clearStoredApiBase, readStoredApiBase, writeStoredApiBase } from "../lib/api";
 import { fetchPublicInstanceSettings } from "../lib/instanceSettings";
@@ -269,6 +270,7 @@ async function resendVerificationEmail() {
 
 <template>
   <div class="mx-auto max-w-md space-y-6">
+    <AuthLogo />
     <div v-if="!submitted">
       <h1 class="text-2xl font-semibold text-neutral-900">{{ $t("auth.register.title") }}</h1>
       <p class="mt-1 text-sm text-neutral-600">
@@ -403,14 +405,6 @@ async function resendVerificationEmail() {
           </a>
           <RouterLink v-else :to="legalLink('privacy').href" class="font-medium text-lime-700 hover:text-lime-800">
             {{ $t("app.links.privacy") }}
-          </RouterLink>
-          /
-          <RouterLink to="/federation/guidelines" class="font-medium text-lime-700 hover:text-lime-800">
-            {{ $t("app.links.federation") }}
-          </RouterLink>
-          /
-          <RouterLink to="/legal/api-guidelines" class="font-medium text-lime-700 hover:text-lime-800">
-            {{ $t("app.links.apiReference") }}
           </RouterLink>
           {{ $t("auth.register.termsNotice") }}
         </p>

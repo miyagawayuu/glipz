@@ -2,6 +2,7 @@
 import { onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
+import AuthLogo from "../components/AuthLogo.vue";
 import { api } from "../lib/api";
 import { clearTokens, getMfaToken, setAccessToken } from "../auth";
 
@@ -44,6 +45,7 @@ async function submit() {
 
 <template>
   <div class="mx-auto max-w-md space-y-6">
+    <AuthLogo />
     <div>
       <h1 class="text-2xl font-semibold text-neutral-900">{{ $t("auth.mfa.title") }}</h1>
       <p class="mt-1 text-sm text-neutral-600">{{ $t("auth.mfa.description") }}</p>

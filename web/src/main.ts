@@ -4,6 +4,7 @@ import { i18n } from "./i18n";
 import { router } from "./router";
 import { initTheme } from "./lib/theme";
 import { registerPushServiceWorker } from "./lib/webPush";
+import "./plugins/sidebar";
 import "./style.css";
 
 function printConsoleSafetyWarning() {

@@ -1,6 +1,6 @@
 import { api, apiBase, apiPublicGet } from "./api";
 import type { TimelinePoll, TimelinePost, TimelineReaction } from "../types/timeline";
-import type { TimelineFilters } from "./timelineSettings";
+import type { TimelineFilters, TimelineSort } from "./timelineSettings";
 
 export type FeedPubPayload =
   | { v: number; kind: "post_created"; post_id: string; author_id: string }
@@ -69,6 +69,7 @@ function mapReactions(input: unknown): TimelineReaction[] {
 
 function mapFeedItem(x: {
   id: string;
+  user_id?: string;
   user_email: string;
   is_own_post?: boolean;
   user_handle?: string;
@@ -123,6 +124,7 @@ function mapFeedItem(x: {
   const reactions = mapReactions(x.reactions);
   return {
     id: x.id,
+    user_id: typeof x.user_id === "string" && x.user_id ? x.user_id : undefined,
     user_email: x.user_email,
     is_own_post: Boolean(x.is_own_post),
     user_handle: x.user_handle ?? "",
@@ -271,11 +273,11 @@ export async function fetchPublicFeedItems(): Promise<TimelinePost[]> {
   }
 }
 
-export async function fetchCustomTimelineFeedItems(filters: TimelineFilters, token: string): Promise<TimelinePost[]> {
+export async function fetchCustomTimelineFeedItems(filters: TimelineFilters, sort: TimelineSort, token: string): Promise<TimelinePost[]> {
   const res = await api<{ items: Parameters<typeof mapFeedItem>[0][] }>("/api/v1/posts/feed/custom", {
     method: "POST",
     token,
-    json: { filters },
+    json: { filters, sort },
   });
   return (res.items ?? []).map((x) => mapFeedItem(x));
 }

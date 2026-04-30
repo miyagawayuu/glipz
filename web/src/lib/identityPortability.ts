@@ -67,6 +67,20 @@ export type IdentityTransferCategoryStats = {
   failed: number;
 };
 
+export type IdentityMigrationFile = {
+  v: 1;
+  kind: "glipz_identity_migration";
+  source_origin: string;
+  target_origin: string;
+  created_at: string;
+  expires_at: string;
+  session_id: string;
+  token: string;
+  include_private: boolean;
+  include_gated: boolean;
+  bundle: IdentityBundle;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -87,6 +101,19 @@ export function isValidSecureIdentityBundle(value: unknown): value is IdentityBu
     && hasTextField(value.private_key, "salt")
     && hasTextField(value.private_key, "nonce")
     && hasTextField(value.private_key, "ciphertext");
+}
+
+export function isValidIdentityMigrationFile(value: unknown): value is IdentityMigrationFile {
+  if (!isRecord(value)) return false;
+  if (value.v !== 1 || value.kind !== "glipz_identity_migration") return false;
+  if (!hasTextField(value, "source_origin")) return false;
+  if (!hasTextField(value, "target_origin")) return false;
+  if (!hasTextField(value, "created_at")) return false;
+  if (!hasTextField(value, "expires_at")) return false;
+  if (!hasTextField(value, "session_id")) return false;
+  if (!hasTextField(value, "token")) return false;
+  if (typeof value.include_private !== "boolean" || typeof value.include_gated !== "boolean") return false;
+  return isValidSecureIdentityBundle(value.bundle);
 }
 
 export async function exportSecureIdentityBundle(passphrase: string, targetOrigin: string): Promise<IdentityBundle> {

@@ -2,6 +2,7 @@
 import { ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
+import AuthLogo from "../components/AuthLogo.vue";
 import { api } from "../lib/api";
 import { setAccessToken, setMfaToken } from "../auth";
 import { safeRelativeRoute } from "../lib/redirect";
@@ -43,6 +44,7 @@ async function submit() {
 
 <template>
   <div class="mx-auto max-w-md space-y-6">
+    <AuthLogo />
     <div>
       <h1 class="text-2xl font-semibold text-neutral-900">{{ $t("auth.login.title") }}</h1>
       <p class="mt-1 text-sm text-neutral-600">

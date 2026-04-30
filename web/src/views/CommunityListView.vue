@@ -110,9 +110,9 @@ onUnmounted(() => {
 
 <template>
   <Teleport to="#app-view-header-slot-desktop">
-    <div class="flex items-center justify-between gap-3 border-b border-neutral-200 px-4 py-3">
+    <div class="flex h-14 items-center justify-between gap-3">
       <div class="min-w-0">
-        <h1 class="truncate text-xl font-bold text-neutral-900">{{ $t("views.communities.title") }}</h1>
+        <h1 class="truncate text-lg font-bold text-neutral-900">{{ $t("views.communities.title") }}</h1>
       </div>
       <RouterLink
         v-if="signedIn"
@@ -124,7 +124,7 @@ onUnmounted(() => {
     </div>
   </Teleport>
   <Teleport to="#app-view-header-slot-mobile">
-    <div class="flex items-center justify-between gap-3 border-b border-neutral-200 px-4 py-3">
+    <div class="flex h-14 items-center justify-between gap-3 px-4">
       <h1 class="min-w-0 truncate text-lg font-bold text-neutral-900">{{ $t("views.communities.title") }}</h1>
       <RouterLink
         v-if="signedIn"

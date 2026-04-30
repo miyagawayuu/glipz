@@ -2,18 +2,24 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
-import logoImg from "./assets/logo.png";
+import logoDarkImg from "./assets/glipz-dark.png";
+import logoLightImg from "./assets/glipz-light.png";
 import Icon from "./components/Icon.vue";
 import SidebarComposeModal from "./components/SidebarComposeModal.vue";
+import SidebarWidgetHost from "./components/SidebarWidgetHost.vue";
 import UserBadges from "./components/UserBadges.vue";
 import { ACCESS, clearTokens, getAccessToken } from "./auth";
 import { api, displayInstanceDomain } from "./lib/api";
 import { displayName as displayNameFromEmail } from "./lib/feedDisplay";
 import {
   applyTheme,
+  persistThemeModePreference,
   persistThemePreference,
+  readStoredThemeModePreference,
   readStoredThemePreference,
   systemThemeMediaQuery,
+  type ResolvedTheme,
+  type ThemeModePreference,
   type ThemePreference,
 } from "./lib/theme";
 import { connectNotifyStream, notifyToastMessage, type NotifyPayload } from "./lib/notifyStream";
@@ -64,11 +70,33 @@ const appHeaderEl = ref<HTMLElement | null>(null);
 const appHeaderOffset = ref("56px");
 const searchQuery = ref("");
 const themePreference = ref<ThemePreference>(readStoredThemePreference());
+const themeModePreference = ref<ThemeModePreference>(readStoredThemeModePreference());
+const resolvedTheme = ref<ResolvedTheme>("light");
+const logoImg = computed(() => (resolvedTheme.value === "dark" ? logoDarkImg : logoLightImg));
+provide("resolvedTheme", resolvedTheme);
+const sidebarWidgetViewer = computed(() =>
+  me.value
+    ? {
+        id: me.value.id,
+        email: me.value.email,
+        handle: me.value.handle,
+        display_name: me.value.display_name,
+        avatar_url: me.value.avatar_url,
+        is_site_admin: me.value.is_site_admin,
+        fanclub_patreon_enabled: me.value.fanclub_patreon_enabled,
+      }
+    : null,
+);
 
 function setThemePreferenceSilent(next: ThemePreference) {
   themePreference.value = next;
 }
 provide("setThemePreferenceSilent", setThemePreferenceSilent);
+
+function setThemeModePreferenceSilent(next: ThemeModePreference) {
+  themeModePreference.value = next;
+}
+provide("setThemeModePreferenceSilent", setThemeModePreferenceSilent);
 
 const operatorAnnouncements = ref<OperatorAnnouncement[]>(getOperatorAnnouncements());
 const operatorAnnouncementIndex = ref(0);
@@ -202,18 +230,33 @@ let notifyToastTimer: ReturnType<typeof setTimeout> | null = null;
 let themeMediaQuery: MediaQueryList | null = null;
 
 function syncTheme() {
-  applyTheme(themePreference.value);
+  resolvedTheme.value = applyTheme(themePreference.value, themeModePreference.value);
 }
 
 function onSystemThemeChange() {
-  if (themePreference.value === "system") {
-    syncTheme();
-  }
+  if (themeModePreference.value === "system") syncTheme();
+}
+
+const guestSimpleLayoutPaths = new Set([
+  "/login",
+  "/register",
+  "/register/verify",
+  "/mfa",
+]);
+
+function currentBrowserPath(): string {
+  if (typeof window === "undefined") return "";
+  return window.location.pathname.replace(/\/+$/, "") || "/";
+}
+
+function isGuestSimpleLayoutPath(path: string): boolean {
+  const normalized = path.replace(/\/+$/, "") || "/";
+  return guestSimpleLayoutPaths.has(normalized);
 }
 
 const usesGuestSimpleLayout = computed(() => {
-  if (route.meta.guestSimpleLayout === true) return true;
-  if (route.path === "/login" || route.path === "/register" || route.path === "/mfa") return true;
+  if (route.matched.some((record) => record.meta.guestSimpleLayout === true)) return true;
+  if (isGuestSimpleLayoutPath(route.path) || isGuestSimpleLayoutPath(currentBrowserPath())) return true;
   if (route.path === "/about") return true;
   if (authed.value) return false;
   return (
@@ -228,6 +271,7 @@ const usesGuestSimpleLayout = computed(() => {
 const hideRightAside = computed(() => route.meta.hideRightAside === true);
 const wideMain = computed(() => route.meta.wideMain === true);
 const mobileEdgeToEdge = computed(() => route.meta.mobileEdgeToEdge === true);
+const hideAppHeader = computed(() => route.meta.hideAppHeader === true);
 const hideMobileChrome = computed(() => route.meta.hideMobileChrome === true);
 const isAdminShell = computed(() => route.meta.adminShell === true);
 const containedMainScroll = computed(() => route.meta.containedMainScroll === true);
@@ -268,7 +312,7 @@ const shellClass = computed(() => {
 });
 const mainFooterNavItems = computed(() => [
   { to: "/feed", label: t("app.nav.home"), icon: "home" as const },
-  { to: "/search", label: t("app.nav.search"), icon: "search" as const },
+  { to: "/search", label: t("app.nav.topics"), icon: "search" as const },
   { to: "/notifications", label: t("app.nav.notifications"), icon: "bell" as const },
   { to: "/messages", label: t("app.nav.messages"), icon: "message" as const },
 ]);
@@ -456,6 +500,15 @@ watch(
   { immediate: true },
 );
 
+watch(
+  themeModePreference,
+  (next) => {
+    persistThemeModePreference(next);
+    syncTheme();
+  },
+  { immediate: true },
+);
+
 function closeProfileMenu() {
   profileMenuOpen.value = false;
 }
@@ -607,7 +660,7 @@ function avatarInitials(email: string): string {
     </div>
     <header
       ref="appHeaderEl"
-      v-if="!usesGuestSimpleLayout && !isAdminShell"
+      v-if="!usesGuestSimpleLayout && !isAdminShell && !hideAppHeader"
       class="sticky top-0 z-10 shrink-0 border-b border-lime-200 bg-white/90 pt-[env(safe-area-inset-top,0px)] backdrop-blur"
       :class="hideMobileChrome ? 'max-lg:hidden' : ''"
     >
@@ -633,13 +686,6 @@ function avatarInitials(email: string): string {
               <Icon v-if="!mobileNavOpen" name="menu" class="h-5 w-5" />
               <Icon v-else name="close" class="h-5 w-5" />
             </button>
-            <RouterLink
-              to="/feed"
-              class="hidden min-w-0 shrink-0 items-center py-0.5 hover:opacity-90 lg:flex"
-              aria-label="Glipz ホーム"
-            >
-              <img :src="logoImg" alt="Glipz" class="h-8 w-auto max-h-9 object-contain object-left" />
-            </RouterLink>
           </div>
           <div class="min-w-0 lg:hidden">
             <div v-if="isSearchRoute" class="mx-auto w-full max-w-[min(100%,22rem)]">
@@ -661,14 +707,7 @@ function avatarInitials(email: string): string {
             >
               <span class="truncate text-lg font-semibold text-neutral-900">{{ $t("app.search.messages") }}</span>
             </div>
-            <RouterLink
-              v-else
-              to="/feed"
-              class="flex min-w-0 items-center justify-center py-0.5 hover:opacity-90"
-              aria-label="Glipz ホーム"
-            >
-              <img :src="logoImg" alt="Glipz" class="h-8 w-auto max-h-9 object-contain" />
-            </RouterLink>
+            <div v-else class="h-8" aria-hidden="true" />
           </div>
           <div
             class="hidden min-h-0 min-w-0 max-w-[598px] shrink-0 self-end flex-[0_1_598px] lg:block"
@@ -763,6 +802,14 @@ function avatarInitials(email: string): string {
         :style="useViewportScroll ? { top: appHeaderOffset, height: `calc(100dvh - ${appHeaderOffset})` } : undefined"
         :aria-label="$t('app.menu.main')"
       >
+        <RouterLink
+          to="/feed"
+          class="mb-5 flex min-w-0 shrink-0 items-center px-2 py-0.5 hover:opacity-90"
+          aria-label="Glipz ホーム"
+          @click="closeMobileNav"
+        >
+          <img :src="logoImg" alt="Glipz" class="h-12 w-auto max-h-14 object-contain object-left" />
+        </RouterLink>
         <nav class="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto px-0.5" @click="onAsideNavClick">
           <RouterLink
             to="/feed"
@@ -777,32 +824,8 @@ function avatarInitials(email: string): string {
             class="flex items-center gap-3 rounded-full px-3 py-2.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-lime-500 hover:text-white"
             active-class="!rounded-full !bg-lime-600 !text-white"
           >
-            <Icon name="search" class="h-5 w-5 shrink-0" />
+            <Icon name="compass" class="h-5 w-5 shrink-0" />
             <span>{{ $t("app.nav.topics") }}</span>
-          </RouterLink>
-          <RouterLink
-            to="/communities"
-            class="flex items-center gap-3 rounded-full px-3 py-2.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-lime-500 hover:text-white"
-            active-class="!rounded-full !bg-lime-600 !text-white"
-          >
-            <Icon name="note" class="h-5 w-5 shrink-0" />
-            <span>{{ $t("app.nav.communities") }}</span>
-          </RouterLink>
-          <RouterLink
-            to="/messages"
-            class="flex items-center gap-3 rounded-full px-3 py-2.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-lime-500 hover:text-white"
-            :class="route.path === '/messages' || route.path.startsWith('/messages/') ? '!rounded-full !bg-lime-600 !text-white' : ''"
-          >
-            <span class="flex min-w-0 flex-1 items-center gap-3">
-              <Icon name="message" class="h-5 w-5 shrink-0" />
-              <span class="truncate">{{ $t("app.nav.messages") }}</span>
-            </span>
-            <span
-              v-if="unreadDMCount > 0"
-              class="inline-flex h-5 min-w-[1.25rem] shrink-0 items-center justify-center whitespace-nowrap rounded-full bg-red-500 px-1.5 text-[11px] font-bold leading-none text-white ring-2 ring-white"
-            >
-              {{ unreadDMCount > 99 ? "99+" : unreadDMCount }}
-            </span>
           </RouterLink>
           <RouterLink
             to="/notifications"
@@ -821,6 +844,22 @@ function avatarInitials(email: string): string {
             </span>
           </RouterLink>
           <RouterLink
+            to="/messages"
+            class="flex items-center gap-3 rounded-full px-3 py-2.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-lime-500 hover:text-white"
+            :class="route.path === '/messages' || route.path.startsWith('/messages/') ? '!rounded-full !bg-lime-600 !text-white' : ''"
+          >
+            <span class="flex min-w-0 flex-1 items-center gap-3">
+              <Icon name="message" class="h-5 w-5 shrink-0" />
+              <span class="truncate">{{ $t("app.nav.messages") }}</span>
+            </span>
+            <span
+              v-if="unreadDMCount > 0"
+              class="inline-flex h-5 min-w-[1.25rem] shrink-0 items-center justify-center whitespace-nowrap rounded-full bg-red-500 px-1.5 text-[11px] font-bold leading-none text-white ring-2 ring-white"
+            >
+              {{ unreadDMCount > 99 ? "99+" : unreadDMCount }}
+            </span>
+          </RouterLink>
+          <RouterLink
             to="/bookmarks"
             class="flex items-center gap-3 rounded-full px-3 py-2.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-lime-500 hover:text-white"
             active-class="!rounded-full !bg-lime-600 !text-white"
@@ -829,12 +868,12 @@ function avatarInitials(email: string): string {
             <span>{{ $t("app.nav.bookmarks") }}</span>
           </RouterLink>
           <RouterLink
-            to="/settings"
+            to="/communities"
             class="flex items-center gap-3 rounded-full px-3 py-2.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-lime-500 hover:text-white"
             active-class="!rounded-full !bg-lime-600 !text-white"
           >
-            <Icon name="settings" class="h-5 w-5 shrink-0" />
-            <span>{{ $t("app.nav.settings") }}</span>
+            <Icon name="hub" class="h-5 w-5 shrink-0" />
+            <span>{{ $t("app.nav.communities") }}</span>
           </RouterLink>
           <RouterLink
             v-if="me?.handle"
@@ -844,6 +883,14 @@ function avatarInitials(email: string): string {
           >
             <Icon name="user" class="h-5 w-5 shrink-0" />
             <span>{{ $t("app.nav.profile") }}</span>
+          </RouterLink>
+          <RouterLink
+            to="/settings"
+            class="flex items-center gap-3 rounded-full px-3 py-2.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-lime-500 hover:text-white"
+            active-class="!rounded-full !bg-lime-600 !text-white"
+          >
+            <Icon name="settings" class="h-5 w-5 shrink-0" />
+            <span>{{ $t("app.nav.settings") }}</span>
           </RouterLink>
         </nav>
 
@@ -1014,6 +1061,7 @@ function avatarInitials(email: string): string {
           </div>
           <p v-else class="mt-2 text-sm text-neutral-500">{{ $t("app.announcements.empty") }}</p>
         </section>
+        <SidebarWidgetHost placement="right-sidebar" :viewer="sidebarWidgetViewer" />
         <nav class="border-t border-neutral-200 pt-3 text-[12px] leading-relaxed" :aria-label="$t('app.menu.policyLinks')">
           <div class="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-neutral-400">
             <a

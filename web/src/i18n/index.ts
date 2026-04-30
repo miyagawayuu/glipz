@@ -7,9 +7,8 @@ import { koOverrides } from "../locales/ko";
 import { ruOverrides } from "../locales/ru";
 import { esOverrides } from "../locales/es";
 import { ptOverrides } from "../locales/pt";
-import { deOverrides } from "../locales/de";
 
-export type AppLocale = "ja" | "en" | "zh" | "ko" | "ru" | "es" | "pt" | "de";
+export type AppLocale = "ja" | "en" | "zh" | "ko" | "ru" | "es" | "pt";
 
 type DeepPartial<T> = {
   [K in keyof T]?: T[K] extends Array<infer U>
@@ -29,7 +28,6 @@ export const supportedLocaleOptions: Array<{ value: AppLocale; labelKey: string 
   { value: "ru", labelKey: "app.locale.ru" },
   { value: "es", labelKey: "app.locale.es" },
   { value: "pt", labelKey: "app.locale.pt" },
-  { value: "de", labelKey: "app.locale.de" },
 ];
 const supportedLocales = supportedLocaleOptions.map((option) => option.value);
 const localeTags: Record<AppLocale, string> = {
@@ -40,7 +38,6 @@ const localeTags: Record<AppLocale, string> = {
   ru: "ru-RU",
   es: "es-ES",
   pt: "pt-BR",
-  de: "de-DE",
 };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -117,7 +114,6 @@ const messages: Record<AppLocale, AppMessageSchema> = {
   ru: mergeDeep(jaMessages, ruOverrides),
   es: mergeDeep(jaMessages, esOverrides),
   pt: mergeDeep(jaMessages, ptOverrides),
-  de: mergeDeep(jaMessages, deOverrides),
 };
 
 export const i18n = createI18n({

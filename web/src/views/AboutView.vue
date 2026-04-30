@@ -1,23 +1,33 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, inject, onBeforeUnmount, onMounted, ref, type Ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { RouterLink, useRouter } from "vue-router";
+import logoDarkImg from "../assets/glipz-dark.png";
+import logoLightImg from "../assets/glipz-light.png";
 import PostTimeline from "../components/PostTimeline.vue";
 import { getOperatorAnnouncements } from "../data/operatorAnnouncements";
+import { setLocale, supportedLocaleOptions, type AppLocale } from "../i18n";
 import { APP_VERSION, FEDERATION_PROTOCOL_VERSION } from "../lib/appInfo";
 import { connectFeedStream, fetchFeedItem, fetchPublicFeedItems, type FeedPubPayload } from "../lib/feedStream";
 import { fetchPublicInstanceSettings, type OperatorAnnouncement } from "../lib/instanceSettings";
 import { legalDocumentLink, type LegalDocumentURLSettings } from "../lib/legalDocumentLinks";
+import { readStoredThemeModePreference, resolveTheme, type ResolvedTheme } from "../lib/theme";
 import type { TimelinePost } from "../types/timeline";
 
 const router = useRouter();
-const { t, tm } = useI18n();
+const { t, tm, locale } = useI18n();
+const resolvedTheme = inject<Ref<ResolvedTheme>>("resolvedTheme");
+const fallbackTheme = resolveTheme(readStoredThemeModePreference());
+const logoImg = computed(() => (resolvedTheme?.value ?? fallbackTheme) === "dark" ? logoDarkImg : logoLightImg);
 const publicTimelineItems = ref<TimelinePost[]>([]);
 const publicTimelineLoading = ref(true);
 const publicTimelineError = ref("");
 let disconnectPublicFeed: (() => void) | null = null;
 const heroHighlights = computed(() => tm("about.heroHighlights") as string[]);
 const primaryFeatures = computed(() => tm("about.features") as Array<{ title: string; body: string }>);
+const localeOptions = computed(() =>
+  supportedLocaleOptions.map((option) => ({ value: option.value, label: t(option.labelKey) })),
+);
 const trustPoints = computed(() => {
   const points = tm("about.publicInfo.points") as string[];
   return points.map((point) =>
@@ -109,6 +119,10 @@ function goLogin() {
   void router.push("/login");
 }
 
+function selectLocale(next: AppLocale) {
+  setLocale(next);
+}
+
 onMounted(async () => {
   await loadOperatorAnnouncements();
   await loadPublicTimeline();
@@ -123,6 +137,29 @@ onBeforeUnmount(() => {
 <template>
   <div class="w-full min-w-0 px-4 py-8 text-neutral-900 sm:px-6 lg:px-8">
     <div class="mx-auto flex w-full max-w-6xl flex-col gap-8">
+      <div class="flex flex-wrap items-center justify-between gap-4">
+        <RouterLink
+          to="/"
+          class="flex shrink-0 items-center hover:opacity-90"
+          aria-label="Glipz ホーム"
+        >
+          <img :src="logoImg" alt="Glipz" class="h-12 w-auto max-h-14 object-contain object-left sm:h-14" />
+        </RouterLink>
+        <div class="min-w-[11rem]">
+          <label class="sr-only" for="about-locale-select">{{ $t("app.locale.heading") }}</label>
+          <select
+            id="about-locale-select"
+            class="w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none ring-lime-500/30 transition focus:border-lime-400 focus:ring-2 focus:ring-lime-400/40"
+            :value="locale"
+            @change="selectLocale(($event.target as HTMLSelectElement).value as AppLocale)"
+          >
+            <option v-for="opt in localeOptions" :key="opt.value" :value="opt.value">
+              {{ opt.label }}
+            </option>
+          </select>
+        </div>
+      </div>
+
       <section class="overflow-hidden rounded-[2rem] border border-lime-200 bg-white dark:border-lime-800/70 dark:bg-neutral-950">
         <div class="grid gap-8 px-6 py-10 sm:px-8 lg:grid-cols-[minmax(0,1.1fr)_24rem] lg:items-center lg:px-10">
           <div class="max-w-3xl">

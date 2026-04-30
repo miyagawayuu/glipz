@@ -48,6 +48,10 @@ Key features include:
 | **Visibility** | Public, logged-in-only, followers-only, and private posts |
 | **Profile pins** | Pin one top-level profile post so it stays at the top of the profile timeline |
 
+Home timeline settings let users choose visible timeline tabs, create filtered
+custom timelines, import/export timeline share codes, and tune recommended-sort
+ranking weights for custom timelines.
+
 ### Communities
 
 - Public community directory with search by name, description, or UUID.
@@ -71,7 +75,12 @@ Key features include:
 - Custom emoji support
 - Site-wide custom emoji management for instance administrators
 - User badges and verification, managed from the admin user page
-- Theme-ready frontend
+- Theme-ready frontend with saved theme presets, custom color palettes, and
+  refreshed light/dark Glipz logo assets
+- In-app language settings for the supported UI locales
+- Sidebar widget plugins, managed from settings, with built-in Calendar and
+  Today in History examples. Plugins are disabled by default until users enable
+  them.
 
 ### Federation
 
@@ -107,6 +116,8 @@ Key features include:
 - Personal access tokens
 - RESTful API (`/api/v1/…`)
 - In-app OpenAPI reference (Scalar) for exploring endpoints
+- Frontend sidebar plugin registry for adding right-sidebar widgets without
+  changing the app shell
 
 ### Administration
 
@@ -141,7 +152,7 @@ Key features include:
 | Layer | Technology |
 |-------|------------|
 | **Backend** | Go 1.26.2, Chi router, pgx, Redis |
-| **Frontend** | Vue 3, TypeScript, Vite, Tailwind CSS, vue-i18n (en / ja) |
+| **Frontend** | Vue 3, TypeScript, Vite, Tailwind CSS, vue-i18n (ja / en / zh / ko / ru / es / pt) |
 | **Database** | PostgreSQL 16 |
 | **Cache** | Redis 7 |
 | **Storage** | Local server folder or S3-compatible storage (Cloudflare R2, Wasabi, MinIO, etc.) |
@@ -272,6 +283,12 @@ authorized media sequentially through transfer-token protected endpoints.
 Imported historical posts are restored as profile history and are not fanned out
 as new `post_created` federation events; once the user confirms the move, the
 old instance sends the normal `account_moved` event.
+
+For safer handoff between source and target instances, the web UI can generate a
+downloadable migration file containing the encrypted identity bundle, transfer
+session ID, transfer token, expiration, source/target origins, and import
+options. The target-side wizard validates and reviews that file before importing
+the identity and starting the data transfer job.
 
 Migrated data:
 - Portable identity keys and profile fields (`display_name`, `bio`,
@@ -483,6 +500,13 @@ go test ./...
 cd web
 npm run build
 ```
+
+### Sidebar plugins
+
+Sidebar plugins are frontend-only widgets that render in the app's right sidebar
+after a user enables them from **Settings → Plugin manager**. See
+[PLUGINS.md](PLUGINS.md) for the plugin registration API, i18n expectations, and
+the built-in sample widgets.
 
 ### Serve built frontend from backend
 
