@@ -52,6 +52,11 @@ func New(cfg config.Config, pool *pgxpool.Pool, rdb *redis.Client, s3c s3client.
 		s3:     s3c,
 		secret: []byte(cfg.JWTSecret),
 	}
+	if strings.TrimSpace(cfg.GlipzProtocolPublicOrigin) != "" &&
+		strings.TrimSpace(cfg.FederationKeySeed) == "" &&
+		strings.TrimSpace(cfg.FederationPrivateKey) == "" {
+		log.Printf("GLIPZ_FEDERATION_KEY_SEED or GLIPZ_FEDERATION_PRIVATE_KEY is not set; deriving federation signing key from JWT_SECRET for compatibility")
+	}
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(captureDirectRemoteAddr)
@@ -1404,11 +1409,11 @@ func (s *Server) optionalUserUploadObjectKey(w http.ResponseWriter, uid uuid.UUI
 	if key == "" {
 		return nil, true
 	}
-	if !strings.HasPrefix(key, "uploads/"+uid.String()+"/") {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": errorCode})
-		return nil, false
+	if normalized, ok := normalizePublicMediaObjectKey(key); ok && strings.HasPrefix(normalized, "uploads/"+uid.String()+"/") {
+		return &normalized, true
 	}
-	return &key, true
+	writeJSON(w, http.StatusBadRequest, map[string]string{"error": errorCode})
+	return nil, false
 }
 
 func communityIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
@@ -1882,7 +1887,7 @@ func (s *Server) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 
 	prefix := "uploads/" + uid.String() + "/"
 	for _, k := range keys {
-		if !strings.HasPrefix(k, prefix) {
+		if normalized, ok := normalizePublicMediaObjectKey(k); !ok || !strings.HasPrefix(normalized, prefix) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_object_key"})
 			return
 		}
@@ -2733,7 +2738,7 @@ func normalizeCustomFeedTerms(values []string, limit int) []string {
 	out := make([]string, 0, len(values))
 	seen := map[string]bool{}
 	for _, value := range values {
-		term := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(value, "@")))
+		term := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(value), "@"))
 		if term == "" || seen[term] {
 			continue
 		}

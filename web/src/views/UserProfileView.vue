@@ -98,6 +98,10 @@ const dmOpenBusy = ref(false);
 const profileEditModalOpen = ref(false);
 const profileModalErr = ref("");
 
+function safeMediaTileURL(tile: MediaTileRow): string {
+  return safeMediaURL(tile.preview_url);
+}
+
 /** Image cropper state. Set to null to close it. */
 const cropKind = ref<"avatar" | "header" | null>(null);
 const cropSrc = ref("");
@@ -1293,22 +1297,22 @@ watch(handleParam, () => void loadAll());
             class="relative aspect-square overflow-hidden bg-neutral-100 outline-none ring-inset ring-lime-500/0 transition hover:opacity-95 focus-visible:ring-2"
           >
             <img
-              v-if="tile.media_type === 'image' && tile.preview_url"
-              :src="tile.preview_url"
+              v-if="tile.media_type === 'image' && safeMediaTileURL(tile)"
+              :src="safeMediaTileURL(tile)"
               alt=""
               class="h-full w-full object-cover"
               loading="lazy"
             />
             <video
-              v-else-if="tile.media_type === 'video' && tile.preview_url"
-              :src="tile.preview_url"
+              v-else-if="tile.media_type === 'video' && safeMediaTileURL(tile)"
+              :src="safeMediaTileURL(tile)"
               muted
               playsinline
               preload="metadata"
               class="h-full w-full object-cover"
             />
             <div
-              v-else-if="tile.media_type === 'audio' && tile.preview_url"
+              v-else-if="tile.media_type === 'audio' && safeMediaTileURL(tile)"
               class="flex h-full w-full flex-col items-center justify-center gap-1 bg-neutral-800 px-1 text-lime-400"
             >
               <Icon name="note" class="h-8 w-8 opacity-90" :stroke-width="1.5" />

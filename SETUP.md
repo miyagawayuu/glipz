@@ -94,6 +94,8 @@ panel are stored in the database; environment variables such as
 GLIPZ_PROTOCOL_PUBLIC_ORIGIN=http://localhost:8080
 GLIPZ_PROTOCOL_HOST=localhost:8080
 GLIPZ_PROTOCOL_MEDIA_PUBLIC_BASE=http://localhost:8080/api/v1/media/object
+# Optional but recommended before public federation:
+# GLIPZ_FEDERATION_KEY_SEED=<output of: openssl rand -base64 32>
 # FEDERATION_POLICY_SUMMARY=Short text shown as your instance federation policy
 ```
 
@@ -106,9 +108,10 @@ requests are signed with Ed25519 `X-Glipz-*` headers and use nonces plus
 
 In production, use HTTPS origins and a stable public host. Set
 `GLIPZ_PROTOCOL_PUBLIC_ORIGIN` explicitly when the API/federation origin differs
-from the frontend origin. The instance signing key is derived from `JWT_SECRET`,
-so treat `JWT_SECRET` as stable production configuration after federation is
-enabled.
+from the frontend origin. For public federation, set
+`GLIPZ_FEDERATION_KEY_SEED` or `GLIPZ_FEDERATION_PRIVATE_KEY` so federation
+signatures are independent from JWT rotation. If neither is set, Glipz derives
+the federation key from `JWT_SECRET` for compatibility.
 
 For production, prefer the backend media proxy (`GLIPZ_MEDIA_PROXY_MODE=proxy`).
 It forces active content types such as SVG, HTML, XML, and JavaScript to download

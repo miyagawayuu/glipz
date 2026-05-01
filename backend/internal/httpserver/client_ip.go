@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 )
 
@@ -52,4 +53,18 @@ func trustedProxyClientIP(r *http.Request) string {
 		}
 	}
 	return ""
+}
+
+func ipInCIDRs(ip string, cidrs []string) bool {
+	addr, err := netip.ParseAddr(strings.TrimSpace(ip))
+	if err != nil {
+		return false
+	}
+	for _, raw := range cidrs {
+		prefix, err := netip.ParsePrefix(strings.TrimSpace(raw))
+		if err == nil && prefix.Contains(addr) {
+			return true
+		}
+	}
+	return false
 }

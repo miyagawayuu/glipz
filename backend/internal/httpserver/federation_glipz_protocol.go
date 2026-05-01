@@ -281,10 +281,39 @@ func (s *Server) federationConfigured(w http.ResponseWriter) bool {
 }
 
 func (s *Server) federationServerKeys() (ed25519.PublicKey, ed25519.PrivateKey) {
+	if raw := strings.TrimSpace(s.cfg.FederationPrivateKey); raw != "" {
+		if b, err := decodeFederationKeyMaterial(raw); err == nil && len(b) == ed25519.PrivateKeySize {
+			priv := ed25519.PrivateKey(b)
+			pub := priv.Public().(ed25519.PublicKey)
+			return pub, priv
+		}
+	}
+	if raw := strings.TrimSpace(s.cfg.FederationKeySeed); raw != "" {
+		if b, err := decodeFederationKeyMaterial(raw); err == nil && len(b) == ed25519.SeedSize {
+			priv := ed25519.NewKeyFromSeed(b)
+			pub := priv.Public().(ed25519.PublicKey)
+			return pub, priv
+		}
+	}
 	sum := sha256.Sum256([]byte(s.cfg.JWTSecret + "|glipz-federation"))
 	priv := ed25519.NewKeyFromSeed(sum[:])
 	pub := priv.Public().(ed25519.PublicKey)
 	return pub, priv
+}
+
+func decodeFederationKeyMaterial(raw string) ([]byte, error) {
+	raw = strings.TrimSpace(raw)
+	for _, enc := range []*base64.Encoding{
+		base64.StdEncoding,
+		base64.RawStdEncoding,
+		base64.URLEncoding,
+		base64.RawURLEncoding,
+	} {
+		if b, err := enc.DecodeString(raw); err == nil {
+			return b, nil
+		}
+	}
+	return nil, fmt.Errorf("invalid base64 federation key material")
 }
 
 func (s *Server) federationServerKeyID() string {
@@ -693,6 +722,27 @@ func (s *Server) rememberFederationEventID(ctx context.Context, verified verifie
 	return s.rdb.Set(ctx, federationEventRedisKey(verified.NormalizedKeyID, eventID), "1", federationReplayEventTTL).Err()
 }
 
+func (s *Server) federationEventReplayRejected(w http.ResponseWriter, r *http.Request, verified verifiedFederationRequest, eventID string) bool {
+	processed, err := s.federationEventAlreadyProcessed(r.Context(), verified, eventID)
+	if err != nil {
+		writeServerError(w, "federationEventAlreadyProcessed", err)
+		return true
+	}
+	if processed {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "duplicate_event"})
+		return true
+	}
+	return false
+}
+
+func (s *Server) rememberFederationEventOrFail(w http.ResponseWriter, r *http.Request, verified verifiedFederationRequest, eventID string) bool {
+	if err := s.rememberFederationEventID(r.Context(), verified, eventID); err != nil {
+		writeServerError(w, "rememberFederationEventID", err)
+		return false
+	}
+	return true
+}
+
 func (s *Server) signedFederationPOSTJSON(ctx context.Context, endpoint string, body any) ([]byte, error) {
 	_, priv := s.federationServerKeys()
 	buf := &bytes.Buffer{}
@@ -894,6 +944,9 @@ func (s *Server) handleFederationPostEntitlementInbound(w http.ResponseWriter, r
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_event"})
 		return
 	}
+	if s.federationEventReplayRejected(w, r, verified, req.EventID) {
+		return
+	}
 	viewerAcct := strings.TrimSpace(req.ViewerAcct)
 	_, viewerHost, err := splitAcct(viewerAcct)
 	if err != nil || !strings.EqualFold(viewerHost, verified.InstanceHost) {
@@ -925,7 +978,9 @@ func (s *Server) handleFederationPostEntitlementInbound(w http.ResponseWriter, r
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "cannot_issue"})
 		return
 	}
-	_ = s.rememberFederationEventID(r.Context(), verified, req.EventID)
+	if !s.rememberFederationEventOrFail(w, r, verified, req.EventID) {
+		return
+	}
 	writeJSON(w, http.StatusOK, federationEntitlementResponse{EntitlementJWT: jws})
 }
 
@@ -959,6 +1014,9 @@ func (s *Server) handleFederationPostUnlockInbound(w http.ResponseWriter, r *htt
 	}
 	if _, err := s.validateFederationEventID(verified, req.EventID); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_event"})
+		return
+	}
+	if s.federationEventReplayRejected(w, r, verified, req.EventID) {
 		return
 	}
 	row, err := s.db.PostSensitiveByID(r.Context(), postID)
@@ -1012,7 +1070,9 @@ func (s *Server) handleFederationPostUnlockInbound(w http.ResponseWriter, r *htt
 			return
 		}
 	}
-	_ = s.rememberFederationEventID(r.Context(), verified, req.EventID)
+	if !s.rememberFederationEventOrFail(w, r, verified, req.EventID) {
+		return
+	}
 	s.writeUnlockedPostJSON(w, row)
 }
 

@@ -18,7 +18,7 @@ This repository contains the reference Go implementation of the Glipz Federation
 
 Key features include:
 - **Discovery-driven capability negotiation:** peers advertise `glipz-federation/3`, endpoint URLs, schema version, DM key lookup support, and known-instance hints.
-- **Strong security:** Ed25519 `X-Glipz-*` signatures with nonce and event ID replay protection.
+- **Strong security:** Ed25519 `X-Glipz-*` signatures with nonce and event ID replay protection, plus optional dedicated federation signing key material.
 - **Public social delivery:** remote follows, public posts, reposts, edits, deletes, likes, reactions, poll updates, and federated timeline ingestion.
 - **ID portability:** stable portable account IDs, account move events, and stable federated object IDs.
 - **Federated DMs and gated media:** signed `dm_*` events, DM public-key lookup, and optional password or membership unlock flows.
@@ -205,6 +205,10 @@ S3_USE_PATH_STYLE=true-or-false-for-your-provider
 In local mode, the backend stores uploaded files on disk and serves them from `/api/v1/media/object/*`. With Docker Compose, `./data/media` is mounted into the backend container so uploads survive container rebuilds.
 
 Cloudflare R2 uses `S3_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com`, `S3_REGION=auto`, and path-style access. For direct media delivery, set `GLIPZ_PROTOCOL_MEDIA_PUBLIC_BASE` to your R2 custom public domain and use `GLIPZ_MEDIA_PROXY_MODE=direct`. Direct media endpoints must reject or download active content types such as SVG, HTML, XML, and JavaScript with `Content-Disposition: attachment` and `X-Content-Type-Options: nosniff`; the backend proxy applies this automatically.
+
+Before enabling public federation, generate dedicated signing key material with
+`openssl rand -base64 32` and set `GLIPZ_FEDERATION_KEY_SEED`. Without it, Glipz
+keeps compatibility by deriving the federation key from `JWT_SECRET`.
 
 ### 2. Start the stack
 

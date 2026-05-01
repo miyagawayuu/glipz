@@ -1,7 +1,7 @@
 {
   "name": "glipz-web",
   "private": true,
-  "version": "0.0.2",
+  "version": "0.0.3",
   "license": "AGPL-3.0",
   "type": "module",
   "engines": {
@@ -12,7 +12,7 @@
     "openapi:generate": "node scripts/build-openapi.mjs",
     "version:sync": "node ../scripts/sync-version.mjs",
     "build": "vite build",
-    "test": "vitest run",
+    "test": "vitest run --pool=threads",
     "preview": "vite preview",
     "cap:sync": "npm run build && npm exec -- cap sync",
     "cap:open:android": "npm exec -- cap open android",

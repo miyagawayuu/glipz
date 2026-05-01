@@ -165,11 +165,14 @@ MAIL_FROM_NAME=Glipz
 | `GLIPZ_PROTOCOL_PUBLIC_ORIGIN` | Public API/federation origin advertised in `/.well-known/glipz-federation`; can be same as frontend if behind the same proxy |
 | `GLIPZ_PROTOCOL_HOST` | Stable federation host peers use to verify discovery and signed request metadata |
 | `GLIPZ_PROTOCOL_MEDIA_PUBLIC_BASE` | Public media base URL used in federated profile and post documents |
+| `GLIPZ_FEDERATION_KEY_SEED` | Recommended dedicated base64 32-byte Ed25519 seed for federation signatures; generate with `openssl rand -base64 32` |
+| `GLIPZ_FEDERATION_PRIVATE_KEY` | Advanced alternative: base64 64-byte Ed25519 private key for federation signatures |
 | `GLIPZ_STORAGE_MODE` | `local` stores media on the server; `s3` uses S3-compatible storage |
 | `GLIPZ_LOCAL_STORAGE_PATH` | Local media directory; back it up if using `GLIPZ_STORAGE_MODE=local` |
 | `GLIPZ_ADMIN_USER_IDS` | Built-in moderation / admin API access and `/admin` control panel access |
 | `LEGAL_DOCS_DIR` | Optional directory for editable `terms.md`, `privacy.md`, and `nsfw-guidelines.md` |
 | `GLIPZ_TRUST_PROXY_HEADERS` | Set to `true` only when your reverse proxy always overwrites `X-Real-IP` / `X-Forwarded-For` and the backend cannot be reached directly |
+| `GLIPZ_TRUSTED_PROXY_CIDRS` | Optional comma-separated CIDRs whose direct connections may supply trusted proxy headers |
 | `GLIPZ_AUTH_RATE_LIMIT_FAIL_CLOSED` | Optional stricter mode that rejects login/MFA attempts when Redis rate limit checks fail |
 | `GLIPZ_REMOTE_MEDIA_PROXY_RATE_LIMIT_MAX` | Public remote-media proxy requests allowed per IP per 15 minutes; defaults to `120` |
 | `GLIPZ_REMOTE_MEDIA_PROXY_RATE_LIMIT_FAIL_CLOSED` | Optional stricter mode that rejects public remote-media proxy requests when Redis rate limit writes fail |
@@ -187,6 +190,18 @@ MAIL_FROM_NAME=Glipz
 Use `sslmode=require` or stronger for production PostgreSQL connections unless
 the database connection is protected by an equivalent private TLS tunnel. Keep
 `sslmode=disable` for local development only.
+
+Use dedicated federation signing key material in production so JWT rotation and
+federation identity rotation are separate operations:
+
+```env
+GLIPZ_FEDERATION_KEY_SEED=<output of: openssl rand -base64 32>
+```
+
+If neither `GLIPZ_FEDERATION_KEY_SEED` nor `GLIPZ_FEDERATION_PRIVATE_KEY` is set,
+Glipz keeps compatibility by deriving the federation key from `JWT_SECRET`, but
+operators should treat that as a migration fallback rather than the production
+target.
 
 Rate limit checks use Redis. The default fail-open behavior preserves
 availability during Redis outages, but public internet deployments that prefer
@@ -376,12 +391,21 @@ server {
 If you enable `GLIPZ_TRUST_PROXY_HEADERS=true`, keep the backend bound to
 `127.0.0.1` or a private network and make sure the proxy overwrites
 `X-Real-IP` and `X-Forwarded-For` as shown above. Do not pass through
-client-supplied forwarding headers.
+client-supplied forwarding headers. For an additional guard, set
+`GLIPZ_TRUSTED_PROXY_CIDRS` to the direct proxy addresses, for example
+`127.0.0.1/32,::1/128` for a same-host reverse proxy. When this allowlist is set,
+Glipz ignores forwarded IP headers from direct peers outside those CIDRs.
 
 The backend sets security headers when they are not already present, including
 `Content-Security-Policy`, `Referrer-Policy`, `Permissions-Policy`,
 `X-Content-Type-Options`, and `X-Frame-Options`. The examples above pin them at
 the proxy so operators can audit and adjust policy in one place.
+
+If you serve `web/dist` directly from a CDN or separate static host instead of
+through the Go backend, copy the CSP, Referrer-Policy, Permissions-Policy,
+`X-Content-Type-Options`, `X-Frame-Options`, and HSTS policy from the examples
+above to that static host. Registration verification links contain short-lived,
+single-use tokens; avoid logging full query strings at the proxy/CDN layer.
 
 ### Caddy
 

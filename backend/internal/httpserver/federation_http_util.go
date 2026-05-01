@@ -3,7 +3,6 @@ package httpserver
 import (
 	"context"
 	"fmt"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -26,27 +25,10 @@ func federationHostFromInboxURL(inboxURL string) (string, error) {
 	return strings.ToLower(strings.TrimPrefix(u.Hostname(), "www.")), nil
 }
 
+// clientIPForFederationRL matches clientIPForAuthRateLimit so federation inbox rate limits
+// cannot be bypassed by spoofing X-Forwarded-For when GLIPZ_TRUSTED_PROXY_CIDRS is set.
 func (s *Server) clientIPForFederationRL(r *http.Request) string {
-	if s.cfg.TrustProxyHeaders {
-		if xri := strings.TrimSpace(r.Header.Get("X-Real-IP")); xri != "" {
-			if ip := net.ParseIP(xri); ip != nil {
-				return ip.String()
-			}
-		}
-		if xff := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); xff != "" {
-			if i := strings.IndexByte(xff, ','); i >= 0 {
-				xff = strings.TrimSpace(xff[:i])
-			}
-			if ip := net.ParseIP(xff); ip != nil {
-				return ip.String()
-			}
-		}
-	}
-	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
-	if err == nil && host != "" {
-		return host
-	}
-	return strings.TrimSpace(r.RemoteAddr)
+	return s.clientIPForAuthRateLimit(r)
 }
 
 const federationInboxRatePerMinute = 180

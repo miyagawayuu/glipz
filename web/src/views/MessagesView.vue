@@ -103,6 +103,7 @@ const error = ref("");
 const fedThreads = ref<FederationDMThread[]>([]);
 const fedActiveThreadId = ref("");
 const fedActiveRemoteAcct = ref("");
+const federationThreadKeys = new Map<string, string>();
 const fedMessages = ref<
   {
     id: string;
@@ -590,9 +591,10 @@ async function acceptFederationThread() {
 
     // Generate a thread key (not yet used for message payloads in this phase).
     const threadKey = crypto.getRandomValues(new Uint8Array(32));
-    sessionStorage.setItem(`fed_dm_thread_key:${fedActiveThreadId.value}`, bytesToBase64(threadKey));
+    const threadKeyB64 = bytesToBase64(threadKey);
+    federationThreadKeys.set(fedActiveThreadId.value, threadKeyB64);
 
-    const sealed = await encryptDMText(JSON.stringify({ thread_key: bytesToBase64(threadKey) }), identity.value, peerPublicJwk);
+    const sealed = await encryptDMText(JSON.stringify({ thread_key: threadKeyB64 }), identity.value, peerPublicJwk);
     await api("/api/v1/federation/dm/accept", {
       method: "POST",
       token,
@@ -604,6 +606,7 @@ async function acceptFederationThread() {
     });
     await loadFederationThreadsOnly();
   } catch (e: unknown) {
+    if (fedActiveThreadId.value) federationThreadKeys.delete(fedActiveThreadId.value);
     fedError.value = e instanceof Error ? e.message : "承認に失敗しました";
   } finally {
     fedSendBusy.value = false;
@@ -626,6 +629,7 @@ async function rejectFederationThread() {
       },
     });
     await loadFederationThreadsOnly();
+    federationThreadKeys.delete(fedActiveThreadId.value);
     fedActiveThreadId.value = "";
     fedActiveRemoteAcct.value = "";
     fedMessages.value = [];

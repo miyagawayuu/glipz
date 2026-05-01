@@ -1,7 +1,9 @@
 package config
 
 import (
+	"encoding/base64"
 	"fmt"
+	"net/netip"
 	"os"
 	"strconv"
 	"strings"
@@ -35,6 +37,9 @@ type Config struct {
 	GlipzProtocolHost string
 	// Base URL used to build public media URLs, without a trailing slash.
 	GlipzProtocolMediaPublicBase string
+	// Optional dedicated Ed25519 federation signing key material, base64-encoded.
+	FederationKeySeed    string
+	FederationPrivateKey string
 	// Vue build output directory containing index.html. When set and present, serve static files and the SPA on :PORT.
 	StaticWebRoot string
 	// Optional directory containing operator-editable Markdown legal documents.
@@ -74,6 +79,8 @@ type Config struct {
 	SlowRequestLogMs int
 	// Trust X-Real-IP / X-Forwarded-For from a reverse proxy. Enable only when the proxy overwrites them.
 	TrustProxyHeaders bool
+	// Optional CIDR allowlist for direct peer addresses whose proxy headers may be trusted.
+	TrustedProxyCIDRs []string
 	// When true, auth rate limit backend errors reject attempts instead of failing open.
 	AuthRateLimitFailClosed bool
 	// Number of feed items returned by authenticated feed endpoints.
@@ -158,6 +165,18 @@ func Load() (Config, error) {
 	c.GlipzProtocolPublicOrigin = strings.TrimSuffix(strings.TrimSpace(os.Getenv("GLIPZ_PROTOCOL_PUBLIC_ORIGIN")), "/")
 	c.GlipzProtocolHost = strings.TrimSpace(strings.ToLower(os.Getenv("GLIPZ_PROTOCOL_HOST")))
 	c.GlipzProtocolMediaPublicBase = strings.TrimSuffix(strings.TrimSpace(os.Getenv("GLIPZ_PROTOCOL_MEDIA_PUBLIC_BASE")), "/")
+	c.FederationKeySeed = strings.TrimSpace(os.Getenv("GLIPZ_FEDERATION_KEY_SEED"))
+	c.FederationPrivateKey = strings.TrimSpace(os.Getenv("GLIPZ_FEDERATION_PRIVATE_KEY"))
+	if c.FederationKeySeed != "" {
+		if err := validateBase64KeyMaterial("GLIPZ_FEDERATION_KEY_SEED", c.FederationKeySeed, 32); err != nil {
+			return c, err
+		}
+	}
+	if c.FederationPrivateKey != "" {
+		if err := validateBase64KeyMaterial("GLIPZ_FEDERATION_PRIVATE_KEY", c.FederationPrivateKey, 64); err != nil {
+			return c, err
+		}
+	}
 
 	legacyFederationPublicOrigin := strings.TrimSuffix(strings.TrimSpace(os.Getenv("GLIPZ_FEDERATION_PUBLIC_ORIGIN")), "/")
 	legacyFederationHost := strings.TrimSpace(strings.ToLower(os.Getenv("GLIPZ_FEDERATION_HOST")))
@@ -227,6 +246,12 @@ func Load() (Config, error) {
 	c.AccessLogEnabled, _ = strconv.ParseBool(getEnv("GLIPZ_ACCESS_LOG_ENABLED", "false"))
 	c.SlowRequestLogMs = positiveIntEnv("GLIPZ_SLOW_REQUEST_LOG_MS", 0, 0, 600000)
 	c.TrustProxyHeaders, _ = strconv.ParseBool(getEnv("GLIPZ_TRUST_PROXY_HEADERS", "false"))
+	c.TrustedProxyCIDRs = parseTrustedProxyCIDRs(os.Getenv("GLIPZ_TRUSTED_PROXY_CIDRS"))
+	for _, raw := range c.TrustedProxyCIDRs {
+		if _, err := netip.ParsePrefix(raw); err != nil {
+			return c, fmt.Errorf("GLIPZ_TRUSTED_PROXY_CIDRS contains invalid CIDR %q", raw)
+		}
+	}
 	c.AuthRateLimitFailClosed, _ = strconv.ParseBool(getEnv("GLIPZ_AUTH_RATE_LIMIT_FAIL_CLOSED", "false"))
 	c.FeedPageSize = positiveIntEnv("GLIPZ_FEED_PAGE_SIZE", 30, 10, 100)
 	c.MediaProxyMode = strings.ToLower(strings.TrimSpace(getEnv("GLIPZ_MEDIA_PROXY_MODE", "proxy")))
@@ -269,6 +294,44 @@ func getEnv(key, def string) string {
 		return v
 	}
 	return def
+}
+
+func parseTrustedProxyCIDRs(raw string) []string {
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+func decodeBase64KeyMaterial(raw string) ([]byte, error) {
+	raw = strings.TrimSpace(raw)
+	for _, enc := range []*base64.Encoding{
+		base64.StdEncoding,
+		base64.RawStdEncoding,
+		base64.URLEncoding,
+		base64.RawURLEncoding,
+	} {
+		if b, err := enc.DecodeString(raw); err == nil {
+			return b, nil
+		}
+	}
+	return nil, fmt.Errorf("invalid base64")
+}
+
+func validateBase64KeyMaterial(name, raw string, wantLen int) error {
+	b, err := decodeBase64KeyMaterial(raw)
+	if err != nil {
+		return fmt.Errorf("%s must be base64-encoded: %w", name, err)
+	}
+	if len(b) != wantLen {
+		return fmt.Errorf("%s must decode to %d bytes", name, wantLen)
+	}
+	return nil
 }
 
 func validateJWTSecret(secret string) error {

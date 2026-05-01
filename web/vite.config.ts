@@ -9,6 +9,9 @@ export default defineConfig({
   plugins: [vue()],
   build: {
     rolldownOptions: {
+      checks: {
+        pluginTimings: false,
+      },
       output: {
         strictExecutionOrder: true,
         codeSplitting: {

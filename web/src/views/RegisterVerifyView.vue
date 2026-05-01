@@ -27,6 +27,12 @@ function messageForError(code: string): string {
   }
 }
 
+function clearTokenFromURL() {
+  const query = { ...route.query };
+  delete query.token;
+  void router.replace({ path: route.path, query });
+}
+
 onMounted(async () => {
   const token = typeof route.query.token === "string" ? route.query.token.trim() : "";
   if (!token) {
@@ -34,6 +40,7 @@ onMounted(async () => {
     message.value = t("auth.verify.missing");
     return;
   }
+  clearTokenFromURL();
   try {
     const res = await api<{ access_token: string }>("/api/v1/auth/register/verify", {
       method: "POST",

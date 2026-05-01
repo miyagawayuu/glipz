@@ -1,5 +1,5 @@
 export const APP_NAME = "Glipz";
-export const APP_VERSION = "0.0.2";
+export const APP_VERSION = "0.0.3";
 
 export const FEDERATION_PROTOCOL_NAME = "glipz-federation";
 export const FEDERATION_PROTOCOL_VERSION = `${FEDERATION_PROTOCOL_NAME}/3`;

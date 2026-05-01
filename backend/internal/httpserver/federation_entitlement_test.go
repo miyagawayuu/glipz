@@ -2,6 +2,8 @@ package httpserver
 
 import (
 	"context"
+	"crypto/ed25519"
+	"encoding/base64"
 	"testing"
 	"time"
 
@@ -14,11 +16,34 @@ import (
 func newTestServerForEntitlements() *Server {
 	return &Server{
 		cfg: config.Config{
-			JWTSecret:                "0123456789abcdef0123456789abcdef",
-			FrontendOrigin:           "https://web.example",
+			JWTSecret:                 "0123456789abcdef0123456789abcdef",
+			FrontendOrigin:            "https://web.example",
 			GlipzProtocolPublicOrigin: "https://api.example",
-			GlipzProtocolHost:        "example",
+			GlipzProtocolHost:         "example",
 		},
+	}
+}
+
+func TestFederationServerKeysPreferDedicatedSeed(t *testing.T) {
+	seed := []byte("0123456789abcdef0123456789abcdef")
+	s1 := &Server{cfg: config.Config{
+		JWTSecret:         "jwt-secret-one-0123456789abcdefghijklmnopqrstuvwxyz",
+		FederationKeySeed: base64.StdEncoding.EncodeToString(seed),
+	}}
+	s2 := &Server{cfg: config.Config{
+		JWTSecret:         "jwt-secret-two-0123456789abcdefghijklmnopqrstuvwxyz",
+		FederationKeySeed: base64.StdEncoding.EncodeToString(seed),
+	}}
+
+	pub1, priv1 := s1.federationServerKeys()
+	pub2, _ := s2.federationServerKeys()
+	wantPriv := ed25519.NewKeyFromSeed(seed)
+
+	if !pub1.Equal(pub2) {
+		t.Fatal("dedicated federation seed should produce stable public key independent of JWT_SECRET")
+	}
+	if !priv1.Equal(wantPriv) {
+		t.Fatal("dedicated federation seed did not produce expected private key")
 	}
 }
 
@@ -110,4 +135,3 @@ func TestFederationEntitlementJWT_Verify_Expired(t *testing.T) {
 		t.Fatalf("expected verify failure")
 	}
 }
-

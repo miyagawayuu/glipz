@@ -35,6 +35,40 @@ func TestClientIPForAuthRateLimitUsesProxyHeadersWhenEnabled(t *testing.T) {
 	}
 }
 
+func TestClientIPForAuthRateLimitTrustsProxyHeadersOnlyFromCIDR(t *testing.T) {
+	s := &Server{cfg: config.Config{TrustProxyHeaders: true, TrustedProxyCIDRs: []string{"203.0.113.0/24"}}}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "203.0.113.10:12345"
+	req.Header.Set("X-Forwarded-For", "198.51.100.25")
+
+	if got := s.clientIPForAuthRateLimit(req); got != "198.51.100.25" {
+		t.Fatalf("trusted proxy client IP = %q, want forwarded IP", got)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "192.0.2.10:12345"
+	req.Header.Set("X-Forwarded-For", "198.51.100.25")
+	if got := s.clientIPForAuthRateLimit(req); got != "192.0.2.10" {
+		t.Fatalf("untrusted direct client IP = %q, want direct IP", got)
+	}
+}
+
+func TestClientIPForFederationRLMatchesAuthRateLimitTrustedProxyCIDR(t *testing.T) {
+	s := &Server{cfg: config.Config{TrustProxyHeaders: true, TrustedProxyCIDRs: []string{"203.0.113.0/24"}}}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "203.0.113.10:12345"
+	req.Header.Set("X-Forwarded-For", "198.51.100.25")
+	if got := s.clientIPForFederationRL(req); got != "198.51.100.25" {
+		t.Fatalf("federation RL client IP = %q, want forwarded IP", got)
+	}
+	req = httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "192.0.2.10:12345"
+	req.Header.Set("X-Forwarded-For", "198.51.100.25")
+	if got := s.clientIPForFederationRL(req); got != "192.0.2.10" {
+		t.Fatalf("federation RL client IP = %q, want direct IP when peer not in trusted CIDR", got)
+	}
+}
+
 func TestDebugVarsUsesDirectRemoteAddrAfterRealIP(t *testing.T) {
 	s := &Server{}
 	handler := captureDirectRemoteAddr(middleware.RealIP(http.HandlerFunc(s.handleDebugVars)))

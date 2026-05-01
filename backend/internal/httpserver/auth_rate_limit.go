@@ -32,6 +32,9 @@ const (
 
 func (s *Server) clientIPForAuthRateLimit(r *http.Request) string {
 	if s.cfg.TrustProxyHeaders {
+		if len(s.cfg.TrustedProxyCIDRs) > 0 && !ipInCIDRs(directClientIP(r), s.cfg.TrustedProxyCIDRs) {
+			return directClientIP(r)
+		}
 		if ip := trustedProxyClientIP(r); ip != "" {
 			return ip
 		}

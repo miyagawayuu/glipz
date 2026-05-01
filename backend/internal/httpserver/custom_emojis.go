@@ -63,7 +63,8 @@ func (s *Server) customEmojiListJSON(rows []repo.CustomEmoji) []customEmojiJSON 
 
 func validateOwnedObjectKey(uid uuid.UUID, objectKey string) bool {
 	prefix := "uploads/" + uid.String() + "/"
-	return strings.HasPrefix(strings.TrimSpace(objectKey), prefix)
+	key, ok := normalizePublicMediaObjectKey(objectKey)
+	return ok && strings.HasPrefix(key, prefix)
 }
 
 func (s *Server) handleListEnabledCustomEmojis(w http.ResponseWriter, r *http.Request) {

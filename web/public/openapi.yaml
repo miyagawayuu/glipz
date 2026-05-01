@@ -49,7 +49,9 @@ tags:
   - name: Direct messages
   - name: Search
   - name: Social
-  - name: Notes
+  - name: Communities
+  - name: Identity portability
+  - name: Fan club
   - name: OAuth clients
   - name: Personal access tokens
   - name: Custom emojis
@@ -190,6 +192,23 @@ paths:
           description: Not found
         '429':
           description: Too many requests
+  /auth/register/resend:
+    post:
+      tags:
+        - Auth
+      summary: Resend registration verification
+      security: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
   /auth/register/verify:
     post:
       tags:
@@ -229,6 +248,23 @@ paths:
       tags:
         - Auth
       summary: Complete MFA login
+      security: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /auth/logout:
+    post:
+      tags:
+        - Auth
+      summary: Logout
       security: []
       responses:
         '200':
@@ -382,6 +418,59 @@ paths:
           description: Not found
         '429':
           description: Too many requests
+  /public/federation/incoming/stream:
+    get:
+      tags:
+        - Public federation
+      summary: Public federated feed SSE
+      security: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /public/federation/custom-emoji:
+    get:
+      tags:
+        - Public federation
+      summary: Resolve public federated custom emoji
+      security: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /public/federation/incoming:
+    get:
+      tags:
+        - Public federation
+      summary: Public federated incoming posts by actor
+      security:
+        - {}
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
   /public/federation/incoming/{id}:
     get:
       tags:
@@ -456,6 +545,175 @@ paths:
         - Media
       summary: Media object metadata
       description: Public media delivery. The server route matches a wildcard path after /media/object/; encode nested keys in the path or consult your deployment for how keys map to URLs.
+      security: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /media/remote:
+    get:
+      tags:
+        - Media
+      summary: Proxy remote media
+      security: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+    head:
+      tags:
+        - Media
+      summary: Remote media metadata
+      security: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /identity/transfers/{sessionID}/manifest:
+    get:
+      tags:
+        - Identity portability
+      summary: Identity transfer manifest
+      security: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /identity/transfers/{sessionID}/profile:
+    get:
+      tags:
+        - Identity portability
+      summary: Identity transfer profile export
+      security: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /identity/transfers/{sessionID}/posts:
+    get:
+      tags:
+        - Identity portability
+      summary: Identity transfer posts export
+      security: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /identity/transfers/{sessionID}/following:
+    get:
+      tags:
+        - Identity portability
+      summary: Identity transfer following export
+      security: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /identity/transfers/{sessionID}/followers:
+    get:
+      tags:
+        - Identity portability
+      summary: Identity transfer followers export
+      security: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /identity/transfers/{sessionID}/bookmarks:
+    get:
+      tags:
+        - Identity portability
+      summary: Identity transfer bookmarks export
+      security: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /identity/transfers/{sessionID}/media:
+    get:
+      tags:
+        - Identity portability
+      summary: Identity transfer media export
+      security: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /fanclub/patreon/callback:
+    get:
+      tags:
+        - Fan club
+      summary: Patreon OAuth callback
       security: []
       responses:
         '200':
@@ -582,11 +840,11 @@ paths:
           description: Not found
         '429':
           description: Too many requests
-  /users/by-handle/{handle}/notes:
+  /users/by-handle/{handle}/post-media-tiles:
     get:
       tags:
         - Public optional
-      summary: Notes list by handle
+      summary: Post media tiles by handle
       security:
         - {}
         - bearerAuth: []
@@ -601,11 +859,119 @@ paths:
           description: Not found
         '429':
           description: Too many requests
-  /users/by-handle/{handle}/post-media-tiles:
+  /communities:
     get:
       tags:
-        - Public optional
-      summary: Post media tiles by handle
+        - Communities
+      summary: List communities
+      security:
+        - {}
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+    post:
+      tags:
+        - Communities
+      summary: Create community
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /communities/{communityID}:
+    get:
+      tags:
+        - Communities
+      summary: Get community
+      security:
+        - {}
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+    patch:
+      tags:
+        - Communities
+      summary: Update community
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+    delete:
+      tags:
+        - Communities
+      summary: Delete community
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /communities/{communityID}/posts:
+    get:
+      tags:
+        - Communities
+      summary: Community posts
+      security:
+        - {}
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /communities/{communityID}/post-media-tiles:
+    get:
+      tags:
+        - Communities
+      summary: Community media tiles
       security:
         - {}
         - bearerAuth: []
@@ -889,6 +1255,61 @@ paths:
           description: Not found
         '429':
           description: Too many requests
+  /admin/federation/known-instances:
+    get:
+      tags:
+        - Admin
+      summary: List known federation instances
+      description: Requires a valid access token and site-admin privileges.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+    post:
+      tags:
+        - Admin
+      summary: Add known federation instance
+      description: Requires a valid access token and site-admin privileges.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+    delete:
+      tags:
+        - Admin
+      summary: Remove known federation instance
+      description: Requires a valid access token and site-admin privileges.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
   /admin/reports/posts:
     get:
       tags:
@@ -927,6 +1348,25 @@ paths:
           description: Not found
         '429':
           description: Too many requests
+  /admin/reports/dm:
+    get:
+      tags:
+        - Admin
+      summary: List direct message reports
+      description: Requires a valid access token and site-admin privileges.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
   /admin/reports/posts/{reportID}:
     patch:
       tags:
@@ -951,6 +1391,119 @@ paths:
       tags:
         - Admin
       summary: Update federated report status
+      description: Requires a valid access token and site-admin privileges.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /admin/reports/dm/{reportID}:
+    patch:
+      tags:
+        - Admin
+      summary: Update direct message report status
+      description: Requires a valid access token and site-admin privileges.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /admin/legal-requests:
+    get:
+      tags:
+        - Admin
+      summary: List law enforcement requests
+      description: Requires a valid access token and site-admin privileges.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+    post:
+      tags:
+        - Admin
+      summary: Create law enforcement request
+      description: Requires a valid access token and site-admin privileges.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /admin/legal-requests/{requestID}:
+    patch:
+      tags:
+        - Admin
+      summary: Update law enforcement request
+      description: Requires a valid access token and site-admin privileges.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /admin/legal-requests/{requestID}/holds:
+    post:
+      tags:
+        - Admin
+      summary: Create legal preservation hold
+      description: Requires a valid access token and site-admin privileges.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /admin/legal-requests/{requestID}/export:
+    get:
+      tags:
+        - Admin
+      summary: Export law enforcement disclosure package
       description: Requires a valid access token and site-admin privileges.
       security:
         - bearerAuth: []
@@ -1100,6 +1653,238 @@ paths:
       tags:
         - Account
       summary: Current user
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /me/account:
+    delete:
+      tags:
+        - Account
+      summary: Delete current account
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /me/identity/export:
+    get:
+      tags:
+        - Identity portability
+      summary: Export identity
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /me/identity/export-secure:
+    post:
+      tags:
+        - Identity portability
+      summary: Create encrypted identity export
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /me/identity/import:
+    put:
+      tags:
+        - Identity portability
+      summary: Import identity
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /me/identity/import-secure:
+    put:
+      tags:
+        - Identity portability
+      summary: Import encrypted identity bundle
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /me/identity/move:
+    post:
+      tags:
+        - Identity portability
+      summary: Declare identity move
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /me/identity/transfer-sessions:
+    post:
+      tags:
+        - Identity portability
+      summary: Create identity transfer session
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /me/identity/transfer-sessions/{sessionID}:
+    get:
+      tags:
+        - Identity portability
+      summary: Get identity transfer session
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+    delete:
+      tags:
+        - Identity portability
+      summary: Revoke identity transfer session
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /me/identity/import-jobs:
+    post:
+      tags:
+        - Identity portability
+      summary: Start identity import job
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /me/identity/import-jobs/{jobID}:
+    get:
+      tags:
+        - Identity portability
+      summary: Get identity import job
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+    delete:
+      tags:
+        - Identity portability
+      summary: Cancel identity import job
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /me/identity/import-jobs/{jobID}/retry:
+    post:
+      tags:
+        - Identity portability
+      summary: Retry identity import job
       security:
         - bearerAuth: []
       responses:
@@ -1450,6 +2235,24 @@ paths:
           description: Not found
         '429':
           description: Too many requests
+  /dm/threads/{threadID}/messages/{messageID}/report:
+    post:
+      tags:
+        - Direct messages
+      summary: Report direct message
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
   /dm/threads/{threadID}/read:
     post:
       tags:
@@ -1747,6 +2550,58 @@ paths:
           description: Not found
         '429':
           description: Too many requests
+  /me/timeline-settings:
+    get:
+      tags:
+        - Account
+      summary: Get timeline settings
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+    put:
+      tags:
+        - Account
+      summary: Save timeline settings
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+    delete:
+      tags:
+        - Account
+      summary: Reset timeline settings
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
   /me/scheduled-posts:
     get:
       tags:
@@ -1783,11 +2638,100 @@ paths:
           description: Not found
         '429':
           description: Too many requests
+  /posts/feed/custom:
+    post:
+      tags:
+        - Posts
+      summary: Authenticated custom feed
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
   /posts/bookmarks:
     get:
       tags:
         - Posts
       summary: Bookmarks
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /communities/{communityID}/join-requests:
+    post:
+      tags:
+        - Communities
+      summary: Request community join
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+    get:
+      tags:
+        - Communities
+      summary: List community join requests
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /communities/{communityID}/members/{userID}/approve:
+    post:
+      tags:
+        - Communities
+      summary: Approve community join request
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /communities/{communityID}/members/{userID}/reject:
+    post:
+      tags:
+        - Communities
+      summary: Reject community join request
       security:
         - bearerAuth: []
       responses:
@@ -1858,6 +2802,272 @@ paths:
       tags:
         - Federation
       summary: Remote follow delete
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /me/federation/blocks:
+    get:
+      tags:
+        - Federation
+      summary: List federated actor blocks
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+    post:
+      tags:
+        - Federation
+      summary: Add federated actor block
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+    delete:
+      tags:
+        - Federation
+      summary: Remove federated actor block
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /me/federation/mutes:
+    get:
+      tags:
+        - Federation
+      summary: List federated actor mutes
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+    post:
+      tags:
+        - Federation
+      summary: Add federated actor mute
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+    delete:
+      tags:
+        - Federation
+      summary: Remove federated actor mute
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /me/federation/relationship:
+    get:
+      tags:
+        - Federation
+      summary: Get federated actor relationship
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /federation/dm/invite:
+    post:
+      tags:
+        - Federation
+      summary: Send federated DM invite
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /federation/dm/accept:
+    post:
+      tags:
+        - Federation
+      summary: Accept federated DM invite
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /federation/dm/reject:
+    post:
+      tags:
+        - Federation
+      summary: Reject federated DM invite
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /federation/dm/message:
+    post:
+      tags:
+        - Federation
+      summary: Send federated DM message
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /federation/dm/threads:
+    get:
+      tags:
+        - Federation
+      summary: List federated DM threads
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /federation/dm/threads/{threadID}/messages:
+    get:
+      tags:
+        - Federation
+      summary: List federated DM messages
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /federation/dm/keys:
+    get:
+      tags:
+        - Federation
+      summary: Get federated DM peer keys
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /federation/dm/attachment:
+    get:
+      tags:
+        - Federation
+      summary: Proxy federated DM attachment
       security:
         - bearerAuth: []
       responses:
@@ -2063,6 +3273,41 @@ paths:
           description: Not found
         '429':
           description: Too many requests
+  /posts/{postID}/profile-pin:
+    put:
+      tags:
+        - Posts
+      summary: Pin post to profile
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+    delete:
+      tags:
+        - Posts
+      summary: Unpin post from profile
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
   /posts/{postID}/report:
     post:
       tags:
@@ -2158,6 +3403,42 @@ paths:
       tags:
         - Federation
       summary: Toggle repost on federated post
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /federation/posts/{incomingID}/reactions:
+    post:
+      tags:
+        - Federation
+      summary: Add federated reaction
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /federation/posts/{incomingID}/reactions/{emoji}:
+    delete:
+      tags:
+        - Federation
+      summary: Remove federated reaction
       security:
         - bearerAuth: []
       responses:
@@ -2283,29 +3564,11 @@ paths:
           description: Not found
         '429':
           description: Too many requests
-  /notes:
-    post:
-      tags:
-        - Notes
-      summary: Create note
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: Success (or streaming body for SSE)
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden
-        '404':
-          description: Not found
-        '429':
-          description: Too many requests
-  /notes/{noteID}:
+  /fanclub/patreon/authorize:
     get:
       tags:
-        - Notes
-      summary: Get note
+        - Fan club
+      summary: Start Patreon authorization
       security:
         - bearerAuth: []
       responses:
@@ -2319,10 +3582,11 @@ paths:
           description: Not found
         '429':
           description: Too many requests
-    patch:
+  /fanclub/patreon/status:
+    get:
       tags:
-        - Notes
-      summary: Patch note
+        - Fan club
+      summary: Get Patreon connection status
       security:
         - bearerAuth: []
       responses:
@@ -2336,10 +3600,65 @@ paths:
           description: Not found
         '429':
           description: Too many requests
+  /fanclub/patreon/connection:
     delete:
       tags:
-        - Notes
-      summary: Delete note
+        - Fan club
+      summary: Delete Patreon connection
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /fanclub/patreon/entitlement:
+    post:
+      tags:
+        - Fan club
+      summary: Check Patreon entitlement
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /fanclub/patreon/entitlement-federated:
+    post:
+      tags:
+        - Fan club
+      summary: Check federated Patreon entitlement
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success (or streaming body for SSE)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '429':
+          description: Too many requests
+  /fanclub/patreon/campaigns:
+    get:
+      tags:
+        - Fan club
+      summary: List Patreon campaigns
       security:
         - bearerAuth: []
       responses:

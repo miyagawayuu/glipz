@@ -5,11 +5,13 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 
 	"glipz.io/backend/internal/s3client"
 )
@@ -128,6 +130,32 @@ func writeMediaProxyHeaders(w http.ResponseWriter, meta s3client.ObjectMeta) {
 	if meta.ContentRange != "" {
 		w.Header().Set("Content-Range", meta.ContentRange)
 	}
+}
+
+func normalizePublicMediaObjectKey(raw string) (string, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || strings.Contains(raw, "\\") || strings.HasPrefix(raw, "/") {
+		return "", false
+	}
+	cleaned := path.Clean("/" + raw)
+	if cleaned == "/" || strings.HasSuffix(raw, "/") {
+		return "", false
+	}
+	key := strings.TrimPrefix(cleaned, "/")
+	parts := strings.Split(key, "/")
+	if len(parts) != 3 || parts[0] != "uploads" {
+		return "", false
+	}
+	if _, err := uuid.Parse(parts[1]); err != nil {
+		return "", false
+	}
+	if parts[2] == "" || parts[2] == "." || parts[2] == ".." || strings.Contains(parts[2], "/") {
+		return "", false
+	}
+	if key != raw {
+		return "", false
+	}
+	return key, true
 }
 
 func isAllowedRemoteMediaContentType(raw string) bool {
@@ -252,6 +280,12 @@ func (s *Server) handlePublicMediaObject(w http.ResponseWriter, r *http.Request)
 	}
 	objectKey, err := url.PathUnescape(rawKey)
 	if err != nil || strings.TrimSpace(objectKey) == "" {
+		http.NotFound(w, r)
+		return
+	}
+	if normalized, ok := normalizePublicMediaObjectKey(objectKey); ok {
+		objectKey = normalized
+	} else {
 		http.NotFound(w, r)
 		return
 	}

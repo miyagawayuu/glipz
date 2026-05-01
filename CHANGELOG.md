@@ -6,7 +6,7 @@ Glipz uses `web/package.json` as the source of truth for the application
 version. Federation protocol compatibility is versioned separately with
 `glipz-federation/{major}` and `event_schema_version`.
 
-## [0.0.3] - Unreleased
+## [0.0.3] - 2026-05-01
 
 ### Added
 
@@ -39,6 +39,12 @@ version. Federation protocol compatibility is versioned separately with
 - Identity portability now supports a migration-file workflow that bundles the
   encrypted identity export, transfer session, transfer token, expiration, and
   import options into a downloadable/uploadable JSON file.
+- Federation signing can now use dedicated Ed25519 key material via
+  `GLIPZ_FEDERATION_KEY_SEED` or `GLIPZ_FEDERATION_PRIVATE_KEY`, separating
+  federation identity from JWT rotation.
+- The in-app OpenAPI reference now covers the current auth, community,
+  federation, identity portability, fan club, moderation, media, and timeline
+  settings endpoints.
 
 ### Changed
 
@@ -56,6 +62,11 @@ version. Federation protocol compatibility is versioned separately with
   can choose plugin order plus collapse individual sidebar widgets.
 - Supported UI locales are now managed from the language settings page; the
   incomplete German locale override was removed from the supported locale list.
+- Deployment documentation now covers federation signing keys, trusted proxy
+  CIDR allowlists, fail-closed rate limit options, static-host security headers,
+  and registration-verification token logging guidance.
+- Frontend tests now run Vitest with the threads pool to keep the current test
+  suite stable on the upgraded toolchain.
 
 ### Fixed
 
@@ -63,6 +74,15 @@ version. Federation protocol compatibility is versioned separately with
   vue-i18n message parse errors.
 - Frontend production builds split large vendor and locale bundles to avoid Vite
   chunk-size warnings.
+- Public media object keys are now normalized and limited to the expected upload
+  key shape before serving media, saving custom emojis, DM attachments, or
+  gallery tiles.
+- Auth rate-limit proxy headers are only trusted from configured direct proxy
+  CIDRs when `GLIPZ_TRUSTED_PROXY_CIDRS` is set.
+- Federation gated-media entitlement and unlock requests now reject duplicate
+  event IDs before issuing responses.
+- Registration verification removes the short-lived token from the URL after it
+  is read, reducing accidental token exposure in browser history or logs.
 
 ### Database Migrations
 
@@ -73,7 +93,7 @@ version. Federation protocol compatibility is versioned separately with
 - Startup migrations add report categories, access-event storage for legal
   exports, and `minimum_registration_age` site setting.
 
-## [0.0.2] - Unreleased
+## [0.0.2] - Released
 
 ### Added
 
@@ -110,7 +130,7 @@ version. Federation protocol compatibility is versioned separately with
 
 - Startup migrations add `communities.tags TEXT[]` for community tag storage.
 
-## [0.0.1] - Unreleased
+## [0.0.1] - Released
 
 ### Versioning
 

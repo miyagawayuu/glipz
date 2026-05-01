@@ -181,7 +181,7 @@ func (s *Server) validateDMAttachments(userID uuid.UUID, raw json.RawMessage) (j
 	}
 	prefix := "uploads/" + userID.String() + "/"
 	for _, it := range items {
-		if strings.TrimSpace(it.ObjectKey) == "" || !strings.HasPrefix(it.ObjectKey, prefix) {
+		if key, ok := normalizePublicMediaObjectKey(it.ObjectKey); !ok || !strings.HasPrefix(key, prefix) {
 			return nil, errors.New("invalid_object_key")
 		}
 		expectedURL := strings.TrimSpace(s.glipzProtocolPublicMediaURL(it.ObjectKey))
