@@ -252,10 +252,17 @@ For production, use HTTPS values:
 GLIPZ_PROTOCOL_PUBLIC_ORIGIN=https://social.example
 GLIPZ_PROTOCOL_HOST=social.example
 GLIPZ_PROTOCOL_MEDIA_PUBLIC_BASE=https://social.example/api/v1/media/object
+GLIPZ_FEDERATION_KEY_SEED=<base64 32-byte seed>
 FEDERATION_POLICY_SUMMARY=Short text shown as your instance federation policy
 ```
 
-The reference implementation derives its instance signing key from `JWT_SECRET`, so changing `JWT_SECRET` also changes the advertised federation public key and `key_id` trust relationship. Treat it as stable production configuration.
+For production, configure dedicated Ed25519 federation signing key material with
+`GLIPZ_FEDERATION_KEY_SEED` or the advanced `GLIPZ_FEDERATION_PRIVATE_KEY`
+option. If neither is set, the reference implementation derives its instance
+signing key from `JWT_SECRET` for compatibility, so changing `JWT_SECRET` also
+changes the advertised federation public key and `key_id` trust relationship.
+Treat that fallback as migration compatibility, not the preferred production
+configuration.
 
 See [SETUP.md](SETUP.md) and [DEPLOY.md](DEPLOY.md) for the full environment file and deployment context.
 

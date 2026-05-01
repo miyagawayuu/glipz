@@ -4,7 +4,17 @@ Edit this file to describe how your Glipz instance receives and reviews law enfo
 
 ### What We Can Provide
 
-When a valid legal request is received, the operator may provide only data the server actually stores, such as account records, login or access metadata, report records, encrypted DM payloads, attachment metadata, and timestamps.
+When a valid legal request is received, the operator may provide only data the
+server actually stores, such as account records, authentication event metadata,
+moderation records, encrypted DM payloads, attachment metadata, provider
+connection metadata, and timestamps.
+
+Disclosure exports are scoped by requested data type. DM report exports can
+include report metadata and participant-submitted plaintext when the reporting
+participant explicitly included it. Post and federated-post report records may
+exist for moderation workflows, but operators should verify whether their
+current export tooling includes those records before representing them as part
+of a disclosure package.
 
 ### Direct Messages
 
@@ -16,13 +26,24 @@ The operator may preserve relevant records when a valid preservation request is 
 
 ### Operator Review Workflow
 
-Operators should require a written request that identifies the requesting agency, jurisdiction, legal authority, target account or resource, requested date range, and requested data types. Do not disclose records based only on phone calls, informal chat messages, or unverifiable email.
+Operators should require a written request that identifies the requesting
+agency, jurisdiction, legal authority, target account or resource, requested
+date range, and requested data types. Do not disclose records based only on
+phone calls, informal chat messages, or unverifiable email.
 
-Before exporting records, operators should review scope and necessity, create a preservation hold when appropriate, record whether user notice is permitted or prohibited, and export only the data types covered by the request. Disclosure packages include a manifest with section counts and SHA-256 hashes to help detect later modification.
+Before exporting records, operators should review scope and necessity, create a
+preservation hold when appropriate, record whether user notice is permitted or
+prohibited, and export only the data types covered by the request. Disclosure
+packages include a manifest with section counts and SHA-256 hashes to help
+detect later modification. Audit records in a package are limited to
+administrator actions associated with that legal request ID.
 
 ### Access Metadata
 
-Access metadata may include timestamps, IP addresses, user agents, and security-relevant account events retained by the server. Treat this metadata as personal data and disclose it only when it is within the verified request scope.
+Access metadata may include timestamps, IP addresses, user agents, and
+security-relevant account events retained by the server, such as successful
+login or registration verification events. Treat this metadata as personal data
+and disclose it only when it is within the verified request scope.
 
 ### Emergency Requests
 

@@ -65,6 +65,8 @@ version. Federation protocol compatibility is versioned separately with
 - Deployment documentation now covers federation signing keys, trusted proxy
   CIDR allowlists, fail-closed rate limit options, static-host security headers,
   and registration-verification token logging guidance.
+- Operator documentation now reflects `law-enforcement.md` legal-doc support,
+  current startup migrations, and the dedicated federation-key fallback model.
 - Frontend tests now run Vitest with the threads pool to keep the current test
   suite stable on the upgraded toolchain.
 
@@ -93,7 +95,7 @@ version. Federation protocol compatibility is versioned separately with
 - Startup migrations add report categories, access-event storage for legal
   exports, and `minimum_registration_age` site setting.
 
-## [0.0.2] - Released
+## [0.0.2] - 2026-04-29
 
 ### Added
 
@@ -130,7 +132,7 @@ version. Federation protocol compatibility is versioned separately with
 
 - Startup migrations add `communities.tags TEXT[]` for community tag storage.
 
-## [0.0.1] - Released
+## [0.0.1] - 2026-04-28
 
 ### Versioning
 
@@ -160,7 +162,7 @@ version. Federation protocol compatibility is versioned separately with
 - Reusable post composer form and sidebar compose modal for normal and community
   posting flows.
 
-### Release Notes
+### Publishing Checklist
 
 - Record Docker image tags as immutable release tags such as `glipz:v0.0.1`.
 - Note any required DB migrations in this section before publishing a release.

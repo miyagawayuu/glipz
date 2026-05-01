@@ -173,7 +173,7 @@ ranking weights for custom timelines.
 ### 1. Clone and configure
 
 ```bash
-git clone https://github.com/miyagawayuu/glipz.git
+git clone https://github.com/glipz-project/glipz.git
 cd glipz
 cp .env.example .env
 ```
@@ -249,10 +249,14 @@ Mailpit (started with the Docker stack) is for local development. In production,
 ### Production checklist
 
 - [ ] Strong `JWT_SECRET`
+- [ ] Dedicated federation signing key configured (`GLIPZ_FEDERATION_KEY_SEED`
+  or `GLIPZ_FEDERATION_PRIVATE_KEY`) before public federation
 - [ ] HTTPS via reverse proxy (Nginx, Caddy, Traefik)
 - [ ] Media storage configured (`GLIPZ_STORAGE_MODE=local` or S3-compatible storage)
 - [ ] `FRONTEND_ORIGIN` and (if federation) `GLIPZ_PROTOCOL_*` variables set
 - [ ] If trusting proxy headers, backend is private and proxy overwrites `X-Real-IP`, `X-Forwarded-For`, and `X-Forwarded-Proto`
+- [ ] Redis-backed rate limit fail-closed options reviewed for production abuse
+  resistance
 - [ ] Database and Redis secured
 - [ ] Email provider configured (Mailgun, SMTP, etc.)
 - [ ] `GLIPZ_ADMIN_USER_IDS` set for site administrators who can access `/admin`
@@ -460,6 +464,7 @@ Membership entitlement over Glipz federation (`POST .../federation/posts/{postID
 | `GLIPZ_PROTOCOL_PUBLIC_ORIGIN` | Public API/federation origin advertised in discovery; falls back to `FRONTEND_ORIGIN` when empty | Recommended for federation |
 | `GLIPZ_PROTOCOL_HOST` | Stable federation host advertised to peers | Recommended for federation |
 | `GLIPZ_PROTOCOL_MEDIA_PUBLIC_BASE` | Public base URL for federated media URLs | Recommended for federation |
+| `GLIPZ_FEDERATION_KEY_SEED` / `GLIPZ_FEDERATION_PRIVATE_KEY` | Dedicated Ed25519 federation signing key material; avoids tying federation identity to JWT rotation | Recommended for public federation |
 | `GLIPZ_METRICS_ENABLED` | Exposes lightweight expvar metrics at `/debug/vars` | Optional |
 | `GLIPZ_ACCESS_LOG_ENABLED` | Enables per-request access logs; disabled by default for throughput | Optional |
 | `GLIPZ_SLOW_REQUEST_LOG_MS` | Logs HTTP requests over this threshold in ms; `0` disables slow request logs | Optional |
@@ -476,6 +481,7 @@ Membership entitlement over Glipz federation (`POST .../federation/posts/{postID
 | `GLIPZ_FEDERATION_DM_ATTACHMENT_MAX_BYTES` | Maximum bytes streamed by the federated DM attachment proxy; default is 50 MiB | Optional |
 | `GLIPZ_FEDERATION_DELIVERY_*` | Batch size, concurrency, and tick interval for outbound federation delivery | Optional |
 | `GLIPZ_ADMIN_USER_IDS` | Comma-separated user UUIDs with site admin access to `/admin` | Optional |
+| `LEGAL_DOCS_DIR` | Directory for operator-editable Markdown legal documents | Optional |
 | `VITE_ALLOWED_MEDIA_BASE_URLS` | Frontend allowlist for CDN/direct media URL prefixes used in rich media rendering | Optional |
 | `VITE_ALLOWED_DM_ATTACHMENT_BASE_URLS` | Frontend allowlist for CDN/direct encrypted DM attachment URL prefixes | Optional |
 | `PATREON_ENABLED` | Enables Patreon UI/routes; defaults to disabled | Optional |
@@ -518,9 +524,10 @@ Set `STATIC_WEB_ROOT=../web/dist` in your environment and restart the backend.
 
 ### Customize legal documents
 
-Set `LEGAL_DOCS_DIR` to a directory containing `terms.md`, `privacy.md`, and
-`nsfw-guidelines.md`. Locale-specific files such as `terms.ja.md` or
-`terms.en.md` are used first. See `legal-docs.example/` for starter files.
+Set `LEGAL_DOCS_DIR` to a directory containing any of `terms.md`,
+`privacy.md`, `nsfw-guidelines.md`, and `law-enforcement.md`. Locale-specific
+files such as `terms.ja.md` or `terms.en.md` are used first. See
+`legal-docs.example/` for starter files.
 
 Alternatively, site administrators can set external Terms of Service, Privacy
 Policy, and NSFW Guidelines URLs in `/admin/instance-settings`. When a URL is

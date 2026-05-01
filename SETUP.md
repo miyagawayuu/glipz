@@ -24,7 +24,7 @@ Install these before starting:
 ## Step 1: Clone the Repository
 
 ```bash
-git clone https://github.com/miyagawayuu/glipz.git
+git clone https://github.com/glipz-project/glipz.git
 cd glipz
 ```
 
@@ -132,7 +132,11 @@ PATREON_CLIENT_SECRET=
 
 ### Production web build
 
-For `npm run build`, copy [web/.env.production.example](web/.env.production.example) to `web/.env.production` when you need `VITE_API_URL` (cross-origin API or Capacitor). Same-origin deployments can usually omit it.
+For `npm run build`, create `web/.env.production` when you need frontend
+build-time variables such as `VITE_API_URL`, `VITE_NATIVE_API_URL`,
+`VITE_ALLOWED_MEDIA_BASE_URLS`, or `VITE_ALLOWED_DM_ATTACHMENT_BASE_URLS`.
+Same-origin deployments can usually omit `VITE_API_URL`; see the frontend
+section of [.env.example](.env.example) for the available variables.
 
 ---
 
@@ -157,9 +161,11 @@ This starts:
 
 On first startup, the backend:
 - Connects to PostgreSQL and Redis
-- Runs database migrations, including ID portability transfer tables and
-  bookmark/follow portability support, community tables / `posts.group_id`, and
-  profile pinned-post support for existing databases
+- Runs idempotent startup migrations, including post object-key updates, profile
+  and social tables, notifications, polls, federation queues and dedupe tables,
+  ID portability, bookmarks/follows, communities, profile pinned posts, timeline
+  settings, moderation, legal-compliance storage, direct messages, web push, and
+  optional fan-club storage
 - Initializes the configured media store (`local` folder or S3-compatible storage)
 - Starts the HTTP server
 
@@ -253,10 +259,10 @@ frontend, set a Markdown document directory:
 LEGAL_DOCS_DIR=./data/legal-docs
 ```
 
-Supported files are `terms.md`, `privacy.md`, and `nsfw-guidelines.md`.
-Locale-specific files such as `terms.ja.md` or `terms.en.md` take precedence.
-Use `legal-docs.example/` as starter content. Missing files fall back to the
-built-in Glipz policy text.
+Supported files are `terms.md`, `privacy.md`, `nsfw-guidelines.md`, and
+`law-enforcement.md`. Locale-specific files such as `terms.ja.md` or
+`terms.en.md` take precedence. Use `legal-docs.example/` as starter content.
+Missing files fall back to the built-in Glipz policy text.
 
 ---
 
@@ -284,7 +290,7 @@ These are disabled unless configured:
 | Feature | Environment Variables |
 |---------|----------------------|
 | **Web Push** | `WEB_PUSH_VAPID_*` |
-| **Federation** | `GLIPZ_PROTOCOL_*`, optional `FEDERATION_POLICY_SUMMARY` |
+| **Federation** | `GLIPZ_PROTOCOL_*`, optional `GLIPZ_FEDERATION_KEY_SEED` / `GLIPZ_FEDERATION_PRIVATE_KEY`, optional `FEDERATION_POLICY_SUMMARY` |
 | **Legal documents** | `LEGAL_DOCS_DIR` |
 | **Patreon** | `PATREON_ENABLED=true`, `PATREON_CLIENT_ID`, `PATREON_CLIENT_SECRET`, optional `PATREON_REDIRECT_URI` |
 
@@ -364,6 +370,9 @@ Before going live:
 - [ ] `FRONTEND_ORIGIN` set to your public URL
 - [ ] `GLIPZ_PROTOCOL_PUBLIC_ORIGIN` set (if using federation)
 - [ ] `GLIPZ_PROTOCOL_HOST` and `GLIPZ_PROTOCOL_MEDIA_PUBLIC_BASE` set (if using federation)
+- [ ] Dedicated federation signing key configured before public federation
+- [ ] Trusted proxy headers, trusted proxy CIDRs, and fail-closed rate-limit
+  options reviewed in [DEPLOY.md](DEPLOY.md)
 - [ ] Database and Redis secured
 - [ ] Real email provider configured (Mailgun, etc.)
 - [ ] Optional providers explicitly enabled only when configured (`PATREON_ENABLED`)
@@ -382,19 +391,10 @@ Before going live:
 ---
 
 ### Federation Setup (Optional)
-To enable Glipz Federation Protocol between instances, configure these variables
-in your `.env`:
 
-| Variable | Description |
-|----------|-------------|
-| `GLIPZ_PROTOCOL_PUBLIC_ORIGIN` | Public API/federation origin used for discovery and endpoint URLs (for example, `https://api.social.example`) |
-| `GLIPZ_PROTOCOL_HOST` | Stable federation host advertised to peers (for example, `social.example`) |
-| `GLIPZ_PROTOCOL_MEDIA_PUBLIC_BASE` | Base URL for federated media assets, usually ending in `/api/v1/media/object` unless using direct CDN delivery |
-
-> **Note:** Federation between public instances expects HTTPS and stable
-> hostnames. Glipz federation is not ActivityPub; proxy `/.well-known/glipz-federation`
-> and `/federation/*`, and do not rely on `/ap` shared-inbox delivery for
-> interoperability. Signing keys are managed by the server and are tied to
-> stable production configuration.
+The main federation setup is covered in [Step 2](#step-2-configure-environment).
+For public interoperability, proxy `/.well-known/glipz-federation` and
+`/federation/*` to the backend, use HTTPS and stable hostnames, and do not rely
+on ActivityPub shared-inbox delivery for Glipz protocol interoperability.
 
 For **adding another fan-club provider** (not Patreon-specific), follow [backend/internal/fanclub/kernel/IMPLEMENTATION_GUIDELINES.md](backend/internal/fanclub/kernel/IMPLEMENTATION_GUIDELINES.md).

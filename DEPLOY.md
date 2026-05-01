@@ -170,7 +170,7 @@ MAIL_FROM_NAME=Glipz
 | `GLIPZ_STORAGE_MODE` | `local` stores media on the server; `s3` uses S3-compatible storage |
 | `GLIPZ_LOCAL_STORAGE_PATH` | Local media directory; back it up if using `GLIPZ_STORAGE_MODE=local` |
 | `GLIPZ_ADMIN_USER_IDS` | Built-in moderation / admin API access and `/admin` control panel access |
-| `LEGAL_DOCS_DIR` | Optional directory for editable `terms.md`, `privacy.md`, and `nsfw-guidelines.md` |
+| `LEGAL_DOCS_DIR` | Optional directory for editable `terms.md`, `privacy.md`, `nsfw-guidelines.md`, and `law-enforcement.md` |
 | `GLIPZ_TRUST_PROXY_HEADERS` | Set to `true` only when your reverse proxy always overwrites `X-Real-IP` / `X-Forwarded-For` and the backend cannot be reached directly |
 | `GLIPZ_TRUSTED_PROXY_CIDRS` | Optional comma-separated CIDRs whose direct connections may supply trusted proxy headers |
 | `GLIPZ_AUTH_RATE_LIMIT_FAIL_CLOSED` | Optional stricter mode that rejects login/MFA attempts when Redis rate limit checks fail |
@@ -220,9 +220,12 @@ Redis outages will reject the protected flows instead of allowing them through.
 The production image is built from the **repository root** with `backend/Dockerfile` (see [docker-compose.yml](docker-compose.yml)): it runs `npm ci` / `npm run build` in `web/` on **Node 22**, then compiles the Go server with **Go 1.26.2**, and sets `STATIC_WEB_ROOT=/app/web/dist` by default.
 
 Startup migrations are idempotent and include current post/object-key updates,
-ID portability, bookmarks/follows, community tables and `posts.group_id`, plus
-profile pinned-post support. Back up PostgreSQL before deploying a new image, and
-allow the backend to complete migrations before opening the instance to traffic.
+profile data, social actions, notifications, polls, federation queues and
+dedupe tables, ID portability, bookmarks/follows, communities, profile pinned
+posts, timeline settings, moderation, legal-compliance tables, direct messages,
+web push, and optional fan-club storage. Back up PostgreSQL before deploying a
+new image, and allow the backend to complete migrations before opening the
+instance to traffic.
 
 When using CDN or direct object-storage media URLs, also set the frontend build-time allowlists in `web/.env.production`: `VITE_ALLOWED_MEDIA_BASE_URLS` for rendered media and `VITE_ALLOWED_DM_ATTACHMENT_BASE_URLS` for encrypted DM attachments. Use exact HTTPS path prefixes such as `https://cdn.example.com/media/`; root origins are rejected by the frontend safety checks. Configure the CDN/storage endpoint to reject or download active content types (`image/svg+xml`, `text/html`, XML, and JavaScript types) with `Content-Disposition: attachment` and `X-Content-Type-Options: nosniff`.
 
@@ -232,9 +235,12 @@ For federation, production deployments should expose HTTPS URLs for
 `/.well-known/glipz-federation` and `/federation/*`. The reference server
 advertises `glipz-federation/3` for new integrations, signs mutating
 server-to-server requests with Ed25519 `X-Glipz-*` headers, and requires nonce
-and `event_id` replay protection for version 2 and later. `JWT_SECRET` feeds the
-instance signing key material, so changing it after federation is live changes
-the advertised public key and peer trust relationship.
+and `event_id` replay protection for version 2 and later. When
+`GLIPZ_FEDERATION_KEY_SEED` or `GLIPZ_FEDERATION_PRIVATE_KEY` is set, that
+dedicated key material controls the advertised federation public key. If neither
+is set, Glipz derives the federation key from `JWT_SECRET` for compatibility, so
+rotating `JWT_SECRET` also rotates the federation identity and affects peer
+trust.
 
 Mailgun's default API base works for the US region. Set `MAILGUN_API_BASE` when your Mailgun domain uses a regional API endpoint such as the EU region. SMTP delivery is used only when `MAILGUN_DOMAIN` / `MAILGUN_API_KEY` are not configured.
 
@@ -327,8 +333,9 @@ docker run -d \
 > If you use `GLIPZ_STORAGE_MODE=s3`, the media volume mount is not required.
 
 For editable legal pages, set `LEGAL_DOCS_DIR=/app/data/legal-docs` and
-place `terms.md`, `privacy.md`, and `nsfw-guidelines.md` in that directory.
-Locale-specific files such as `terms.ja.md` or `terms.en.md` take precedence.
+place any of `terms.md`, `privacy.md`, `nsfw-guidelines.md`, and
+`law-enforcement.md` in that directory. Locale-specific files such as
+`terms.ja.md` or `terms.en.md` take precedence.
 
 The `/admin` control panel stores runtime instance settings in Postgres. Back up
 the database before changing registration policy or operator announcements there.
@@ -353,6 +360,8 @@ server {
     ssl_certificate /etc/letsencrypt/live/your-domain.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/your-domain.com/privkey.pem;
 
+    # Keep this at or above the app upload limit. The backend currently accepts
+    # media and DM attachment uploads up to about 50 MiB each.
     client_max_body_size 100m;
 
     add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob: https:; connect-src 'self'; frame-src https://www.youtube-nocookie.com https://player.vimeo.com https://www.dailymotion.com https://www.loom.com https://streamable.com https://fast.wistia.net https://player.bilibili.com https://www.tiktok.com https://store.steampowered.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" always;
@@ -451,9 +460,10 @@ Ensure these paths are proxied correctly:
 | `/federation/*` | Glipz Federation endpoints |
 
 Glipz federation does not use ActivityPub shared-inbox delivery as its primary
-interoperability path. Do not route peers to `/ap` for Glipz protocol delivery;
-ensure signed JSON requests reach `/federation/events`, `/federation/follow`,
-and `/federation/unfollow`.
+interoperability path. Do not route peers to an ActivityPub shared inbox, such
+as a legacy `/ap` endpoint, for Glipz protocol delivery; ensure signed JSON
+requests reach `/federation/events`, `/federation/follow`, and
+`/federation/unfollow`.
 
 ---
 
@@ -485,6 +495,10 @@ Run these checks after deployment:
 - [ ] HTTPS is enabled and working
 - [ ] `FRONTEND_ORIGIN` matches your actual domain
 - [ ] `GLIPZ_PROTOCOL_PUBLIC_ORIGIN`, `GLIPZ_PROTOCOL_HOST`, and federation endpoint URLs are HTTPS and match your public routing
+- [ ] Public federation uses dedicated signing key material instead of the
+  `JWT_SECRET` fallback
+- [ ] Trusted proxy CIDRs and fail-closed rate-limit flags are reviewed for the
+  deployment's availability and abuse-resistance goals
 - [ ] S3 bucket blocks public access
 - [ ] Federation settings reviewed (if enabled)
 

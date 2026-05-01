@@ -245,10 +245,17 @@ GLIPZ_PROTOCOL_MEDIA_PUBLIC_BASE=http://localhost:8080/api/v1/media/object
 GLIPZ_PROTOCOL_PUBLIC_ORIGIN=https://social.example
 GLIPZ_PROTOCOL_HOST=social.example
 GLIPZ_PROTOCOL_MEDIA_PUBLIC_BASE=https://social.example/api/v1/media/object
+GLIPZ_FEDERATION_KEY_SEED=<base64 32-byte seed>
 FEDERATION_POLICY_SUMMARY=Short text shown as your instance federation policy
 ```
 
-参照実装は instance signing key を `JWT_SECRET` から導出します。そのため、`JWT_SECRET` を変更すると discovery で広告される federation public key と `key_id` の信頼関係も変わります。本番では安定した設定として扱ってください。
+本番では `GLIPZ_FEDERATION_KEY_SEED`、または高度な設定として
+`GLIPZ_FEDERATION_PRIVATE_KEY` を使い、専用の Ed25519 federation 署名鍵を
+設定してください。どちらも未設定の場合、参照実装は互換性のために
+instance signing key を `JWT_SECRET` から導出します。その場合、
+`JWT_SECRET` を変更すると discovery で広告される federation public key と
+`key_id` の信頼関係も変わります。この fallback は移行互換用であり、本番
+の推奨設定ではありません。
 
 完全な環境変数とデプロイ文脈は [SETUP.md](SETUP.md) と [DEPLOY.md](DEPLOY.md) を参照してください。
 

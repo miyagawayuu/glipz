@@ -15,7 +15,17 @@ These Terms define the conditions for using this Glipz server. By using the serv
 
 ### Accounts
 
-Users are responsible for their own accounts and posts. If a violation is confirmed, the operator may remove posts, suspend accounts, restrict features, or take other necessary actions.
+Users are responsible for their own accounts and posts. Users must satisfy the
+minimum account creation age configured by the operator, or any higher age
+required by applicable rules for this instance.
+
+The operator may review user, post, federation, and direct-message reports. If a
+violation is confirmed, the operator may remove posts, change visibility,
+suspend accounts, restrict features, block federation with another domain, or
+take other necessary actions.
+
+Account or post deletion may be delayed or rejected while an active legal
+preservation hold applies.
 
 ### Changes
 

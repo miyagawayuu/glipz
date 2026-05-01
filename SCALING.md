@@ -168,7 +168,7 @@ The script refuses non-local `BASE_URL` values unless
 production-like environment you are allowed to test; do not point the first run
 at a live production instance.
 
-When testing the local Docker Compose stack, run k6 on the Compose network so traffic goes directly to the backend container instead of through Docker Desktop's host port forwarding:
+When testing the local Docker Compose stack, run k6 on the Compose network so traffic goes directly to the backend container instead of through Docker Desktop's host port forwarding. The PowerShell example below assumes the repository is at `D:\glipz`; replace that host path with your own clone location:
 
 ```powershell
 $env:GLIPZ_LOAD_TOKEN="glpat_..."
